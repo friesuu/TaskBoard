@@ -1,6 +1,7 @@
 const GRAPHQL_URL = 'http://localhost:3000/graphql';
 const TASK_FIELDS = 'id title description status dueDate';
 const CHAT_FIELDS = 'id role content createdAt';
+const BOARD_FIELDS = 'id name';
 
 // Validation errors keep their real messages in originalError (as an array);
 // other errors have a readable message directly.
@@ -36,10 +37,56 @@ async function graphqlRequest(query, variables) {
   return body.data;
 }
 
-export async function getTasks()
+// The tasks of ONE board
+export async function getTasks(boardId)
 {
-    const data = await graphqlRequest(`query { tasks { ${TASK_FIELDS} }}`);
+    const data = await graphqlRequest(
+        `query Tasks($boardId: Int!) {
+            tasks(boardId: $boardId) { ${TASK_FIELDS} }
+        }`,
+        { boardId },
+    );
     return data.tasks;
+}
+
+// Your boards, oldest first
+export async function getBoards()
+{
+    const data = await graphqlRequest(`query { boards { ${BOARD_FIELDS} } }`);
+    return data.boards;
+}
+
+export async function createBoard(name)
+{
+    const data = await graphqlRequest(
+        `mutation CreateBoard($input: BoardNameInput!) {
+            createBoard(input: $input) { ${BOARD_FIELDS} }
+        }`,
+        { input: { name } },
+    );
+    return data.createBoard;
+}
+
+export async function renameBoard(id, name)
+{
+    const data = await graphqlRequest(
+        `mutation RenameBoard($id: Int!, $input: BoardNameInput!) {
+            renameBoard(id: $id, input: $input) { ${BOARD_FIELDS} }
+        }`,
+        { id, input: { name } },
+    );
+    return data.renameBoard;
+}
+
+// Also deletes every task on it. The server refuses to delete your last board.
+export async function deleteBoard(id)
+{
+    await graphqlRequest(
+        `mutation DeleteBoard($id: Int!) {
+            deleteBoard(id: $id)
+        }`,
+        { id },
+    );
 }
 
 export async function createTask(input)
@@ -149,14 +196,14 @@ export async function getChatMessages()
     return data.chatMessages;
 }
 
-// Sends one message, returns Claude's answer
-export async function sendChatMessage(message)
+// Sends one message about the tasks on board `boardId`, returns Claude's answer
+export async function sendChatMessage(boardId, message)
 {
     const data = await graphqlRequest(
         `mutation SendChatMessage($input: SendChatMessageInput!) {
             sendChatMessage(input: $input) { ${CHAT_FIELDS} }
         }`,
-        { input: { message } },
+        { input: { boardId, message } },
     );
     return data.sendChatMessage;
 }

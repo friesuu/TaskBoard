@@ -24,7 +24,7 @@ export class ChatResolver {
   @UseGuards(GqlThrottlerGuard)
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   sendChatMessage(@CurrentUser() user: User, @Args('input') input: SendChatMessageDto): Promise<ChatMessage> {
-    return this.chatService.send(user.id, input.message);
+    return this.chatService.send(user.id, input.boardId, input.message);
   }
 
   @Mutation(() => Boolean)

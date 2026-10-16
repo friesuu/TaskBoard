@@ -3,6 +3,7 @@ import { DataSource } from 'typeorm';
 import { Task } from './tasks/task.entity';
 import { User } from './users/user.entity';
 import { ChatMessage } from './chat/chat-message.entity';
+import { Board } from './boards/board.entity';
 import { migrations } from './migrations';
 
 // Used only by the TypeORM command line (npm run migration:generate / :run / :revert / :show).
@@ -21,6 +22,6 @@ export default new DataSource({
   username: process.env.DB_USERNAME,
   password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME,
-  entities: [Task, User, ChatMessage], // add new entities here too
+  entities: [Task, User, ChatMessage, Board], // add new entities here too
   migrations,
 });

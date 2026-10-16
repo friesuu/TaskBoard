@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { getChatMessages, sendChatMessage, clearChat } from "../api";
 
 // The "Assistant" page. onSessionEnded comes from App: an expired login still goes back to the login screen.
-function ChatPanel({ onSessionEnded })
+// The assistant works on the board you have open (boardId): it only sees and changes tasks there.
+function ChatPanel({ boardId, boardName, onSessionEnded })
 {
     const [messages, setMessages] = useState([]);
     const [draft, setDraft] = useState('');
@@ -36,7 +37,7 @@ function ChatPanel({ onSessionEnded })
 
         try
         {
-            const answer = await sendChatMessage(text);
+            const answer = await sendChatMessage(boardId, text);
             setMessages((prev) => [...prev, answer]);
         }
         catch (err)
@@ -73,7 +74,10 @@ function ChatPanel({ onSessionEnded })
     return(
         <section className="chat">
             <div className="chat-header">
-                <h2>Assistant</h2>
+                <div>
+                    <h2>Assistant</h2>
+                    {boardName && <p className="chat-board">Working on: {boardName}</p>}
+                </div>
                 <button className="logout-btn" onClick={handleClear} disabled={messages.length === 0 || isWaiting}>
                     Clear chat
                 </button>
@@ -100,7 +104,7 @@ function ChatPanel({ onSessionEnded })
                     onKeyDown={handleKeyDown}
                     maxLength={2000}
                     rows={2}
-                    placeholder="Ask about your tasks…"
+                    placeholder="Ask about the tasks on this board…"
                     aria-label="Message"
                 />
                 <button type="submit" className="add-task-btn" disabled={isWaiting || !draft.trim()}>

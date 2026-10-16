@@ -1,9 +1,9 @@
 import { STATUSES } from "../statuses";
 import { isOverdue } from "../dates";
 
-// The profile page. Everything here comes from data App already has (the user and their tasks),
+// The profile page. Everything here comes from data App already has (the user and the open board's tasks),
 // so it needs no extra request to the server.
-function Profile({ user, tasks, onBack, onChangePassword })
+function Profile({ user, tasks, boardName, onBack, onChangePassword })
 {
     // How many tasks are in each column, e.g. { TODO: 3, IN_PROGRESS: 1, DONE: 6 }
     const countByStatus = Object.fromEntries(
@@ -24,7 +24,7 @@ function Profile({ user, tasks, onBack, onChangePassword })
                 </div>
             </div>
 
-            <h3 className="profile-heading">Your tasks</h3>
+            <h3 className="profile-heading">{boardName ? `Tasks on "${boardName}"` : 'Your tasks'}</h3>
             <div className="stat-grid">
                 <div className="stat">
                     <span className="stat-number">{tasks.length}</span>

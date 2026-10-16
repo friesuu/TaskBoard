@@ -7,6 +7,7 @@ import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
 import { join } from 'path';
 import { AuthModule } from './auth/auth.module';
 import { ChatModule } from './chat/chat.module';
+import { BoardsModule } from './boards/boards.module';
 import type { Request, Response } from 'express';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { migrations } from './migrations';
@@ -56,7 +57,8 @@ const isProduction = process.env.NODE_ENV === 'production';
     }),
     TasksModule,
     AuthModule,
-    ChatModule
+    ChatModule,
+    BoardsModule,
   ],
 })
 export class AppModule {}

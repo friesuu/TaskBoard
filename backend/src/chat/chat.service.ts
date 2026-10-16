@@ -6,6 +6,7 @@ import { LlmService } from './llm.service';
 import { TasksService } from '../tasks/tasks.service';
 import { Task } from '../tasks/task.entity';
 import { taskTools } from './task-tools';
+import { BoardsService } from '../boards/boards.service';
 
 const MEMORY_SIZE = 20; // how many earlier messages Claude "remembers"
 
@@ -16,6 +17,7 @@ export class ChatService {
     private readonly messagesRepository: Repository<ChatMessage>,
     private readonly tasksService: TasksService,
     private readonly llmService: LlmService,
+    private readonly boardsService: BoardsService,
   ) {}
 
   // The whole conversation, oldest first (for the screen)
@@ -23,7 +25,9 @@ export class ChatService {
     return this.messagesRepository.find({ where: { ownerId }, order: { id: 'ASC' } });
   }
 
-  async send(ownerId: number, text: string): Promise<ChatMessage> {
+  async send(ownerId: number, boardId: number, text: string): Promise<ChatMessage> {
+    const board = await this.boardsService.findOwned(boardId, ownerId); // "not found" if it isn't yours
+
     // 1. Memory: the last MEMORY_SIZE messages, oldest first
     const recent = await this.messagesRepository.find({
       where: { ownerId },
@@ -35,16 +39,17 @@ export class ChatService {
     // Claude needs the conversation to start with a user message
     while (recent.length > 0 && recent[0].role === 'assistant') recent.shift();
 
-    // 2. Context: your tasks right now (attached to this message only, never saved)
-    const tasks = await this.tasksService.findAll(ownerId);
+    // 2. Context: this board's tasks right now (attached to this message only, never saved)
+    const tasks = await this.tasksService.findAll(ownerId, boardId);
     const today = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD
-    const context = `<my_tasks>\nToday is ${today}.\n${describeTasks(tasks)}\n</my_tasks>\n\n`;
+    const context =
+      `<my_tasks>\nToday is ${today}. Board: "${board.name}".\n${describeTasks(tasks)}\n</my_tasks>\n\n`;
 
     // 3. Ask Claude: memory + the new message
     const answer = await this.llmService.reply([
       ...recent.map((m) => ({ role: m.role, content: m.content })),
       { role: 'user', content: context + text },],
-      taskTools(this.tasksService, ownerId), // built for THIS user only  
+      taskTools(this.tasksService, ownerId, boardId), // built for THIS user and THIS board only
     );
 
     // 4. Save both only now, so a failed request leaves no half-finished turn behind

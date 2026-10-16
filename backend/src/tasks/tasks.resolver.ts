@@ -15,8 +15,8 @@ export class TaskResolver
 {
     constructor(private readonly tasksService: TasksService){}
     @Query(() => [Task], { name: 'tasks'})
-    findAll(@CurrentUser() user: User): Promise<Task[]> {
-        return this.tasksService.findAll(user.id);
+    findAll(@CurrentUser() user: User, @Args('boardId', { type: () => Int }) boardId: number): Promise<Task[]> {
+        return this.tasksService.findAll(user.id, boardId);
     }
     
     @Mutation(() => Task)

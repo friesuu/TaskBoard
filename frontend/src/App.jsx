@@ -1,6 +1,9 @@
 import './App.css';
 import { useState, useEffect, useCallback } from 'react';
-import { getTasks, createTask, updateTask, moveTask, deleteTask, getCurrentUser, logout, changePassword } from './api';
+import {
+  getTasks, createTask, updateTask, moveTask, deleteTask, getCurrentUser, logout, changePassword,
+  getBoards, createBoard, renameBoard, deleteBoard,
+} from './api';
 import Column from './components/Column';
 import TaskForm from './components/TaskFrom';
 import LoginForm from './components/LoginForm';
@@ -12,8 +15,19 @@ import { STATUSES } from './statuses';
 import { moveInList } from './reorder';
 import { DragDropContext} from '@hello-pangea/dnd';
 import ChatPanel from './components/ChatPanel';
+import BoardNameForm from './components/BoardNameForm';
+import BoardSettings from './components/BoardSettings';
+import { getUrlParam, setUrlParam } from './url';
 
 const SESSION_EXPIRED = 'Your session has expired. Please log in again.';
+
+// The heading of each modal (openModal decides which one is open)
+const MODAL_TITLES = {
+  add: 'Add New Task',
+  password: 'Change Password',
+  'new-board': 'New Board',
+  'board-settings': 'Board Settings',
+};
 
 function App()
 {
@@ -22,9 +36,13 @@ function App()
   const [tasks, setTasks] = useState([]);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null); // e.g. "Password changed"
-  const [openModal, setOpenModal] = useState(null); // null = closed, 'add' = Add Task, 'password' = Change password
+  const [openModal, setOpenModal] = useState(null); // null = closed, otherwise a key of MODAL_TITLES
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [view, setView] = useState('board'); // which page is shown: 'board' or 'profile'
+  const [view, setView] = useState('board'); // which page is shown: 'board', 'profile' or 'chat'
+  const [boards, setBoards] = useState([]);
+  const [boardId, setBoardId] = useState(null); // the open board; null until the boards have loaded
+
+  const currentBoard = boards.find((b) => b.id === boardId);
 
   // useCallback keeps this the SAME function on every render. Sidebar's Escape-key effect depends on it,
   // so a new function each render would make that effect stop and restart every time App re-renders.
@@ -37,28 +55,56 @@ function App()
     getCurrentUser().then(setUser).catch((err) => setError(err.message));
   }, []);
 
-  // Whenever the user changes (e.g. right after logging in), or you switch pages: load that user's tasks.
-  // Switching pages reloads them so changes made by the assistant show up on the board.
+  // For the two loading effects below: an expired cookie goes back to the login screen, anything else is shown
+  const loadFailed = useCallback((err) => {
+    if (err.code === 'UNAUTHENTICATED')
+    {
+      setUser(null); // the cookie expired between "me" and this request
+      setError(SESSION_EXPIRED);
+    }
+    else
+    {
+      setError(err.message);
+    }
+  }, []);
+
+  // Opens a board and puts it in the address bar (?board=3), so a refresh or a bookmark opens the same board
+  const selectBoard = useCallback((id) => {
+    setBoardId(id);
+    setUrlParam('board', id);
+  }, []);
+
+  // After logging in: load your boards, then open the one in the address bar (if it's yours) or else the first
   useEffect(() => {
     if (!user) return;
-    getTasks().then(setTasks).catch((err) => {
-      if (err.code === 'UNAUTHENTICATED')
-      {
-        setUser(null); // the cookie expired between "me" and loading the tasks
-        setError(SESSION_EXPIRED);
-      }
-      else
-      {
-        setError(err.message);
-      }
-    });
-  }, [user, view]);
+    getBoards().then((list) => {
+      setBoards(list);
+      const fromUrl = Number(getUrlParam('board'));
+      selectBoard(list.some((b) => b.id === fromUrl) ? fromUrl : (list[0]?.id ?? null));
+    }).catch(loadFailed);
+  }, [user, selectBoard, loadFailed]);
+
+  // Whenever the open board changes, or you switch pages: load that board's tasks.
+  // Switching pages reloads them so changes made by the assistant show up on the board.
+  useEffect(() => {
+    if (!user || boardId === null) return;
+    // If you switch boards again before this answer arrives, the cleanup below sets this,
+    // so a slow answer for the OLD board can't replace the new board's tasks.
+    let isStale = false;
+    getTasks(boardId)
+      .then((list) => { if (!isStale) setTasks(list); })
+      .catch(loadFailed);
+    return () => { isStale = true; };
+  }, [user, boardId, view, loadFailed]);
 
   // Back to the login screen. Also empties the board, so the next person on this computer
   // never sees the previous user's tasks, not even for a moment.
   const showLogin = useCallback((message = null) => {
     setUser(null);
     setTasks([]);
+    setBoards([]);
+    setBoardId(null);
+    setUrlParam('board', null); // the next person starts on their own first board
     setOpenModal(null);
     setIsSidebarOpen(false);
     setView('board'); // the next person to log in starts on the board, not on someone's profile
@@ -92,7 +138,7 @@ function App()
   // Errors here are shown inside the form, so only an expired session is handled
   const handleCreate = async (data) => {
     try{
-      const created = await createTask(data);
+      const created = await createTask({ ...data, boardId }); // on the open board
       setTasks((prev) => [...prev, created]);
       setOpenModal(null);
     }
@@ -136,6 +182,62 @@ function App()
     setView('chat');
   };
 
+  // Open another board. Its tasks are cleared first, so you never drag a card from the old board.
+  const switchBoard = (id) => {
+    closeSidebar();
+    setSuccess(null);
+    setView('board');
+    if (id !== boardId)
+    {
+      setTasks([]);
+      selectBoard(id);
+    }
+  };
+
+  const newBoardFromMenu = () => {
+    closeSidebar();
+    openForm('new-board');
+  };
+
+  // The form shows errors (e.g. an empty name); only an expired session is handled here
+  const handleCreateBoard = async (name) => {
+    try{
+      const board = await createBoard(name);
+      setBoards((prev) => [...prev, board]);
+      setOpenModal(null);
+      switchBoard(board.id); // a new board opens straight away
+    }
+    catch(err){
+      if (!endedSession(err)) throw err;
+    }
+  };
+
+  const handleRenameBoard = async (name) => {
+    try{
+      const renamed = await renameBoard(boardId, name);
+      setBoards((prev) => prev.map((b) => (b.id === renamed.id ? renamed : b)));
+      setOpenModal(null);
+    }
+    catch(err){
+      if (!endedSession(err)) throw err;
+    }
+  };
+
+  // The server deletes the board's tasks too. Afterwards you land on your first remaining board.
+  const handleDeleteBoard = async () => {
+    try{
+      await deleteBoard(boardId);
+      const remaining = boards.filter((b) => b.id !== boardId);
+      setBoards(remaining);
+      setOpenModal(null);
+      setTasks([]);
+      selectBoard(remaining[0].id);
+    }
+    catch(err){
+      if (!endedSession(err)) throw err; // BoardSettings shows it
+    }
+  };
+
   const changePasswordFromMenu = () => {
     closeSidebar();
     openForm('password');
@@ -161,7 +263,7 @@ function App()
       if (endedSession(err)) return;
       setError(err.message);
       try{
-        setTasks(await getTasks()); // the server knows the real order
+        setTasks(await getTasks(boardId)); // the server knows the real order
       }
       catch{
         setTasks(previous); // server unreachable: put the board back as it was
@@ -245,6 +347,10 @@ function App()
         isOpen={isSidebarOpen}
         email={user.email}
         currentView={view}
+        boards={boards}
+        currentBoardId={boardId}
+        onSelectBoard={switchBoard}
+        onNewBoard={newBoardFromMenu}
         onClose={closeSidebar}
         onBoard={goToBoard}
         onProfile={goToProfile}
@@ -261,7 +367,7 @@ function App()
         <div className="modal-backdrop" onClick={() => setOpenModal(null)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <header className="modal-header">
-              <h2>{openModal === 'add' ? 'Add New Task' : 'Change Password'}</h2>
+              <h2>{MODAL_TITLES[openModal]}</h2>
               <button
                 className="close-btn"
                 onClick={() => setOpenModal(null)}
@@ -270,23 +376,45 @@ function App()
               </button>
             </header>
 
-            {openModal === 'add'
-              ? <TaskForm onCreate={handleCreate} />
-              : <ChangePasswordForm email={user.email} onChangePassword={handleChangePassword} />}
+            {openModal === 'add' && <TaskForm onCreate={handleCreate} />}
+            {openModal === 'password' && (
+              <ChangePasswordForm email={user.email} onChangePassword={handleChangePassword} />
+            )}
+            {openModal === 'new-board' && <BoardNameForm submitLabel="Create board" onSubmit={handleCreateBoard} />}
+            {openModal === 'board-settings' && currentBoard && (
+              <BoardSettings
+                board={currentBoard}
+                canDelete={boards.length > 1}
+                onRename={handleRenameBoard}
+                onDelete={handleDeleteBoard}
+              />
+            )}
           </div>
         </div>
       )}
 
       {/* "view" picks the page. Both use the same tasks, so the profile's numbers are always up to date. */}
-      {view === 'chat' && <ChatPanel onSessionEnded={endedSession} />}
+      {view === 'chat' && (
+        <ChatPanel boardId={boardId} boardName={currentBoard?.name} onSessionEnded={endedSession} />
+      )}
 
       {view === 'profile' && (
         <Profile
           user={user}
           tasks={tasks}
+          boardName={currentBoard?.name}
           onBack={() => setView('board')}
           onChangePassword={() => openForm('password')}
         />
+      )}
+
+      {view === 'board' && currentBoard && (
+        <div className="board-bar">
+          <h2 className="board-name">{currentBoard.name}</h2>
+          <button className="logout-btn" onClick={() => openForm('board-settings')}>
+            Board settings
+          </button>
+        </div>
       )}
 
       {view === 'board' && (

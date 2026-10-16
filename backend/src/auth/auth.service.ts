@@ -7,6 +7,8 @@ import * as argon2 from 'argon2';
 import { JwtService } from '@nestjs/jwt';
 import { LoginDto } from './login.dto';
 import { ChangePasswordDto } from './change-password.dto';
+import { Board } from '../boards/board.entity';
+import { DEFAULT_BOARD_NAME } from '../boards/boards.service';
 
 @Injectable()
 export class AuthService {
@@ -25,8 +27,13 @@ export class AuthService {
 
     // .hash is slow on purpose: fine for one login, very slow for an attacker trying millions of passwords
     const passwordHash = await argon2.hash(dto.password);
-    const user = this.usersRepository.create({ email: dto.email, passwordHash });
-    return this.usersRepository.save(user);
+
+    // The user and their first board are saved together: never a user with no board
+    return this.usersRepository.manager.transaction(async (manager) => {
+      const user = await manager.save(manager.create(User, { email: dto.email, passwordHash }));
+      await manager.save(manager.create(Board, { name: DEFAULT_BOARD_NAME, ownerId: user.id }));
+      return user;
+    });
   }
 
   async login(dto: LoginDto): Promise<{ user: User; token: string }> {

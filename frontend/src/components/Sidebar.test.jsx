@@ -12,8 +12,13 @@ function renderSidebar(props = {}) {
     onChat: vi.fn(),
     onChangePassword: vi.fn(),
     onLogout: vi.fn(),
+    onSelectBoard: vi.fn(),
+    onNewBoard: vi.fn(),
   };
-  render(<Sidebar isOpen email="me@test.com" currentView="board" {...handlers} {...props} />);
+  const boards = [{ id: 10, name: 'My board' }, { id: 20, name: 'Work' }];
+  render(
+    <Sidebar isOpen email="me@test.com" currentView="board" boards={boards} currentBoardId={10} {...handlers} {...props} />,
+  );
   return handlers;
 }
 
@@ -43,6 +48,22 @@ describe('Sidebar', () => {
     expect(handlers.onChat).toHaveBeenCalledOnce();
     expect(handlers.onChangePassword).toHaveBeenCalledOnce();
     expect(handlers.onLogout).toHaveBeenCalledOnce();
+  });
+
+  it('lists your boards and highlights the open one', () => {
+    renderSidebar();
+    expect(screen.getByRole('button', { name: 'My board' })).toHaveAttribute('aria-current', 'true');
+    expect(screen.getByRole('button', { name: 'Work' })).not.toHaveAttribute('aria-current');
+  });
+
+  it('opens a board, or the New board form', async () => {
+    const handlers = renderSidebar();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Work' }));
+    await userEvent.click(screen.getByRole('button', { name: 'New board' }));
+
+    expect(handlers.onSelectBoard).toHaveBeenCalledWith(20);
+    expect(handlers.onNewBoard).toHaveBeenCalledOnce();
   });
 
   it('closes with the Escape key and the ✕ button', async () => {

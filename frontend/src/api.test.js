@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { getCurrentUser, login, moveTask, sendChatMessage, createTask } from './api';
+import { getCurrentUser, login, moveTask, sendChatMessage, createTask, getTasks } from './api';
 
 // A fake fetch: no server needed. answer() sets what the "server" replies.
 let fetchMock;
@@ -75,7 +75,14 @@ describe('api.js', () => {
     const reply = { id: 7, role: 'assistant', content: 'Hello!', createdAt: '2026-10-15T10:00:00Z' };
     answer({ data: { sendChatMessage: reply } });
 
-    expect(await sendChatMessage('Hi')).toEqual(reply);
-    expect(lastRequest().body.variables).toEqual({ input: { message: 'Hi' } });
+    expect(await sendChatMessage(3, 'Hi')).toEqual(reply);
+    expect(lastRequest().body.variables).toEqual({ input: { boardId: 3, message: 'Hi' } });
+  });
+
+  it('getTasks asks for one board, as a variable', async () => {
+    answer({ data: { tasks: [] } });
+    await getTasks(3);
+
+    expect(lastRequest().body.variables).toEqual({ boardId: 3 });
   });
 });

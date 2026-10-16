@@ -6,17 +6,20 @@ import { CreateTaskDto } from './create-task.dto';
 import { UpdateTaskDto } from './update-task.dto';
 import { MoveTaskDto } from './move-task.dto';
 import { TaskStatus } from './tasks-status.enum';
+import { BoardsService } from '../boards/boards.service';
 
 @Injectable()
 export class TasksService {
   constructor(
     @InjectRepository(Task)
     private readonly tasksRepository: Repository<Task>,
+    private readonly boardsService: BoardsService,
   ) {}
 
-  findAll(ownerId: number): Promise<Task[]> {
+  // One board's tasks. ownerId stays in the filter, so another user's board id just gives [].
+  findAll(ownerId: number, boardId: number): Promise<Task[]> {
     return this.tasksRepository.find({
-      where: { ownerId },
+      where: { ownerId, boardId },
       order: {
         position: 'ASC',
         createdAt: 'ASC', // tie-breaker for tasks that share a position (e.g. old rows, all 0)
@@ -25,20 +28,24 @@ export class TasksService {
     });
   }
 
+  // One of YOUR tasks (the assistant's tools use this to check which board a task is on)
+  async findOwned(id: number, ownerId: number): Promise<Task> {
+    const task = await this.tasksRepository.findOneBy({ id, ownerId });
+    if (!task) throw new NotFoundException(`Task ${id} not found`);
+    return task;
+  }
+
   async create(dto: CreateTaskDto, ownerId: number): Promise<Task> {
+    await this.boardsService.findOwned(dto.boardId, ownerId); // you can only add tasks to your own boards
     const task = this.tasksRepository.create(dto);
-    task.position = await this.nextPosition(task.status ?? TaskStatus.TODO, ownerId);
+    task.position = await this.nextPosition(task.status ?? TaskStatus.TODO, dto.boardId);
     task.ownerId = ownerId;
     return this.tasksRepository.save(task);
   }
 
   async update(id: number, dto: UpdateTaskDto, ownerId: number): Promise<Task>
   {
-    const task = await this.tasksRepository.findOneBy({id, ownerId});
-    if(!task)
-    {
-      throw new NotFoundException(`Task ${id} not found`);
-    }
+    const task = await this.findOwned(id, ownerId);
 
     if(dto.title === null || dto.status === null)
     {
@@ -48,14 +55,14 @@ export class TasksService {
     // Changing column (e.g. from the dropdown) puts the task at the bottom of the new column
     if(dto.status !== undefined && dto.status !== task.status)
     {
-      task.position = await this.nextPosition(dto.status, ownerId);
+      task.position = await this.nextPosition(dto.status, task.boardId);
     }
 
     this.tasksRepository.merge(task, dto);
     return this.tasksRepository.save(task);
   }
 
-  // Puts a task at `position` in the `status` column and renumbers that column 0, 1, 2...
+  // Puts a task at `position` in the `status` column of ITS board and renumbers that column 0, 1, 2...
   // Runs in a transaction so a half-finished renumbering is never saved.
   async move(id: number, dto: MoveTaskDto, ownerId: number): Promise<Task>
   {
@@ -70,7 +77,7 @@ export class TasksService {
       const oldStatus = task.status;
 
       // The destination column without the moving task, in its current order
-      const column = (await this.columnInOrder(repo, dto.status, ownerId)).filter((t) => t.id !== id);
+      const column = (await this.columnInOrder(repo, dto.status, task.boardId)).filter((t) => t.id !== id);
 
       // Insert at the requested spot (a number past the end means "at the bottom")
       const index = Math.min(dto.position, column.length);
@@ -82,7 +89,7 @@ export class TasksService {
       // Close the gap it left behind in its old column
       if(oldStatus !== dto.status)
       {
-        const oldColumn = await this.columnInOrder(repo, oldStatus, ownerId);
+        const oldColumn = await this.columnInOrder(repo, oldStatus, task.boardId);
         oldColumn.forEach((t, i) => { t.position = i; });
         await repo.save(oldColumn);
       }
@@ -91,19 +98,20 @@ export class TasksService {
     });
   }
 
-  private columnInOrder(repo: Repository<Task>, status: TaskStatus, ownerId: number): Promise<Task[]>
+  // Columns are per board: positions only count between tasks on the same board
+  private columnInOrder(repo: Repository<Task>, status: TaskStatus, boardId: number): Promise<Task[]>
   {
     return repo.find({
-      where: { status, ownerId },
+      where: { status, boardId },
       order: { position: 'ASC', createdAt: 'ASC', id: 'ASC' },
     });
   }
 
   // One past the last position in a column, so a task added there lands at the bottom
-  private async nextPosition(status: TaskStatus, ownerId: number): Promise<number>
+  private async nextPosition(status: TaskStatus, boardId: number): Promise<number>
   {
     const last = await this.tasksRepository.findOne({
-      where: { status, ownerId },
+      where: { status, boardId },
       order: { position: 'DESC' },
     });
     return last ? last.position + 1 : 0;

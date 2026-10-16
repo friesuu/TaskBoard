@@ -3,15 +3,18 @@ import {
   PrimaryGeneratedColumn,
   Column,
   CreateDateColumn,
+  Index,
   JoinColumn,
   ManyToOne,
 } from 'typeorm';
 import { TaskStatus } from './tasks-status.enum';
 import { Field, Int, ObjectType } from '@nestjs/graphql';
 import { User } from '../users/user.entity';
+import { Board } from '../boards/board.entity';
 
 @ObjectType()
 @Entity('tasks')
+@Index(['boardId', 'status', 'position']) // the board loads "this board's tasks, per column, in order" all the time
 export class Task {
   @Field(() => Int)
   @PrimaryGeneratedColumn()
@@ -37,7 +40,7 @@ export class Task {
   @Column({ name: 'due_date', type: 'date', nullable: true })
   dueDate: string | null;
 
-  // Order inside its column: 0 = top. Only compared between tasks with the same status.
+  // Order inside its column: 0 = top. Only compared between tasks on the same board with the same status.
   @Field(() => Int)
   @Column({ type: 'int', default: 0 })
   position: number;
@@ -52,4 +55,14 @@ export class Task {
 
   @Column({ name: 'owner_id', type: 'int', nullable: false })
   ownerId: number;
+
+  // The board the task is on. Deleting a board deletes its tasks.
+  // We keep owner_id too, so every existing "only my tasks" check keeps working unchanged.
+  @ManyToOne(() => Board, { nullable: false, onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'board_id' })
+  board: Board;
+
+  @Field(() => Int)
+  @Column({ name: 'board_id', type: 'int' })
+  boardId: number;
 }

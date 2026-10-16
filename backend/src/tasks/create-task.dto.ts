@@ -6,13 +6,19 @@ import {
   IsEnum,
   Matches,
   IsDateString,
+  IsInt,
 } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { TaskStatus } from './tasks-status.enum';
-import { Field, InputType } from '@nestjs/graphql';
+import { Field, InputType, Int } from '@nestjs/graphql';
 
 @InputType('CreateTaskInput')
 export class CreateTaskDto {
+  // Which board the task goes on (must be one of yours)
+  @Field(() => Int)
+  @IsInt()
+  boardId: number;
+
   @Field()
   @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   @IsString()
@@ -20,9 +26,11 @@ export class CreateTaskDto {
   @MaxLength(100)
   title: string;
 
+  // Shown as "Notes" in the app
   @Field(() => String, {nullable: true})
   @IsOptional()
   @IsString()
+  @MaxLength(10000)
   description?: string;
 
   @Field(() => TaskStatus, { nullable: true })

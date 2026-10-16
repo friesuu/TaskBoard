@@ -7,6 +7,17 @@ type User {
   email: String!
 }
 
+type Board {
+  id: Int!
+  name: String!
+  createdAt: DateTime!
+}
+
+"""
+A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date-time format.
+"""
+scalar DateTime
+
 type Task {
   id: Int!
   title: String!
@@ -15,6 +26,7 @@ type Task {
   dueDate: String
   position: Int!
   createdAt: DateTime!
+  boardId: Int!
 }
 
 enum TaskStatus {
@@ -22,11 +34,6 @@ enum TaskStatus {
   IN_PROGRESS
   DONE
 }
-
-"""
-A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date-time format.
-"""
-scalar DateTime
 
 type ChatMessage {
   id: Int!
@@ -36,8 +43,9 @@ type ChatMessage {
 }
 
 type Query {
-  tasks: [Task!]!
+  tasks(boardId: Int!): [Task!]!
   me: User!
+  boards: [Board!]!
   chatMessages: [ChatMessage!]!
 }
 
@@ -50,11 +58,15 @@ type Mutation {
   login(input: LoginInput!): User!
   logout: Boolean!
   changePassword(input: ChangePasswordInput!): Boolean!
+  createBoard(input: BoardNameInput!): Board!
+  renameBoard(id: Int!, input: BoardNameInput!): Board!
+  deleteBoard(id: Int!): Boolean!
   sendChatMessage(input: SendChatMessageInput!): ChatMessage!
   clearChat: Boolean!
 }
 
 input CreateTaskInput {
+  boardId: Int!
   title: String!
   description: String
   status: TaskStatus
@@ -88,6 +100,11 @@ input ChangePasswordInput {
   newPassword: String!
 }
 
+input BoardNameInput {
+  name: String!
+}
+
 input SendChatMessageInput {
+  boardId: Int!
   message: String!
 }

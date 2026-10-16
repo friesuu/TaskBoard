@@ -896,3 +896,87 @@ body
   border: 1px solid var(--border-ui);
   border-radius: 6px;
 }
+/* ---------- Boards ---------- */
+
+/* Above the columns: the open board's name and its settings button */
+.board-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.board-name {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text-main);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The board list in the menu scrolls on its own if you have many boards */
+.sidebar-boards {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+/* Long board names end in "…" instead of wrapping */
+.board-item span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.danger-zone {
+  margin: 0 1.25rem 1.25rem;
+  padding: 1rem;
+  border: 1px solid var(--status-deleted);
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.danger-zone h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--text-main);
+}
+
+.danger-zone .error-message {
+  margin: 0;
+}
+
+.danger-btn {
+  background-color: transparent;
+  color: var(--tokyo-pink);
+  border: 1px solid var(--status-deleted);
+  border-radius: 5px;
+  padding: 6px 14px;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.danger-btn:hover:not(:disabled) {
+  background-color: var(--overdue-label-bg);
+}
+
+.danger-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* "Working on: <board>" under the Assistant heading */
+.chat-board {
+  margin: 0.15rem 0 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}

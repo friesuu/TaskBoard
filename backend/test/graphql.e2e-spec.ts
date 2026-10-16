@@ -1,12 +1,14 @@
 import { Test } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest'; // default import: no braces
-import { Repository } from 'typeorm';
+import { In, Not, Repository } from 'typeorm';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { AppModule } from '../src/app.module'; // ../ = go up one folder
 import { setupApp } from '../src/app.setup';
 import { Task } from '../src/tasks/task.entity';
 import { User } from '../src/users/user.entity';
+import { Board } from '../src/boards/board.entity';
+import { LlmService } from '../src/chat/llm.service';
 
 // The account every test runs as. Deleted and re-registered at the start of each run.
 const TEST_USER = { email: 'e2e@test.com', password: 'e2e-password' };
@@ -39,8 +41,8 @@ const CHANGE_PASSWORD = `
 
 // Each operation is written once and reused. $name = a variable sent separately.
 const TASKS = `
-  query {
-    tasks { id title status }
+  query Tasks($boardId: Int!) {
+    tasks(boardId: $boardId) { id title status }
   }
 `;
 
@@ -68,18 +70,67 @@ const DELETE_TASK = `
   }
 `;
 
+const BOARDS = `
+  query {
+    boards { id name }
+  }
+`;
+
+const CREATE_BOARD = `
+  mutation CreateBoard($input: BoardNameInput!) {
+    createBoard(input: $input) { id name }
+  }
+`;
+
+const RENAME_BOARD = `
+  mutation RenameBoard($id: Int!, $input: BoardNameInput!) {
+    renameBoard(id: $id, input: $input) { id name }
+  }
+`;
+
+const DELETE_BOARD = `
+  mutation DeleteBoard($id: Int!) {
+    deleteBoard(id: $id)
+  }
+`;
+
+const SEND_CHAT = `
+  mutation SendChat($input: SendChatMessageInput!) {
+    sendChatMessage(input: $input) { role content }
+  }
+`;
+
+// Stands in for Claude in these tests: no API calls, no cost. It remembers what it was given,
+// so the tests can check what the assistant would see and try its tools directly.
+type FakeTool = { name: string; run: (input: Record<string, unknown>) => Promise<string> };
+const fakeLlm = {
+  lastMessages: [] as { role: string; content: string }[],
+  lastTools: [] as FakeTool[],
+  reply(messages: { role: string; content: string }[], tools: FakeTool[] = []) {
+    this.lastMessages = messages;
+    this.lastTools = tools;
+    return Promise.resolve('Fake answer');
+  },
+};
+
 describe('Tasks GraphQL API (e2e)', () => {
   let app: INestApplication; // set in beforeAll, used by every test
   let tasksRepository: Repository<Task>;
   let usersRepository: Repository<User>;
+  let boardsRepository: Repository<Board>;
   let cookie: string[] = []; // TEST_USER's login cookie, sent with every request by gql()
   let otherCookie: string[] = []; // OTHER_USER's login cookie, used by the ownership tests
+  let boardId: number; // TEST_USER's first board (made when registering): most tests use it
+  let otherBoardId: number; // OTHER_USER's first board
 
   // Runs ONCE before all tests: build and start the app, then log both users in
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
       imports: [AppModule],
-    }).compile();
+    })
+      .overrideProvider(LlmService) // the fake above instead of the real Claude
+      .useValue(fakeLlm)
+      .compile();
 
     app = moduleRef.createNestApplication();
     setupApp(app); // same CORS + validation as the real app
@@ -87,9 +138,12 @@ describe('Tasks GraphQL API (e2e)', () => {
 
     tasksRepository = app.get(getRepositoryToken(Task));
     usersRepository = app.get(getRepositoryToken(User));
+    boardsRepository = app.get(getRepositoryToken(Board));
 
     cookie = await registerAndLogIn(TEST_USER);
     otherCookie = await registerAndLogIn(OTHER_USER);
+    boardId = (await gql(BOARDS).expect(200)).body.data.boards[0].id;
+    otherBoardId = (await gqlAsOther(BOARDS).expect(200)).body.data.boards[0].id;
   });
 
   // Runs ONCE after all tests: shut the app down
@@ -97,9 +151,10 @@ describe('Tasks GraphQL API (e2e)', () => {
     await app.close();
   });
 
-  // Runs before EVERY test: start from an empty table
+  // Runs before EVERY test: no tasks, and each user back to just their first board
   beforeEach(async () => {
     await tasksRepository.clear();
+    await boardsRepository.delete({ id: Not(In([boardId, otherBoardId])) });
   });
 
   // Every GraphQL call is POST /graphql with { query, variables }, sent as whoever owns `who`
@@ -138,16 +193,17 @@ describe('Tasks GraphQL API (e2e)', () => {
     return Array.isArray(setCookie) ? setCookie : [setCookie];
   };
 
-  // Setup helper for tests that need an existing task. Fails loudly if creating it fails.
+  // Setup helper for tests that need an existing task (on TEST_USER's first board unless
+  // input.boardId says otherwise). Fails loudly if creating it fails.
   const createTask = async (input: Record<string, unknown>) => {
-    const res = await gql(CREATE_TASK, { input }).expect(200);
+    const res = await gql(CREATE_TASK, { input: { boardId, ...input } }).expect(200);
     expect(res.body.errors).toBeUndefined();
     return res.body.data.createTask;
   };
 
   // Titles of one column, in the order the board would show them
-  const titlesIn = async (status: string) => {
-    const res = await gql(TASKS).expect(200);
+  const titlesIn = async (status: string, onBoard = boardId) => {
+    const res = await gql(TASKS, { boardId: onBoard }).expect(200);
     expect(res.body.errors).toBeUndefined();
     return res.body.data.tasks
       .filter((t: { status: string }) => t.status === status)
@@ -179,10 +235,10 @@ describe('Tasks GraphQL API (e2e)', () => {
 
   describe('login', () => {
     it('blocks task operations without a login cookie', async () => {
-      const read = await gqlLoggedOut(TASKS).expect(200);
+      const read = await gqlLoggedOut(TASKS, { boardId }).expect(200);
       expect(read.body.errors[0].extensions.code).toBe('UNAUTHENTICATED');
 
-      const write = await gqlLoggedOut(CREATE_TASK, { input: { title: 'Sneaky' } }).expect(200);
+      const write = await gqlLoggedOut(CREATE_TASK, { input: { boardId, title: 'Sneaky' } }).expect(200);
       expect(write.body.errors[0].extensions.code).toBe('UNAUTHENTICATED');
       expect(await tasksRepository.count()).toBe(0); // and nothing was saved
     });
@@ -191,7 +247,7 @@ describe('Tasks GraphQL API (e2e)', () => {
       const res = await request(app.getHttpServer())
         .post('/graphql')
         .set('Cookie', 'token=not-a-real-token')
-        .send({ query: TASKS })
+        .send({ query: TASKS, variables: { boardId } })
         .expect(200);
 
       expect(res.body.errors[0].extensions.code).toBe('UNAUTHENTICATED');
@@ -320,7 +376,7 @@ describe('Tasks GraphQL API (e2e)', () => {
     it('does not see my tasks', async () => {
       await createTask({ title: 'Mine' });
 
-      const res = await gqlAsOther(TASKS).expect(200);
+      const res = await gqlAsOther(TASKS, { boardId: otherBoardId }).expect(200);
 
       expect(res.body.errors).toBeUndefined();
       expect(res.body.data.tasks).toEqual([]);
@@ -373,7 +429,7 @@ describe('Tasks GraphQL API (e2e)', () => {
     });
 
     it('does not show their tasks in my list', async () => {
-      await gqlAsOther(CREATE_TASK, { input: { title: 'Theirs' } }).expect(200);
+      await gqlAsOther(CREATE_TASK, { input: { boardId: otherBoardId, title: 'Theirs' } }).expect(200);
 
       expect(await titlesIn('TODO')).toEqual([]);
     });
@@ -381,7 +437,9 @@ describe('Tasks GraphQL API (e2e)', () => {
     it('keeps separate column order for each user', async () => {
       await createTask({ title: 'A' });
       const b = await createTask({ title: 'B' });
-      const theirs = await gqlAsOther(CREATE_TASK, { input: { title: 'Theirs' } }).expect(200);
+      const theirs = await gqlAsOther(CREATE_TASK, {
+        input: { boardId: otherBoardId, title: 'Theirs' },
+      }).expect(200);
       const theirsId = theirs.body.data.createTask.id;
 
       // Their first task is at the top of THEIR column, even though I already have two
@@ -394,10 +452,199 @@ describe('Tasks GraphQL API (e2e)', () => {
     });
   });
 
+  describe('boards', () => {
+    // Setup helper: a new board for TEST_USER. Fails loudly if creating it fails.
+    const createBoard = async (name: string) => {
+      const res = await gql(CREATE_BOARD, { input: { name } }).expect(200);
+      expect(res.body.errors).toBeUndefined();
+      return res.body.data.createBoard as { id: number; name: string };
+    };
+
+    it('a new account starts with one board called "My board"', async () => {
+      const session = await registerAndLogIn({ email: 'e2e-boards@test.com', password: 'e2e-password' });
+
+      const res = await gqlAs(session, BOARDS).expect(200);
+
+      expect(res.body.errors).toBeUndefined();
+      expect(res.body.data.boards.map((b: { name: string }) => b.name)).toEqual(['My board']);
+      await usersRepository.delete({ email: 'e2e-boards@test.com' });
+    });
+
+    it('creates a board (trimmed), listed after the older ones', async () => {
+      await createBoard('  Work  ');
+
+      const res = await gql(BOARDS).expect(200);
+
+      expect(res.body.data.boards.map((b: { name: string }) => b.name)).toEqual(['My board', 'Work']);
+    });
+
+    it('rejects an empty board name', async () => {
+      const res = await gql(CREATE_BOARD, { input: { name: '   ' } }).expect(200);
+
+      expect(res.body.data).toBeNull();
+      expect(res.body.errors[0].extensions.originalError.message).toContain('name should not be empty');
+    });
+
+    it('renames a board', async () => {
+      const work = await createBoard('Work');
+
+      const res = await gql(RENAME_BOARD, { id: work.id, input: { name: 'Office' } }).expect(200);
+
+      expect(res.body.errors).toBeUndefined();
+      expect(res.body.data.renameBoard.name).toBe('Office');
+    });
+
+    it('keeps tasks and column order separate for each board', async () => {
+      const work = await createBoard('Work');
+      await createTask({ title: 'Home 1' });
+      await createTask({ title: 'Home 2' });
+      const w = await createTask({ title: 'Work 1', boardId: work.id });
+
+      expect(await titlesIn('TODO')).toEqual(['Home 1', 'Home 2']);
+      expect(await titlesIn('TODO', work.id)).toEqual(['Work 1']);
+      // The first task on the new board is at the top of ITS column
+      expect((await tasksRepository.findOneByOrFail({ id: w.id })).position).toBe(0);
+    });
+
+    it('moving a task only renumbers its own board', async () => {
+      const work = await createBoard('Work');
+      const home = await createTask({ title: 'Home' });
+      await createTask({ title: 'Work 1', boardId: work.id });
+      const w2 = await createTask({ title: 'Work 2', boardId: work.id });
+
+      await gql(MOVE_TASK, { id: w2.id, input: { status: 'TODO', position: 0 } }).expect(200);
+
+      expect(await titlesIn('TODO', work.id)).toEqual(['Work 2', 'Work 1']);
+      expect(await titlesIn('TODO')).toEqual(['Home']);
+      expect((await tasksRepository.findOneByOrFail({ id: home.id })).position).toBe(0);
+    });
+
+    it('deletes a board and its tasks', async () => {
+      const work = await createBoard('Work');
+      await createTask({ title: 'Work 1', boardId: work.id });
+      await createTask({ title: 'Home' });
+
+      const res = await gql(DELETE_BOARD, { id: work.id }).expect(200);
+
+      expect(res.body.errors).toBeUndefined();
+      expect(res.body.data.deleteBoard).toBe(true);
+      expect(await tasksRepository.countBy({ boardId: work.id })).toBe(0);
+      expect(await titlesIn('TODO')).toEqual(['Home']); // other boards untouched
+    });
+
+    it('refuses to delete your last board', async () => {
+      const res = await gql(DELETE_BOARD, { id: boardId }).expect(200);
+
+      expect(res.body.data).toBeNull();
+      expect(res.body.errors[0].message).toBe("You can't delete your last board");
+    });
+
+    it('needs a board to create a task on', async () => {
+      const res = await gql(CREATE_TASK, { input: { title: 'Nowhere' } }).expect(400);
+
+      expect(res.body.errors[0].extensions.code).toBe('BAD_USER_INPUT');
+    });
+
+    it('rejects a board that does not exist', async () => {
+      const res = await gql(CREATE_TASK, { input: { boardId: 999999, title: 'Nowhere' } }).expect(200);
+
+      expect(res.body.data).toBeNull();
+      expect(res.body.errors[0].message).toBe('Board 999999 not found');
+    });
+
+    it('cannot move a task to another board with updateTask', async () => {
+      const work = await createBoard('Work');
+      const home = await createTask({ title: 'Home' });
+
+      const res = await gql(UPDATE_TASK, { id: home.id, input: { boardId: work.id } }).expect(400);
+
+      expect(res.body.errors[0].extensions.code).toBe('BAD_USER_INPUT');
+    });
+  });
+
+  // Same rule as for tasks: someone else's board looks exactly like one that doesn't exist
+  describe('board ownership (another user)', () => {
+    it('does not list my boards', async () => {
+      const res = await gqlAsOther(BOARDS).expect(200);
+
+      expect(res.body.data.boards.map((b: { id: number }) => b.id)).toEqual([otherBoardId]);
+    });
+
+    it("gets nothing when asking for my board's tasks", async () => {
+      await createTask({ title: 'Mine' });
+
+      const res = await gqlAsOther(TASKS, { boardId }).expect(200);
+
+      expect(res.body.errors).toBeUndefined();
+      expect(res.body.data.tasks).toEqual([]);
+    });
+
+    it('cannot add a task to my board', async () => {
+      const res = await gqlAsOther(CREATE_TASK, { input: { boardId, title: 'Sneaky' } }).expect(200);
+
+      expect(res.body.errors[0].message).toBe(`Board ${boardId} not found`);
+      expect(await titlesIn('TODO')).toEqual([]);
+    });
+
+    it('cannot rename or delete my board', async () => {
+      const rename = await gqlAsOther(RENAME_BOARD, { id: boardId, input: { name: 'Hacked' } }).expect(200);
+      const remove = await gqlAsOther(DELETE_BOARD, { id: boardId }).expect(200);
+
+      expect(rename.body.errors[0].message).toBe(`Board ${boardId} not found`);
+      expect(remove.body.errors[0].message).toBe(`Board ${boardId} not found`);
+      expect((await boardsRepository.findOneByOrFail({ id: boardId })).name).toBe('My board');
+    });
+  });
+
+  // The fake LlmService records what the assistant was given, so no real Claude call is made
+  describe('assistant (chat) stays on the current board', () => {
+    const toolNamed = (name: string) => fakeLlm.lastTools.find((t) => t.name === name)!;
+
+    beforeEach(async () => {
+      await gql(`mutation { clearChat }`).expect(200);
+    });
+
+    it("only shows the assistant the current board's tasks", async () => {
+      const work = (await gql(CREATE_BOARD, { input: { name: 'Work' } }).expect(200)).body.data.createBoard;
+      await createTask({ title: 'Home task' });
+      await createTask({ title: 'Work task', boardId: work.id });
+
+      const res = await gql(SEND_CHAT, { input: { boardId: work.id, message: 'What is on my list?' } }).expect(200);
+
+      expect(res.body.errors).toBeUndefined();
+      const sent = fakeLlm.lastMessages.at(-1)!.content;
+      expect(sent).toContain('Work task');
+      expect(sent).not.toContain('Home task');
+    });
+
+    it("refuses another user's board", async () => {
+      const res = await gqlAsOther(SEND_CHAT, { input: { boardId, message: 'Hi' } }).expect(200);
+
+      expect(res.body.errors[0].message).toBe(`Board ${boardId} not found`);
+    });
+
+    it('its tools create tasks on the current board and cannot touch other boards', async () => {
+      const work = (await gql(CREATE_BOARD, { input: { name: 'Work' } }).expect(200)).body.data.createBoard;
+      const home = await createTask({ title: 'Home task' });
+      await gql(SEND_CHAT, { input: { boardId: work.id, message: 'Hi' } }).expect(200);
+
+      await toolNamed('create_task').run({ title: 'Made by the assistant' });
+      expect(await titlesIn('TODO', work.id)).toEqual(['Made by the assistant']);
+
+      await expect(toolNamed('update_task').run({ id: home.id, title: 'Changed' })).rejects.toThrow(
+        `Task ${home.id} not found on this board`,
+      );
+      await expect(toolNamed('move_task').run({ id: home.id, status: 'done' })).rejects.toThrow(
+        `Task ${home.id} not found on this board`,
+      );
+      expect(await titlesIn('TODO')).toEqual(['Home task']); // unchanged, still in To do
+    });
+  });
+
   describe('createTask', () => {
     it('creates a task and trims it', async () => {
       const res = await gql(CREATE_TASK, {
-        input: { title: '   Buy Milk   ', dueDate: '2026-10-05' },
+        input: { boardId, title: '   Buy Milk   ', dueDate: '2026-10-05' },
       }).expect(200);
 
       expect(res.body.errors).toBeUndefined();
@@ -407,7 +654,7 @@ describe('Tasks GraphQL API (e2e)', () => {
     });
 
     it('rejects an empty title', async () => {
-      const res = await gql(CREATE_TASK, { input: { title: '' } }).expect(200);
+      const res = await gql(CREATE_TASK, { input: { boardId, title: '' } }).expect(200);
 
       expect(res.body.data).toBeNull();
       expect(res.body.errors[0].extensions.originalError.message).toContain(
@@ -416,7 +663,7 @@ describe('Tasks GraphQL API (e2e)', () => {
     });
 
     it('rejects a title of only spaces', async () => {
-      const res = await gql(CREATE_TASK, { input: { title: '   ' } }).expect(200);
+      const res = await gql(CREATE_TASK, { input: { boardId, title: '   ' } }).expect(200);
 
       expect(res.body.data).toBeNull();
       expect(res.body.errors[0].extensions.originalError.message).toContain(
@@ -426,7 +673,7 @@ describe('Tasks GraphQL API (e2e)', () => {
 
     it('rejects an unknown status', async () => {
       const res = await gql(CREATE_TASK, {
-        input: { title: 'x', status: 'DOING' },
+        input: { boardId, title: 'x', status: 'DOING' },
       }).expect(400);
 
       expect(res.body.errors[0].extensions.code).toBe('BAD_USER_INPUT');
@@ -434,7 +681,7 @@ describe('Tasks GraphQL API (e2e)', () => {
 
     it('rejects an impossible date', async () => {
       const res = await gql(CREATE_TASK, {
-        input: { title: 'x', dueDate: '2026-02-30' },
+        input: { boardId, title: 'x', dueDate: '2026-02-30' },
       }).expect(200);
 
       expect(res.body.data).toBeNull();
@@ -443,7 +690,7 @@ describe('Tasks GraphQL API (e2e)', () => {
 
     it('rejects unknown fields', async () => {
       const res = await gql(CREATE_TASK, {
-        input: { title: 'x', priority: 'high' },
+        input: { boardId, title: 'x', priority: 'high' },
       }).expect(400);
 
       expect(res.body.errors[0].extensions.code).toBe('BAD_USER_INPUT');
@@ -453,7 +700,7 @@ describe('Tasks GraphQL API (e2e)', () => {
       await createTask({ title: 'a'.repeat(100) });
 
       const res = await gql(CREATE_TASK, {
-        input: { title: 'a'.repeat(101) },
+        input: { boardId, title: 'a'.repeat(101) },
       }).expect(200);
 
       expect(res.body.data).toBeNull();
@@ -466,7 +713,7 @@ describe('Tasks GraphQL API (e2e)', () => {
       await createTask({ title: 'First' });
       await createTask({ title: 'Second' });
 
-      const res = await gql(TASKS).expect(200);
+      const res = await gql(TASKS, { boardId }).expect(200);
 
       expect(res.body.errors).toBeUndefined();
       expect(res.body.data.tasks.map((t: { title: string }) => t.title)).toEqual([
@@ -478,7 +725,9 @@ describe('Tasks GraphQL API (e2e)', () => {
     it('returns only the fields that were asked for', async () => {
       await createTask({ title: 'Only id please' });
 
-      const res = await gql(`query { tasks { id } }`).expect(200);
+      const res = await gql(`query ($boardId: Int!) { tasks(boardId: $boardId) { id } }`, {
+        boardId,
+      }).expect(200);
 
       expect(res.body.errors).toBeUndefined();
       expect(res.body.data.tasks[0].id).toBeDefined();
@@ -645,7 +894,7 @@ describe('Tasks GraphQL API (e2e)', () => {
       expect(res.body.errors).toBeUndefined();
       expect(res.body.data.deleteTask).toBe(true);
 
-      const after = await gql(TASKS).expect(200);
+      const after = await gql(TASKS, { boardId }).expect(200);
       expect(after.body.data.tasks).toHaveLength(0);
     });
 

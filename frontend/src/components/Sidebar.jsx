@@ -1,10 +1,14 @@
 import { useEffect, useRef } from "react";
-import { BoardIcon, ProfileIcon, PasswordIcon, LogoutIcon, ChatIcon } from "./SidebarIcons";
+import { BoardIcon, ProfileIcon, PasswordIcon, LogoutIcon, ChatIcon, PlusIcon } from "./SidebarIcons";
 
 // The menu that slides in from the LEFT.
 // It only shows buttons; App decides what each one does (the on... props).
 // currentView ('board' or 'profile') tells it which page you're on, so that option can be highlighted.
-function Sidebar({ isOpen, email, currentView, onClose, onBoard, onProfile, onChangePassword, onLogout, onChat })
+// boards + currentBoardId: the list of your boards, and which one is open.
+function Sidebar({
+    isOpen, email, currentView, boards = [], currentBoardId,
+    onClose, onBoard, onProfile, onChangePassword, onLogout, onChat, onSelectBoard, onNewBoard,
+})
 {
     const closeButtonRef = useRef(null);
 
@@ -66,7 +70,29 @@ function Sidebar({ isOpen, email, currentView, onClose, onBoard, onProfile, onCh
                     {pageItem('chat', 'Assistant', <ChatIcon />, onChat)}
                 </nav>
 
-                {/* Group 2: account actions (these open something, they aren't pages) */}
+                {/* Your boards: click one to open it */}
+                <nav className="sidebar-group" aria-label="Boards">
+                    <div className="sidebar-group-title">Boards</div>
+                    <div className="sidebar-boards">
+                        {boards.map((b) => (
+                            <button
+                                key={b.id}
+                                className={b.id === currentBoardId ? 'sidebar-item board-item active' : 'sidebar-item board-item'}
+                                aria-current={b.id === currentBoardId ? 'true' : undefined}
+                                onClick={() => onSelectBoard(b.id)}
+                                title={b.name}
+                            >
+                                <span>{b.name}</span>
+                            </button>
+                        ))}
+                    </div>
+                    <button className="sidebar-item" onClick={onNewBoard}>
+                        <PlusIcon />
+                        <span>New board</span>
+                    </button>
+                </nav>
+
+                {/* Account actions (these open something, they aren't pages) */}
                 <div className="sidebar-group">
                     <div className="sidebar-group-title">Account</div>
                     <button className="sidebar-item" onClick={onChangePassword}>
