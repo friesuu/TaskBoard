@@ -6,6 +6,8 @@ import { User } from '../users/user.entity';
 import { ChatMessage } from './chat-message.entity';
 import { ChatService } from './chat.service';
 import { SendChatMessageDto } from './send-chat-message.dto';
+import { Throttle } from '@nestjs/throttler';
+import { GqlThrottlerGuard } from '../common/gql-throttler.guard';
 
 @UseGuards(GqlAuthGuard) // every chat operation needs a login
 @Resolver(() => ChatMessage)
@@ -17,7 +19,10 @@ export class ChatResolver {
     return this.chatService.history(user.id);
   }
 
+  // Every message costs money (Claude API), so at most 10 per minute per user
   @Mutation(() => ChatMessage)
+  @UseGuards(GqlThrottlerGuard)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   sendChatMessage(@CurrentUser() user: User, @Args('input') input: SendChatMessageDto): Promise<ChatMessage> {
     return this.chatService.send(user.id, input.message);
   }

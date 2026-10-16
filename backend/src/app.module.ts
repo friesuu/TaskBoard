@@ -8,6 +8,10 @@ import { join } from 'path';
 import { AuthModule } from './auth/auth.module';
 import { ChatModule } from './chat/chat.module';
 import type { Request, Response } from 'express';
+import { ThrottlerModule } from '@nestjs/throttler';
+
+// NODE_ENV=production is set on the real server (see the deployment guide); locally it's unset
+const isProduction = process.env.NODE_ENV === 'production';
 
 @Module({
   imports: [
@@ -17,7 +21,19 @@ import type { Request, Response } from 'express';
     GraphQLModule.forRoot<ApolloDriverConfig>({
       context: ({ req, res }: { req: Request; res: Response }) => ({ req, res }),
       driver: ApolloDriver,
-      autoSchemaFile: join(process.cwd(), 'src/schema.gql'),
+      // Locally: write the schema to a file so changes show up in git. In production: keep it in memory.
+      autoSchemaFile: isProduction ? true : join(process.cwd(), 'src/schema.gql'),
+      graphiql: !isProduction, // the in-browser query tool, only while developing
+      introspection: !isProduction, // don't hand strangers a full map of the API
+      includeStacktraceInErrorResponses: !isProduction, // never show file paths in production errors
+    }),
+    // Rate limits. Only operations marked with @UseGuards(GqlThrottlerGuard) are limited.
+    // Default: 5 per minute (login, register, change password); the chat sets its own limit.
+    ThrottlerModule.forRoot({
+      throttlers: [{ name: 'default', ttl: 60_000, limit: 5 }],
+      errorMessage: 'Too many attempts. Please wait a minute and try again.',
+      // The e2e tests log in many times per run; they switch limits off (test/setup-env.ts)
+      skipIf: () => process.env.DISABLE_RATE_LIMIT === 'true',
     }),
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
@@ -30,7 +46,7 @@ import type { Request, Response } from 'express';
         database: config.getOrThrow<string>('DB_NAME'),
         autoLoadEntities: true,
         synchronize: true,
-        logging: true,
+        logging: isProduction ? ['error'] : true, // every SQL query locally; only errors in production
       }),
     }),
     TasksModule,

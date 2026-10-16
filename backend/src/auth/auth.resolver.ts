@@ -8,6 +8,7 @@ import type { Response } from 'express';
 import { UseGuards } from "@nestjs/common";
 import { GqlAuthGuard } from "./gql-auth.guard";
 import { CurrentUser } from "./current-user.decorator";
+import { GqlThrottlerGuard } from "../common/gql-throttler.guard";
 
 // Shared by setting and clearing the cookie: browsers only clear a cookie if the options match
 const COOKIE_OPTIONS = {
@@ -28,13 +29,17 @@ export class AuthResolver
 {
     constructor(private readonly authService: AuthService){}
 
+    // Rate limited (5 per minute per IP address): stops scripts creating accounts in bulk
     @Mutation(() => User)
+    @UseGuards(GqlThrottlerGuard)
     register(@Args('input') input: RegisterDto): Promise<User>
     {
         return this.authService.register(input);
     }
 
+    // Rate limited (5 per minute per IP address): stops password guessing
     @Mutation(() => User)
+    @UseGuards(GqlThrottlerGuard)
     async login(@Args('input') input: LoginDto, @Context() ctx: { res: Response }): Promise<User>
     {
         const { user, token } = await this.authService.login(input);
@@ -57,8 +62,10 @@ export class AuthResolver
     }
 
     // Logged in only (guard). Other devices are logged out; this one gets a fresh cookie and stays in.
+    // Rate limited per user (5 per minute): someone at your unlocked computer can't guess your current password.
+    // GqlAuthGuard runs first, so the limit knows who you are.
     @Mutation(() => Boolean)
-    @UseGuards(GqlAuthGuard)
+    @UseGuards(GqlAuthGuard, GqlThrottlerGuard)
     async changePassword(
         @CurrentUser() user: User,
         @Args('input') input: ChangePasswordDto,

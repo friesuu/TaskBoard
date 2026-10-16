@@ -159,6 +159,24 @@ describe('Tasks GraphQL API (e2e)', () => {
   //   rejected by ValidationPipe  -> HTTP 200, data null, messages in extensions.originalError.message
   //   thrown by the service       -> HTTP 200, data null, message in errors[0].message
 
+  describe('rate limits', () => {
+    // Switched off for the other tests (setup-env.ts); switched on only inside this test
+    beforeEach(() => { process.env.DISABLE_RATE_LIMIT = 'false'; });
+    afterEach(() => { process.env.DISABLE_RATE_LIMIT = 'true'; });
+
+    it('blocks the 6th login attempt within a minute', async () => {
+      const wrong = { input: { email: 'nobody@test.com', password: 'wrong-password' } };
+
+      for (let attempt = 1; attempt <= 5; attempt++) {
+        const res = await gqlLoggedOut(LOGIN, wrong).expect(200);
+        expect(res.body.errors[0].message).toBe('Invalid email or password');
+      }
+
+      const sixth = await gqlLoggedOut(LOGIN, wrong).expect(200);
+      expect(sixth.body.errors[0].message).toBe('Too many attempts. Please wait a minute and try again.');
+    });
+  });
+
   describe('login', () => {
     it('blocks task operations without a login cookie', async () => {
       const read = await gqlLoggedOut(TASKS).expect(200);
