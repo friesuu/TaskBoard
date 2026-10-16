@@ -1,26 +1,146 @@
 import './App.css';
-import { useState, useEffect } from 'react';
-import { getTasks, createTask, updateTask, moveTask, deleteTask } from './api';
+import { useState, useEffect, useCallback } from 'react';
+import { getTasks, createTask, updateTask, moveTask, deleteTask, getCurrentUser, logout, changePassword } from './api';
 import Column from './components/Column';
 import TaskForm from './components/TaskFrom';
+import LoginForm from './components/LoginForm';
+import ChangePasswordForm from './components/ChangePasswordForm';
+import Sidebar from './components/Sidebar';
+import Profile from './components/Profile';
+import MenuIcon from './components/MenuIcon';
 import { STATUSES } from './statuses';
 import { moveInList } from './reorder';
 import { DragDropContext} from '@hello-pangea/dnd';
+import ChatPanel from './components/ChatPanel';
+
+const SESSION_EXPIRED = 'Your session has expired. Please log in again.';
 
 function App()
 {
+  // undefined = still asking the server, null = nobody logged in, object = the logged-in user
+  const [user, setUser] = useState(undefined);
   const [tasks, setTasks] = useState([]);
-  // const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [success, setSuccess] = useState(null); // e.g. "Password changed"
+  const [openModal, setOpenModal] = useState(null); // null = closed, 'add' = Add Task, 'password' = Change password
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [view, setView] = useState('board'); // which page is shown: 'board' or 'profile'
 
-  useEffect(() => {getTasks().then((data) => {setTasks(data)}).catch((err) => {setError(err.message)});
+  // useCallback keeps this the SAME function on every render. Sidebar's Escape-key effect depends on it,
+  // so a new function each render would make that effect stop and restart every time App re-renders.
+  const closeSidebar = useCallback(() => setIsSidebarOpen(false), []);
+
+  // Once, when the page opens: ask the server who is logged in (the cookie is httpOnly, so we can't look ourselves)
+  useEffect(() => {
+    getCurrentUser().then(setUser).catch((err) => setError(err.message));
+  }, [user, view]);
+
+  // Whenever the user changes (e.g. right after logging in): load that user's tasks
+  useEffect(() => {
+    if (!user) return;
+    getTasks().then(setTasks).catch((err) => {
+      if (err.code === 'UNAUTHENTICATED')
+      {
+        setUser(null); // the cookie expired between "me" and loading the tasks
+        setError(SESSION_EXPIRED);
+      }
+      else
+      {
+        setError(err.message);
+      }
+    });
+  }, [user]);
+
+  // Back to the login screen. Also empties the board, so the next person on this computer
+  // never sees the previous user's tasks, not even for a moment.
+  const showLogin = useCallback((message = null) => {
+    setUser(null);
+    setTasks([]);
+    setOpenModal(null);
+    setIsSidebarOpen(false);
+    setView('board'); // the next person to log in starts on the board, not on someone's profile
+    setSuccess(null);
+    setError(message);
   }, []);
 
+  // If a request failed because the login cookie expired (or was removed), go to the login screen.
+  // Returns true when it handled the error, so the caller knows not to show it too.
+  const endedSession = useCallback((err) => {
+    if (err.code !== 'UNAUTHENTICATED') return false;
+    showLogin(SESSION_EXPIRED);
+    return true;
+  }, [showLogin]); // it uses showLogin, so it lists it
+
+  const handleLoggedIn = (loggedInUser) => {
+    setError(null); // clear "session expired" etc.
+    setUser(loggedInUser); // the effect above then loads their tasks
+  };
+
+  const handleLogout = async () => {
+    try{
+      await logout(); // only the server can delete the httpOnly cookie
+      showLogin();
+    }
+    catch(err){
+      setError(`Couldn't log out: ${err.message}`); // the cookie is still there, so don't pretend
+    }
+  };
+
+  // Errors here are shown inside the form, so only an expired session is handled
   const handleCreate = async (data) => {
-    const created = await createTask(data);
-    setTasks((prev) => [...prev, created]);
-    setIsModalOpen(false);
+    try{
+      const created = await createTask(data);
+      setTasks((prev) => [...prev, created]);
+      setOpenModal(null);
+    }
+    catch(err){
+      if (!endedSession(err)) throw err; // the form shows it
+    }
+  };
+
+  // The server logs out every other device and gives THIS one a fresh cookie, so we stay on the board
+  const handleChangePassword = async (currentPassword, newPassword) => {
+    try{
+      await changePassword(currentPassword, newPassword);
+      setOpenModal(null);
+      setSuccess('Password changed. Any other device you were logged in on has been logged out.');
+    }
+    catch(err){
+      if (!endedSession(err)) throw err; // the form shows it, e.g. "Current password is incorrect"
+    }
+  };
+
+  const openForm = (name) => {
+    setSuccess(null);
+    setOpenModal(name);
+  };
+
+  // What each sidebar option does. Every one closes the menu first.
+  const goToBoard = () => {
+    closeSidebar();
+    setView('board');
+  };
+
+  const goToProfile = () => {
+    closeSidebar();
+    setSuccess(null);
+    setView('profile');
+  };
+
+  const goToChat = () => {
+    closeSidebar();
+    setSuccess(null);
+    setView('chat');
+  };
+
+  const changePasswordFromMenu = () => {
+    closeSidebar();
+    openForm('password');
+  };
+
+  const logoutFromMenu = () => {
+    closeSidebar(); // so a "Couldn't log out" error isn't hidden behind the menu
+    handleLogout();
   };
 
   // Optimistic: move the card on screen first, then save. If the save fails, undo.
@@ -35,6 +155,7 @@ function App()
       setTasks((prev) => prev.map((b) => (b.id === id ? moved : b)));
     }
     catch(err){
+      if (endedSession(err)) return;
       setError(err.message);
       try{
         setTasks(await getTasks()); // the server knows the real order
@@ -57,14 +178,18 @@ function App()
       setTasks((prev) => prev.filter((b) => b.id !== id));
     }
     catch(err){
-      setError(err.message)
+      if (!endedSession(err)) setError(err.message);
     }
   }
 
   const handleEdit = async (id, changes) => {
-    const updated = await updateTask(id, changes);
-
-    setTasks((prev) => prev.map((b) => (b.id === id? updated : b)));
+    try{
+      const updated = await updateTask(id, changes);
+      setTasks((prev) => prev.map((b) => (b.id === id? updated : b)));
+    }
+    catch(err){
+      if (!endedSession(err)) throw err; // the edit form shows it
+    }
   }
 
   const handleDragEnd = ({ source, destination, draggableId }) => {
@@ -74,70 +199,110 @@ function App()
     handleMove(Number(draggableId), destination.droppableId, destination.index);
   }
 
+  // Choose the screen. These come after all the hooks above: React needs the same hooks on every render.
+  if (user === undefined)
+  {
+    // Still waiting for "me". If that failed (server down...), show why instead of loading forever.
+    return <main className="container">{error ? <p className="error-message">{error}</p> : <p>Loading…</p>}</main>;
+  }
+  if (user === null)
+  {
+    return <LoginForm onLoggedIn={handleLoggedIn} notice={error} />;
+  }
+
   return(
     <main className="container">
       <header className="header">
-        <h1 className='header-title'>
-          Task Board
-        </h1>
-        <button className="add-task-btn" onClick={() => setIsModalOpen(true)}>
-          + Add Task
-        </button>
+        {/* Menu button on the LEFT, next to the title, because the menu now slides in from the left */}
+        <div className="header-left">
+          {/* aria-expanded tells screen readers whether the menu is open */}
+          <button
+            className="menu-btn"
+            onClick={() => setIsSidebarOpen(true)}
+            aria-label="Open menu"
+            aria-expanded={isSidebarOpen}
+            aria-controls="app-menu"
+          >
+            <MenuIcon />
+          </button>
+          <h1 className='header-title'>
+            Task Board
+          </h1>
+        </div>
+        <div className="header-user">
+          {view === 'board' && (
+            <button className="add-task-btn" onClick={() => openForm('add')}>
+              + Add Task
+            </button>
+          )}
+        </div>
       </header>
 
+      <Sidebar
+        isOpen={isSidebarOpen}
+        email={user.email}
+        currentView={view}
+        onClose={closeSidebar}
+        onBoard={goToBoard}
+        onProfile={goToProfile}
+        onChat={goToChat}
+        onChangePassword={changePasswordFromMenu}
+        onLogout={logoutFromMenu}
+      />
+
       {error && <p className="error-message">{error}</p>}
+      {success && <p className="success-message">{success}</p>}
 
-      {/* <TaskForm onCreate={handleCreate} /> */}
-
-      {isModalOpen && (
-        <div className="modal-backdrop" onClick={() => setIsModalOpen(false)}>
+      {/* One modal; openModal decides which form is inside it */}
+      {openModal && (
+        <div className="modal-backdrop" onClick={() => setOpenModal(null)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <header className="modal-header">
-              <h2>Add New Task</h2>
-              <button 
-                className="close-btn" 
-                onClick={() => setIsModalOpen(false)}
+              <h2>{openModal === 'add' ? 'Add New Task' : 'Change Password'}</h2>
+              <button
+                className="close-btn"
+                onClick={() => setOpenModal(null)}
               >
                 ✕
               </button>
             </header>
-            
-            <TaskForm onCreate={handleCreate} />
+
+            {openModal === 'add'
+              ? <TaskForm onCreate={handleCreate} />
+              : <ChangePasswordForm email={user.email} onChangePassword={handleChangePassword} />}
           </div>
         </div>
       )}
 
-      <DragDropContext onDragEnd={handleDragEnd}>
-        <div className="board">
-        {STATUSES.map((s) => (
-          <Column 
-          key={s.value}
-          title={s.label}
-          tasks={tasks.filter((t) => t.status === s.value)}
-          onStatusChange={handleStatusChange}
-          onDelete={handleDelete}
-          onEdit={handleEdit}
-          status={s.value}
-          />
-        
-        ))}
-        {/* <Column 
-        title="To do" 
-        status="todo"
-        tasks={tasks.filter((t) => t.status === 'todo')}
+      {/* "view" picks the page. Both use the same tasks, so the profile's numbers are always up to date. */}
+      {view === 'chat' && <ChatPanel onSessionEnded={endedSession} />}
+
+      {view === 'profile' && (
+        <Profile
+          user={user}
+          tasks={tasks}
+          onBack={() => setView('board')}
+          onChangePassword={() => openForm('password')}
         />
-        <Column 
-        title="In Progress" 
-        status="in_progress"
-        tasks={tasks.filter((t) => t.status === 'in_progress')}
-        />
-        <Column 
-        title="Done" 
-        status="done"
-        tasks={tasks.filter((t) => t.status === 'done')}
-        /> */}
-        </div>
-      </DragDropContext>
+      )}
+
+      {view === 'board' && (
+        <DragDropContext onDragEnd={handleDragEnd}>
+          <div className="board">
+          {STATUSES.map((s) => (
+            <Column
+            key={s.value}
+            title={s.label}
+            tasks={tasks.filter((t) => t.status === s.value)}
+            onStatusChange={handleStatusChange}
+            onDelete={handleDelete}
+            onEdit={handleEdit}
+            status={s.value}
+            />
+          ))}
+          </div>
+        </DragDropContext>
+      )}
       
     </main>
   );

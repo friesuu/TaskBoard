@@ -1,5 +1,6 @@
 const GRAPHQL_URL = 'http://localhost:3000/graphql';
 const TASK_FIELDS = 'id title description status dueDate';
+const CHAT_FIELDS = 'id role content createdAt';
 
 // Validation errors keep their real messages in originalError (as an array);
 // other errors have a readable message directly.
@@ -28,7 +29,9 @@ async function graphqlRequest(query, variables) {
   // GraphQL often answers 200 even when it fails, so check errors, not response.ok
   if (body.errors)
   {
-    throw new Error(getErrorMessage(body.errors[0]));
+    const err = new Error(getErrorMessage(body.errors[0]));
+    err.code = body.errors[0].extensions?.code; // e.g. 'UNAUTHENTICATED', so callers can tell "not logged in" from other errors
+    throw err;
   }
   return body.data;
 }
@@ -80,4 +83,85 @@ export async function deleteTask(id)
         }`,
         { id },
     );
+}
+
+// The logged-in user, or null if nobody is logged in. Any other error (server down...) is thrown.
+export async function getCurrentUser()
+{
+    try
+    {
+        const data = await graphqlRequest('query { me { id email } }');
+        return data.me;
+    }
+    catch (err)
+    {
+        if (err.code === 'UNAUTHENTICATED') return null; // simply not logged in
+        throw err; // a real problem: let it show
+    }
+}
+
+// The server sets the httpOnly login cookie; we only get the user back
+export async function login(email, password)
+{
+    const data = await graphqlRequest(
+        `mutation Login($input: LoginInput!) {
+            login(input: $input) { id email }
+        }`,
+        { input: { email, password } },
+    );
+    return data.login;
+}
+
+// Creates the account only. Call login() afterwards to actually log in.
+export async function register(email, password)
+{
+    const data = await graphqlRequest(
+        `mutation Register($input: RegisterInput!) {
+            register(input: $input) { id email }
+        }`,
+        { input: { email, password } },
+    );
+    return data.register;
+}
+
+// Needs the current password too. The server sends back a fresh login cookie, so you stay logged in here,
+// while every other device is logged out.
+export async function changePassword(currentPassword, newPassword)
+{
+    await graphqlRequest(
+        `mutation ChangePassword($input: ChangePasswordInput!) {
+            changePassword(input: $input)
+        }`,
+        { input: { currentPassword, newPassword } },
+    );
+}
+
+// The server deletes the cookie (JavaScript can't, because it's httpOnly)
+export async function logout()
+{
+    await graphqlRequest('mutation { logout }');
+}
+
+// The saved conversation, oldest first
+export async function getChatMessages()
+{
+    const data = await graphqlRequest(`query { chatMessages { ${CHAT_FIELDS} } }`);
+    return data.chatMessages;
+}
+
+// Sends one message, returns Claude's answer
+export async function sendChatMessage(message)
+{
+    const data = await graphqlRequest(
+        `mutation SendChatMessage($input: SendChatMessageInput!) {
+            sendChatMessage(input: $input) { ${CHAT_FIELDS} }
+        }`,
+        { input: { message } },
+    );
+    return data.sendChatMessage;
+}
+
+export async function clearChat()
+{
+    await graphqlRequest('mutation { clearChat }');
 }
