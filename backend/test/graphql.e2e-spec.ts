@@ -31,6 +31,12 @@ const ME = `
   }
 `;
 
+const CHANGE_PASSWORD = `
+  mutation ChangePassword($input: ChangePasswordInput!) {
+    changePassword(input: $input)
+  }
+`;
+
 // Each operation is written once and reused. $name = a variable sent separately.
 const TASKS = `
   query {
@@ -116,9 +122,19 @@ describe('Tasks GraphQL API (e2e)', () => {
   const registerAndLogIn = async (user: { email: string; password: string }) => {
     await usersRepository.delete({ email: user.email });
     await gqlLoggedOut(REGISTER, { input: user }).expect(200);
+    return logIn(user);
+  };
+
+  // Log in and return the login cookie. Fails loudly here if logging in is broken.
+  const logIn = async (user: { email: string; password: string }) => {
     const login = await gqlLoggedOut(LOGIN, { input: user }).expect(200);
     expect(login.body.errors).toBeUndefined();
-    const setCookie = login.headers['set-cookie']; // typed as one string, but can be a list
+    return cookieFrom(login);
+  };
+
+  // The cookie a response sets (supertest types it as one string, but it can be a list)
+  const cookieFrom = (res: { headers: Record<string, unknown> }): string[] => {
+    const setCookie = res.headers['set-cookie'] as string | string[];
     return Array.isArray(setCookie) ? setCookie : [setCookie];
   };
 
@@ -190,6 +206,93 @@ describe('Tasks GraphQL API (e2e)', () => {
 
       expect(res.body.errors).toBeUndefined();
       expect(res.body.data.logout).toBe(true);
+    });
+  });
+
+  // Each test gets its own fresh account, because changing TEST_USER's password
+  // would log out the cookie every other test uses.
+  describe('changePassword', () => {
+    const PW_USER = { email: 'e2e-password@test.com', password: 'old-password-1' };
+    const NEW_PASSWORD = 'new-password-2';
+
+    it('requires being logged in', async () => {
+      const res = await gqlLoggedOut(CHANGE_PASSWORD, {
+        input: { currentPassword: 'x', newPassword: NEW_PASSWORD },
+      }).expect(200);
+
+      expect(res.body.errors[0].extensions.code).toBe('UNAUTHENTICATED');
+    });
+
+    it('changes the password: the old one stops working, the new one works', async () => {
+      const session = await registerAndLogIn(PW_USER);
+
+      const res = await gqlAs(session, CHANGE_PASSWORD, {
+        input: { currentPassword: PW_USER.password, newPassword: NEW_PASSWORD },
+      }).expect(200);
+      expect(res.body.errors).toBeUndefined();
+      expect(res.body.data.changePassword).toBe(true);
+
+      const withOld = await gqlLoggedOut(LOGIN, { input: PW_USER }).expect(200);
+      expect(withOld.body.errors[0].message).toBe('Invalid email or password');
+
+      await logIn({ email: PW_USER.email, password: NEW_PASSWORD }); // fails loudly if it doesn't work
+    });
+
+    it('rejects a wrong current password, and does not log you out', async () => {
+      const session = await registerAndLogIn(PW_USER);
+
+      const res = await gqlAs(session, CHANGE_PASSWORD, {
+        input: { currentPassword: 'not-my-password', newPassword: NEW_PASSWORD },
+      }).expect(200);
+
+      expect(res.body.errors[0].message).toBe('Current password is incorrect');
+      // BAD_REQUEST, not UNAUTHENTICATED: the frontend logs you out on UNAUTHENTICATED
+      expect(res.body.errors[0].extensions.code).toBe('BAD_REQUEST');
+      await logIn(PW_USER); // the old password still works
+    });
+
+    it('rejects a new password that is too short', async () => {
+      const session = await registerAndLogIn(PW_USER);
+
+      const res = await gqlAs(session, CHANGE_PASSWORD, {
+        input: { currentPassword: PW_USER.password, newPassword: 'short' },
+      }).expect(200);
+
+      expect(res.body.errors[0].extensions.originalError.message).toContain(
+        'newPassword must be longer than or equal to 8 characters',
+      );
+    });
+
+    it('rejects a new password that is the same as the current one', async () => {
+      const session = await registerAndLogIn(PW_USER);
+
+      const res = await gqlAs(session, CHANGE_PASSWORD, {
+        input: { currentPassword: PW_USER.password, newPassword: PW_USER.password },
+      }).expect(200);
+
+      expect(res.body.errors[0].message).toBe('New password must be different from the current one');
+    });
+
+    it('logs out every other session, but keeps this one logged in', async () => {
+      const laptop = await registerAndLogIn(PW_USER); // two devices logged in
+      const phone = await logIn(PW_USER);
+
+      const res = await gqlAs(laptop, CHANGE_PASSWORD, {
+        input: { currentPassword: PW_USER.password, newPassword: NEW_PASSWORD },
+      }).expect(200);
+      const laptopNewCookie = cookieFrom(res);
+
+      // The phone's token was made before the change: it no longer works
+      const onPhone = await gqlAs(phone, ME).expect(200);
+      expect(onPhone.body.errors[0].extensions.code).toBe('UNAUTHENTICATED');
+
+      // The laptop's OLD cookie doesn't work either (a stolen copy would be useless now)...
+      const oldLaptop = await gqlAs(laptop, ME).expect(200);
+      expect(oldLaptop.body.errors[0].extensions.code).toBe('UNAUTHENTICATED');
+
+      // ...but the fresh cookie it just received does
+      const newLaptop = await gqlAs(laptopNewCookie, ME).expect(200);
+      expect(newLaptop.body.data.me.email).toBe(PW_USER.email);
     });
   });
 

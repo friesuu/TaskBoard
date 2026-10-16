@@ -1,7 +1,7 @@
 import { CanActivate, ExecutionContext, Injectable } from "@nestjs/common";
 import { AuthService } from "./auth.service";
 import { GqlExecutionContext } from "@nestjs/graphql";
-import type { Request, Response } from 'express';
+import type { Request } from 'express';
 import { User } from "../users/user.entity";
 
 @Injectable()
