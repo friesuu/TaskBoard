@@ -31,11 +31,14 @@ function App()
   const closeSidebar = useCallback(() => setIsSidebarOpen(false), []);
 
   // Once, when the page opens: ask the server who is logged in (the cookie is httpOnly, so we can't look ourselves)
+  // [] = only once. Never list `user` here: every answer is a new object, so the effect would
+  // run again, ask again, get another new object... an endless stream of requests.
   useEffect(() => {
     getCurrentUser().then(setUser).catch((err) => setError(err.message));
-  }, [user, view]);
+  }, []);
 
-  // Whenever the user changes (e.g. right after logging in): load that user's tasks
+  // Whenever the user changes (e.g. right after logging in), or you switch pages: load that user's tasks.
+  // Switching pages reloads them so changes made by the assistant show up on the board.
   useEffect(() => {
     if (!user) return;
     getTasks().then(setTasks).catch((err) => {
@@ -49,7 +52,7 @@ function App()
         setError(err.message);
       }
     });
-  }, [user]);
+  }, [user, view]);
 
   // Back to the login screen. Also empties the board, so the next person on this computer
   // never sees the previous user's tasks, not even for a moment.
