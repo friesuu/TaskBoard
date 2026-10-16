@@ -9,6 +9,7 @@ import { AuthModule } from './auth/auth.module';
 import { ChatModule } from './chat/chat.module';
 import type { Request, Response } from 'express';
 import { ThrottlerModule } from '@nestjs/throttler';
+import { migrations } from './migrations';
 
 // NODE_ENV=production is set on the real server (see the deployment guide); locally it's unset
 const isProduction = process.env.NODE_ENV === 'production';
@@ -45,7 +46,11 @@ const isProduction = process.env.NODE_ENV === 'production';
         password: config.getOrThrow<string>('DB_PASSWORD'),
         database: config.getOrThrow<string>('DB_NAME'),
         autoLoadEntities: true,
-        synchronize: true,
+        // Tables are changed only by migrations (src/migrations), never automatically:
+        // synchronize could drop a column, and its data, when an entity changes.
+        synchronize: false,
+        migrations,
+        migrationsRun: true, // on startup, apply any migration this database hasn't had yet
         logging: isProduction ? ['error'] : true, // every SQL query locally; only errors in production
       }),
     }),
