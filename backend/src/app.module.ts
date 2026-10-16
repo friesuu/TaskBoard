@@ -6,6 +6,7 @@ import { GraphQLModule } from '@nestjs/graphql';
 import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
 import { join } from 'path';
 import { AuthModule } from './auth/auth.module';
+import { ChatModule } from './chat/chat.module';
 import type { Request, Response } from 'express';
 
 @Module({
@@ -33,7 +34,8 @@ import type { Request, Response } from 'express';
       }),
     }),
     TasksModule,
-    AuthModule
+    AuthModule,
+    ChatModule
   ],
 })
 export class AppModule {}

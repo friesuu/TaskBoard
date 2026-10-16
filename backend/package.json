@@ -21,6 +21,7 @@
     "test:e2e": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --config ./test/jest-e2e.json --runInBand"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.134.0",
     "@apollo/server": "^5.5.1",
     "@as-integrations/express5": "^1.1.2",
     "@nestjs/apollo": "^14.0.3",
@@ -39,7 +40,8 @@
     "pg": "^8.23.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
-    "typeorm": "^1.1.1"
+    "typeorm": "^1.1.1",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@nestjs/cli": "^12.0.0",
