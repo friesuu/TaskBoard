@@ -102,6 +102,14 @@
   min-height: 400px;
   box-shadow: var(--shadow-md);
   transition: background-color 0.15s ease, border-color 0.15s ease;
+  display: flex;
+  flex-direction: column;
+}
+
+/* The drop area under the column title. flex: 1 stretches it to the bottom of the column,
+   so a card can still be dropped anywhere below the title. */
+.task-list {
+  flex: 1;
 }
 
 .column.drag-over {

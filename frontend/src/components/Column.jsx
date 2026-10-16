@@ -6,23 +6,26 @@ function Column({status, title, tasks, onStatusChange, onDelete, onEdit})
     return(
         <Droppable droppableId={status}>
             {(provided, snapshot) => (
-                <section 
-                className={snapshot.isDraggingOver ? 'column drag-over' : 'column'}
-                ref={provided.innerRef}
-                {...provided.droppableProps}>
+                <section className={snapshot.isDraggingOver ? 'column drag-over' : 'column'}>
                     <h2>
                         {title}
                     </h2>
-                    
-                    {tasks.length === 0 ? (
-                        <p className="empty-message">No tasks</p>
-                    ) : (
-                        tasks.map((task, index) => (
-                        <TaskCard key={task.id} task={task} index={index} onStatusChange={onStatusChange} onDelete={onDelete} onEdit={onEdit}/>
-                        ))
-                    )}
 
-                    {provided.placeholder}
+                    {/* The drop area is this list, NOT the whole column. In an empty column the library
+                        aims a dropped card at the top of the drop area; if the title were inside it,
+                        the card would fly onto the title before jumping into place. */}
+                    <div className="task-list" ref={provided.innerRef} {...provided.droppableProps}>
+                        {/* Hidden while a card hovers, so the card lands where the message was */}
+                        {tasks.length === 0 && !snapshot.isDraggingOver && (
+                            <p className="empty-message">No tasks</p>
+                        )}
+
+                        {tasks.map((task, index) => (
+                            <TaskCard key={task.id} task={task} index={index} onStatusChange={onStatusChange} onDelete={onDelete} onEdit={onEdit}/>
+                        ))}
+
+                        {provided.placeholder}
+                    </div>
                 </section>
             )}
         </Droppable>
