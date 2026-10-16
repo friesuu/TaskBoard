@@ -18,6 +18,7 @@ import ChatPanel from './components/ChatPanel';
 import BoardNameForm from './components/BoardNameForm';
 import BoardSettings from './components/BoardSettings';
 import { getUrlParam, setUrlParam } from './url';
+import TaskDetails from './components/TaskDetails';
 
 const SESSION_EXPIRED = 'Your session has expired. Please log in again.';
 
@@ -41,8 +42,10 @@ function App()
   const [view, setView] = useState('board'); // which page is shown: 'board', 'profile' or 'chat'
   const [boards, setBoards] = useState([]);
   const [boardId, setBoardId] = useState(null); // the open board; null until the boards have loaded
+  const [openTaskId, setOpenTaskId] = useState(null); // which task's panel is open (null = none)
 
   const currentBoard = boards.find((b) => b.id === boardId);
+  const openTask = tasks.find((t) => t.id === openTaskId);
 
   // useCallback keeps this the SAME function on every render. Sidebar's Escape-key effect depends on it,
   // so a new function each render would make that effect stop and restart every time App re-renders.
@@ -297,6 +300,11 @@ function App()
     }
   }
 
+  // The checklist in the details panel changed: update the "2/5" on that task's card (no server call needed)
+  const handleChecklistProgress = (id, checklistDone, checklistTotal) => {
+    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, checklistDone, checklistTotal } : t)));
+  };
+
   const handleDragEnd = ({ source, destination, draggableId }) => {
     if (!destination) return; // dropped outside a column, or Esc pressed
     if (destination.droppableId === source.droppableId && destination.index === source.index) return; // dropped where it was
@@ -393,6 +401,17 @@ function App()
         </div>
       )}
 
+      {openTask && (
+        <TaskDetails
+          task={openTask}
+          currentUserId={user.id}
+          onSave={handleEdit}
+          onChecklistProgress={handleChecklistProgress}
+          onSessionEnded={endedSession}
+          onClose={() => setOpenTaskId(null)}
+        />
+      )}
+
       {/* "view" picks the page. Both use the same tasks, so the profile's numbers are always up to date. */}
       {view === 'chat' && (
         <ChatPanel boardId={boardId} boardName={currentBoard?.name} onSessionEnded={endedSession} />
@@ -427,7 +446,7 @@ function App()
             tasks={tasks.filter((t) => t.status === s.value)}
             onStatusChange={handleStatusChange}
             onDelete={handleDelete}
-            onEdit={handleEdit}
+            onOpen={setOpenTaskId}
             status={s.value}
             />
           ))}

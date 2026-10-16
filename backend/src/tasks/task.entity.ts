@@ -6,6 +6,7 @@ import {
   Index,
   JoinColumn,
   ManyToOne,
+  VirtualColumn,
 } from 'typeorm';
 import { TaskStatus } from './tasks-status.enum';
 import { Field, Int, ObjectType } from '@nestjs/graphql';
@@ -65,4 +66,20 @@ export class Task {
   @Field(() => Int)
   @Column({ name: 'board_id', type: 'int' })
   boardId: number;
+
+  // Checklist progress for the card ("2/5"). Not stored: the database counts it in the same query
+  // that loads the task, so showing the board stays one query however many tasks there are.
+  @Field(() => Int)
+  @VirtualColumn({
+    type: 'int',
+    query: (alias) => `SELECT COUNT(*)::int FROM "checklist_items" WHERE "task_id" = ${alias}.id`,
+  })
+  checklistTotal: number;
+
+  @Field(() => Int)
+  @VirtualColumn({
+    type: 'int',
+    query: (alias) => `SELECT COUNT(*)::int FROM "checklist_items" WHERE "task_id" = ${alias}.id AND "done"`,
+  })
+  checklistDone: number;
 }

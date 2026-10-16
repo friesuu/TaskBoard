@@ -1,7 +1,7 @@
 import TaskCard from './TaskCard.jsx';
 import { Droppable } from '@hello-pangea/dnd';
 
-function Column({status, title, tasks, onStatusChange, onDelete, onEdit})
+function Column({status, title, tasks, onStatusChange, onDelete, onOpen})
 {
     return(
         <Droppable droppableId={status}>
@@ -21,7 +21,7 @@ function Column({status, title, tasks, onStatusChange, onDelete, onEdit})
                         )}
 
                         {tasks.map((task, index) => (
-                            <TaskCard key={task.id} task={task} index={index} onStatusChange={onStatusChange} onDelete={onDelete} onEdit={onEdit}/>
+                            <TaskCard key={task.id} task={task} index={index} onStatusChange={onStatusChange} onDelete={onDelete} onOpen={onOpen}/>
                         ))}
 
                         {provided.placeholder}

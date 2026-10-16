@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from './App';
-import { getCurrentUser, getTasks, logout, getBoards, createBoard } from './api';
+import { getCurrentUser, getTasks, logout, getBoards, createBoard, getChecklist, getComments } from './api';
 
 vi.mock('./api'); // the whole backend is faked: each test decides what the "server" answers
 
@@ -24,6 +24,8 @@ describe('App', () => {
     vi.mocked(logout).mockReset().mockResolvedValue(undefined);
     vi.mocked(getBoards).mockReset().mockResolvedValue(boards);
     vi.mocked(createBoard).mockReset();
+    vi.mocked(getChecklist).mockReset().mockResolvedValue([]);
+    vi.mocked(getComments).mockReset().mockResolvedValue([]);
     window.history.replaceState(null, '', '/'); // every test starts without ?board=
   });
 
@@ -161,6 +163,20 @@ describe('App', () => {
 
     await screen.findByRole('heading', { name: 'Log in' });
     expect(window.location.search).toBe(''); // the next person starts on their own first board
+  });
+
+  it("opens a task's details from its card, and closes them again", async () => {
+    vi.mocked(getCurrentUser).mockResolvedValue(user);
+    render(<App />);
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Write report' }));
+
+    expect(screen.getByRole('dialog', { name: 'Write report' })).toBeInTheDocument();
+    expect(getChecklist).toHaveBeenCalledWith(1);
+    expect(getComments).toHaveBeenCalledWith(1);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Close task' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
   it('shows the error instead of loading forever when the server is down', async () => {

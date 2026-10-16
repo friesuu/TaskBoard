@@ -100,6 +100,67 @@ const SEND_CHAT = `
   }
 `;
 
+const CHECKLIST = `
+  query Checklist($taskId: Int!) {
+    checklistItems(taskId: $taskId) { id text done position }
+  }
+`;
+
+const ADD_ITEM = `
+  mutation AddItem($taskId: Int!, $input: ChecklistItemInput!) {
+    addChecklistItem(taskId: $taskId, input: $input) { id text done position }
+  }
+`;
+
+const UPDATE_ITEM = `
+  mutation UpdateItem($id: Int!, $input: UpdateChecklistItemInput!) {
+    updateChecklistItem(id: $id, input: $input) { id text done }
+  }
+`;
+
+const MOVE_ITEM = `
+  mutation MoveItem($id: Int!, $position: Int!) {
+    moveChecklistItem(id: $id, position: $position) { id text position }
+  }
+`;
+
+const DELETE_ITEM = `
+  mutation DeleteItem($id: Int!) {
+    deleteChecklistItem(id: $id)
+  }
+`;
+
+// The card's "2/5"
+const TASK_PROGRESS = `
+  query Progress($boardId: Int!) {
+    tasks(boardId: $boardId) { id checklistDone checklistTotal }
+  }
+`;
+
+const COMMENTS = `
+  query Comments($taskId: Int!) {
+    comments(taskId: $taskId) { id body createdAt updatedAt author { email } }
+  }
+`;
+
+const ADD_COMMENT = `
+  mutation AddComment($taskId: Int!, $input: CommentInput!) {
+    addComment(taskId: $taskId, input: $input) { id body createdAt updatedAt author { email } }
+  }
+`;
+
+const UPDATE_COMMENT = `
+  mutation UpdateComment($id: Int!, $input: CommentInput!) {
+    updateComment(id: $id, input: $input) { id body createdAt updatedAt }
+  }
+`;
+
+const DELETE_COMMENT = `
+  mutation DeleteComment($id: Int!) {
+    deleteComment(id: $id)
+  }
+`;
+
 // Stands in for Claude in these tests: no API calls, no cost. It remembers what it was given,
 // so the tests can check what the assistant would see and try its tools directly.
 type FakeTool = { name: string; run: (input: Record<string, unknown>) => Promise<string> };
@@ -153,7 +214,8 @@ describe('Tasks GraphQL API (e2e)', () => {
 
   // Runs before EVERY test: no tasks, and each user back to just their first board
   beforeEach(async () => {
-    await tasksRepository.clear();
+    // CASCADE: also empties the tables that point at tasks (checklist items, comments)
+    await tasksRepository.query('TRUNCATE "tasks" CASCADE');
     await boardsRepository.delete({ id: Not(In([boardId, otherBoardId])) });
   });
 
@@ -638,6 +700,219 @@ describe('Tasks GraphQL API (e2e)', () => {
         `Task ${home.id} not found on this board`,
       );
       expect(await titlesIn('TODO')).toEqual(['Home task']); // unchanged, still in To do
+    });
+  });
+
+  describe('checklist', () => {
+    // Setup helper: adds an item to a task and returns it. Fails loudly if adding fails.
+    const addItem = async (taskId: number, text: string) => {
+      const res = await gql(ADD_ITEM, { taskId, input: { text } }).expect(200);
+      expect(res.body.errors).toBeUndefined();
+      return res.body.data.addChecklistItem as { id: number; text: string; done: boolean };
+    };
+
+    const itemTexts = async (taskId: number) =>
+      (await gql(CHECKLIST, { taskId }).expect(200)).body.data.checklistItems.map((i: { text: string }) => i.text);
+
+    const progressOf = async (taskId: number) => {
+      const res = await gql(TASK_PROGRESS, { boardId }).expect(200);
+      const task = res.body.data.tasks.find((t: { id: number }) => t.id === taskId);
+      return `${task.checklistDone}/${task.checklistTotal}`;
+    };
+
+    it('adds items (trimmed) at the bottom, unticked', async () => {
+      const task = await createTask({ title: 'Plan party' });
+
+      const first = await addItem(task.id, '  Book the room  ');
+      await addItem(task.id, 'Order cake');
+
+      expect(first).toMatchObject({ text: 'Book the room', done: false });
+      expect(await itemTexts(task.id)).toEqual(['Book the room', 'Order cake']);
+    });
+
+    it('a new task has an empty checklist (0/0)', async () => {
+      const res = await gql(
+        `mutation ($input: CreateTaskInput!) { createTask(input: $input) { checklistDone checklistTotal } }`,
+        { input: { boardId, title: 'Fresh' } },
+      ).expect(200);
+
+      expect(res.body.data.createTask).toEqual({ checklistDone: 0, checklistTotal: 0 });
+    });
+
+    it('ticking an item updates the progress on the card', async () => {
+      const task = await createTask({ title: 'Plan party' });
+      const room = await addItem(task.id, 'Book the room');
+      await addItem(task.id, 'Order cake');
+      expect(await progressOf(task.id)).toBe('0/2');
+
+      const res = await gql(UPDATE_ITEM, { id: room.id, input: { done: true } }).expect(200);
+
+      expect(res.body.data.updateChecklistItem).toMatchObject({ text: 'Book the room', done: true });
+      expect(await progressOf(task.id)).toBe('1/2');
+    });
+
+    it('renames an item', async () => {
+      const task = await createTask({ title: 'Plan party' });
+      const item = await addItem(task.id, 'Order cake');
+
+      await gql(UPDATE_ITEM, { id: item.id, input: { text: 'Order a big cake' } }).expect(200);
+
+      expect(await itemTexts(task.id)).toEqual(['Order a big cake']);
+    });
+
+    it('reorders items', async () => {
+      const task = await createTask({ title: 'Plan party' });
+      await addItem(task.id, 'A');
+      await addItem(task.id, 'B');
+      const c = await addItem(task.id, 'C');
+
+      const res = await gql(MOVE_ITEM, { id: c.id, position: 0 }).expect(200);
+
+      expect(res.body.errors).toBeUndefined();
+      expect(await itemTexts(task.id)).toEqual(['C', 'A', 'B']);
+    });
+
+    it('deletes an item', async () => {
+      const task = await createTask({ title: 'Plan party' });
+      const a = await addItem(task.id, 'A');
+      await addItem(task.id, 'B');
+
+      const res = await gql(DELETE_ITEM, { id: a.id }).expect(200);
+
+      expect(res.body.data.deleteChecklistItem).toBe(true);
+      expect(await itemTexts(task.id)).toEqual(['B']);
+      expect(await progressOf(task.id)).toBe('0/1');
+    });
+
+    it('rejects empty text and text over 200 characters', async () => {
+      const task = await createTask({ title: 'Plan party' });
+
+      const empty = await gql(ADD_ITEM, { taskId: task.id, input: { text: '   ' } }).expect(200);
+      const long = await gql(ADD_ITEM, { taskId: task.id, input: { text: 'a'.repeat(201) } }).expect(200);
+
+      expect(empty.body.errors[0].extensions.originalError.message).toContain('text should not be empty');
+      expect(long.body.errors[0].extensions.code).toBe('BAD_REQUEST');
+      expect(await itemTexts(task.id)).toEqual([]);
+    });
+
+    it('goes when its task is deleted', async () => {
+      const task = await createTask({ title: 'Plan party' });
+      await addItem(task.id, 'A');
+
+      await gql(DELETE_TASK, { id: task.id }).expect(200);
+
+      const res = await gql(CHECKLIST, { taskId: task.id }).expect(200);
+      expect(res.body.errors[0].message).toBe(`Task ${task.id} not found`);
+    });
+
+    it("another user can't see or change my checklist", async () => {
+      const task = await createTask({ title: 'Mine' });
+      const item = await addItem(task.id, 'Secret step');
+
+      const read = await gqlAsOther(CHECKLIST, { taskId: task.id }).expect(200);
+      const add = await gqlAsOther(ADD_ITEM, { taskId: task.id, input: { text: 'Sneaky' } }).expect(200);
+      const tick = await gqlAsOther(UPDATE_ITEM, { id: item.id, input: { done: true } }).expect(200);
+      const move = await gqlAsOther(MOVE_ITEM, { id: item.id, position: 0 }).expect(200);
+      const remove = await gqlAsOther(DELETE_ITEM, { id: item.id }).expect(200);
+
+      expect(read.body.errors[0].message).toBe(`Task ${task.id} not found`);
+      expect(add.body.errors[0].message).toBe(`Task ${task.id} not found`);
+      expect(tick.body.errors[0].message).toBe(`Checklist item ${item.id} not found`);
+      expect(move.body.errors[0].message).toBe(`Checklist item ${item.id} not found`);
+      expect(remove.body.errors[0].message).toBe(`Checklist item ${item.id} not found`);
+      expect(await itemTexts(task.id)).toEqual(['Secret step']);
+      expect(await progressOf(task.id)).toBe('0/1'); // still unticked
+    });
+  });
+
+  describe('comments', () => {
+    const addComment = async (taskId: number, body: string, as = cookie) => {
+      const res = await gqlAs(as, ADD_COMMENT, { taskId, input: { body } }).expect(200);
+      expect(res.body.errors).toBeUndefined();
+      return res.body.data.addComment as { id: number; body: string; createdAt: string; updatedAt: string };
+    };
+
+    it('adds a comment with its author and time', async () => {
+      const task = await createTask({ title: 'Write report' });
+
+      const comment = await addComment(task.id, '  Started on the intro  ');
+
+      expect(comment.body).toBe('Started on the intro');
+      expect(comment).toMatchObject({ author: { email: TEST_USER.email } });
+      expect(new Date(comment.createdAt).getTime()).not.toBeNaN();
+      expect(comment.updatedAt).toBe(comment.createdAt); // not edited yet
+    });
+
+    it('lists comments oldest first (newest at the bottom)', async () => {
+      const task = await createTask({ title: 'Write report' });
+      await addComment(task.id, 'First');
+      await addComment(task.id, 'Second');
+
+      const res = await gql(COMMENTS, { taskId: task.id }).expect(200);
+
+      expect(res.body.data.comments.map((c: { body: string }) => c.body)).toEqual(['First', 'Second']);
+    });
+
+    it('edits your own comment and marks it as edited', async () => {
+      const task = await createTask({ title: 'Write report' });
+      const comment = await addComment(task.id, 'Typo hree');
+
+      const res = await gql(UPDATE_COMMENT, { id: comment.id, input: { body: 'Typo here' } }).expect(200);
+
+      expect(res.body.errors).toBeUndefined();
+      expect(res.body.data.updateComment.body).toBe('Typo here');
+      expect(new Date(res.body.data.updateComment.updatedAt).getTime()).toBeGreaterThan(
+        new Date(comment.createdAt).getTime(),
+      );
+    });
+
+    it('deletes your own comment', async () => {
+      const task = await createTask({ title: 'Write report' });
+      const comment = await addComment(task.id, 'Never mind');
+
+      const res = await gql(DELETE_COMMENT, { id: comment.id }).expect(200);
+
+      expect(res.body.data.deleteComment).toBe(true);
+      expect((await gql(COMMENTS, { taskId: task.id }).expect(200)).body.data.comments).toEqual([]);
+    });
+
+    it('rejects an empty comment and one over 2000 characters', async () => {
+      const task = await createTask({ title: 'Write report' });
+
+      const empty = await gql(ADD_COMMENT, { taskId: task.id, input: { body: '  ' } }).expect(200);
+      const long = await gql(ADD_COMMENT, { taskId: task.id, input: { body: 'a'.repeat(2001) } }).expect(200);
+
+      expect(empty.body.errors[0].extensions.originalError.message).toContain('body should not be empty');
+      expect(long.body.errors[0].extensions.code).toBe('BAD_REQUEST');
+    });
+
+    it("another user can't read, add to, edit or delete my comments", async () => {
+      const task = await createTask({ title: 'Mine' });
+      const comment = await addComment(task.id, 'Private note');
+
+      const read = await gqlAsOther(COMMENTS, { taskId: task.id }).expect(200);
+      const add = await gqlAsOther(ADD_COMMENT, { taskId: task.id, input: { body: 'Sneaky' } }).expect(200);
+      const edit = await gqlAsOther(UPDATE_COMMENT, { id: comment.id, input: { body: 'Hacked' } }).expect(200);
+      const remove = await gqlAsOther(DELETE_COMMENT, { id: comment.id }).expect(200);
+
+      expect(read.body.errors[0].message).toBe(`Task ${task.id} not found`);
+      expect(add.body.errors[0].message).toBe(`Task ${task.id} not found`);
+      expect(edit.body.errors[0].message).toBe(`Comment ${comment.id} not found`);
+      expect(remove.body.errors[0].message).toBe(`Comment ${comment.id} not found`);
+      const mine = (await gql(COMMENTS, { taskId: task.id }).expect(200)).body.data.comments;
+      expect(mine.map((c: { body: string }) => c.body)).toEqual(['Private note']);
+    });
+  });
+
+  describe('notes (description)', () => {
+    it('accepts 10,000 characters, rejects 10,001', async () => {
+      await createTask({ title: 'Long notes', description: 'a'.repeat(10000) });
+
+      const res = await gql(CREATE_TASK, {
+        input: { boardId, title: 'Too long', description: 'a'.repeat(10001) },
+      }).expect(200);
+
+      expect(res.body.errors[0].extensions.code).toBe('BAD_REQUEST');
     });
   });
 

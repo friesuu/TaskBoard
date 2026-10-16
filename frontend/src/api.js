@@ -1,7 +1,10 @@
 const GRAPHQL_URL = 'http://localhost:3000/graphql';
-const TASK_FIELDS = 'id title description status dueDate';
+// checklistDone / checklistTotal = the "2/5" on the card
+const TASK_FIELDS = 'id title description status dueDate checklistDone checklistTotal';
 const CHAT_FIELDS = 'id role content createdAt';
 const BOARD_FIELDS = 'id name';
+const ITEM_FIELDS = 'id text done position';
+const COMMENT_FIELDS = 'id body createdAt updatedAt author { id email }';
 
 // Validation errors keep their real messages in originalError (as an array);
 // other errors have a readable message directly.
@@ -211,4 +214,111 @@ export async function sendChatMessage(boardId, message)
 export async function clearChat()
 {
     await graphqlRequest('mutation { clearChat }');
+}
+
+// ----- Checklist (inside a task) -----
+
+// The task's checklist, top to bottom
+export async function getChecklist(taskId)
+{
+    const data = await graphqlRequest(
+        `query Checklist($taskId: Int!) {
+            checklistItems(taskId: $taskId) { ${ITEM_FIELDS} }
+        }`,
+        { taskId },
+    );
+    return data.checklistItems;
+}
+
+// Adds an item at the bottom
+export async function addChecklistItem(taskId, text)
+{
+    const data = await graphqlRequest(
+        `mutation AddChecklistItem($taskId: Int!, $input: ChecklistItemInput!) {
+            addChecklistItem(taskId: $taskId, input: $input) { ${ITEM_FIELDS} }
+        }`,
+        { taskId, input: { text } },
+    );
+    return data.addChecklistItem;
+}
+
+// changes = { done: true } to tick, { text: '...' } to rename
+export async function updateChecklistItem(id, changes)
+{
+    const data = await graphqlRequest(
+        `mutation UpdateChecklistItem($id: Int!, $input: UpdateChecklistItemInput!) {
+            updateChecklistItem(id: $id, input: $input) { ${ITEM_FIELDS} }
+        }`,
+        { id, input: changes },
+    );
+    return data.updateChecklistItem;
+}
+
+// Returns the whole checklist in its new order
+export async function moveChecklistItem(id, position)
+{
+    const data = await graphqlRequest(
+        `mutation MoveChecklistItem($id: Int!, $position: Int!) {
+            moveChecklistItem(id: $id, position: $position) { ${ITEM_FIELDS} }
+        }`,
+        { id, position },
+    );
+    return data.moveChecklistItem;
+}
+
+export async function deleteChecklistItem(id)
+{
+    await graphqlRequest(
+        `mutation DeleteChecklistItem($id: Int!) {
+            deleteChecklistItem(id: $id)
+        }`,
+        { id },
+    );
+}
+
+// ----- Comments (inside a task) -----
+
+// Oldest first, each with its author
+export async function getComments(taskId)
+{
+    const data = await graphqlRequest(
+        `query Comments($taskId: Int!) {
+            comments(taskId: $taskId) { ${COMMENT_FIELDS} }
+        }`,
+        { taskId },
+    );
+    return data.comments;
+}
+
+export async function addComment(taskId, body)
+{
+    const data = await graphqlRequest(
+        `mutation AddComment($taskId: Int!, $input: CommentInput!) {
+            addComment(taskId: $taskId, input: $input) { ${COMMENT_FIELDS} }
+        }`,
+        { taskId, input: { body } },
+    );
+    return data.addComment;
+}
+
+// Only works on your own comments
+export async function updateComment(id, body)
+{
+    const data = await graphqlRequest(
+        `mutation UpdateComment($id: Int!, $input: CommentInput!) {
+            updateComment(id: $id, input: $input) { ${COMMENT_FIELDS} }
+        }`,
+        { id, input: { body } },
+    );
+    return data.updateComment;
+}
+
+export async function deleteComment(id)
+{
+    await graphqlRequest(
+        `mutation DeleteComment($id: Int!) {
+            deleteComment(id: $id)
+        }`,
+        { id },
+    );
 }

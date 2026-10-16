@@ -11,6 +11,8 @@ import { BoardsModule } from './boards/boards.module';
 import type { Request, Response } from 'express';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { migrations } from './migrations';
+import { ChecklistModule } from './checklist/checklist.module';
+import { CommentsModule } from './comments/comments.module';
 
 // NODE_ENV=production is set on the real server (see the deployment guide); locally it's unset
 const isProduction = process.env.NODE_ENV === 'production';
@@ -59,6 +61,8 @@ const isProduction = process.env.NODE_ENV === 'production';
     AuthModule,
     ChatModule,
     BoardsModule,
+    ChecklistModule,
+    CommentsModule
   ],
 })
 export class AppModule {}

@@ -43,11 +43,13 @@ function TaskForm({ onCreate }) {
       </div>
 
       <div className="field">
-        <label htmlFor="description">Description</label>
+        <label htmlFor="description">Notes</label>
         <textarea
           id="description"
           value={description}
           onChange={(e) => setDescription(e.target.value)}
+          maxLength={10000}
+          rows={6}
         />
       </div>
 

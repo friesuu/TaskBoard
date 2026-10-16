@@ -38,11 +38,13 @@ function TaskEditForm({ task, onSave, onCancel }) {
       </div>
 
       <div className="field">
-        <label htmlFor={`edit-description-${task.id}`}>Description</label>
+        <label htmlFor={`edit-description-${task.id}`}>Notes</label>
         <textarea
           id={`edit-description-${task.id}`}
           value={description}
           onChange={(e) => setDescription(e.target.value)}
+          maxLength={10000}
+          rows={6}
         />
       </div>
 

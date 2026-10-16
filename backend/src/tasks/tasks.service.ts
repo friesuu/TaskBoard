@@ -40,7 +40,8 @@ export class TasksService {
     const task = this.tasksRepository.create(dto);
     task.position = await this.nextPosition(task.status ?? TaskStatus.TODO, dto.boardId);
     task.ownerId = ownerId;
-    return this.tasksRepository.save(task);
+    const saved = await this.tasksRepository.save(task);
+    return this.findOwned(saved.id, ownerId); // loaded again so it comes back with its checklist counts (0/0)
   }
 
   async update(id: number, dto: UpdateTaskDto, ownerId: number): Promise<Task>

@@ -27,6 +27,8 @@ type Task {
   position: Int!
   createdAt: DateTime!
   boardId: Int!
+  checklistTotal: Int!
+  checklistDone: Int!
 }
 
 enum TaskStatus {
@@ -42,11 +44,30 @@ type ChatMessage {
   createdAt: DateTime!
 }
 
+type ChecklistItem {
+  id: Int!
+  text: String!
+  done: Boolean!
+  position: Int!
+  taskId: Int!
+}
+
+type Comment {
+  id: Int!
+  body: String!
+  createdAt: DateTime!
+  updatedAt: DateTime!
+  taskId: Int!
+  author: User!
+}
+
 type Query {
   tasks(boardId: Int!): [Task!]!
   me: User!
   boards: [Board!]!
   chatMessages: [ChatMessage!]!
+  checklistItems(taskId: Int!): [ChecklistItem!]!
+  comments(taskId: Int!): [Comment!]!
 }
 
 type Mutation {
@@ -63,6 +84,13 @@ type Mutation {
   deleteBoard(id: Int!): Boolean!
   sendChatMessage(input: SendChatMessageInput!): ChatMessage!
   clearChat: Boolean!
+  addChecklistItem(taskId: Int!, input: ChecklistItemInput!): ChecklistItem!
+  updateChecklistItem(id: Int!, input: UpdateChecklistItemInput!): ChecklistItem!
+  moveChecklistItem(id: Int!, position: Int!): [ChecklistItem!]!
+  deleteChecklistItem(id: Int!): Boolean!
+  addComment(taskId: Int!, input: CommentInput!): Comment!
+  updateComment(id: Int!, input: CommentInput!): Comment!
+  deleteComment(id: Int!): Boolean!
 }
 
 input CreateTaskInput {
@@ -107,4 +135,17 @@ input BoardNameInput {
 input SendChatMessageInput {
   boardId: Int!
   message: String!
+}
+
+input ChecklistItemInput {
+  text: String!
+}
+
+input UpdateChecklistItemInput {
+  text: String
+  done: Boolean
+}
+
+input CommentInput {
+  body: String!
 }
