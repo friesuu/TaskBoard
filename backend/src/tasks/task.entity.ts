@@ -86,6 +86,14 @@ export class Task {
   })
   checklistDone: number;
 
+  // How many files are attached (the 📎 count on the card), counted the same way
+  @Field(() => Int)
+  @VirtualColumn({
+    type: 'int',
+    query: (alias) => `SELECT COUNT(*)::int FROM "attachments" WHERE "task_id" = ${alias}.id`,
+  })
+  attachmentCount: number;
+
   // The task's labels. The link lives in a separate "task_labels" table (one row per task + label);
   // deleting a task or a label removes its rows there.
   @Field(() => [Label])

@@ -1034,3 +1034,128 @@
   color: var(--muted);
   font-size: var(--fs-small);
 }
+
+/* ---------- Checklist and files opened on a card ---------- */
+
+/* ☑ 2/5 and 📎 3: small outlined buttons; the chevron turns when the section is open */
+.quick-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: var(--calendar-chip);
+  padding: 0 var(--space-2);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  color: var(--text-pill);
+  font-size: var(--fs-pill);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: background-color var(--ease), border-color var(--ease);
+}
+
+.quick-toggle:hover {
+  background-color: var(--hover);
+  border-color: var(--border-strong);
+}
+
+.quick-toggle svg:first-child {
+  color: var(--info);
+}
+
+/* A finished checklist: mint icon */
+.quick-toggle.complete svg:first-child {
+  color: var(--success);
+}
+
+.quick-toggle svg:last-child {
+  color: var(--muted);
+  transition: transform var(--ease);
+}
+
+.quick-toggle[aria-expanded="true"] {
+  background-color: var(--selected-bg);
+  border-color: var(--accent);
+}
+
+.quick-toggle[aria-expanded="true"] svg:last-child {
+  transform: rotate(180deg);
+}
+
+/* The opened section: a sunken well inside the card */
+.task-quick-panel {
+  padding: var(--space-2);
+  background-color: var(--sunken);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-check);
+}
+
+.checklist-compact,
+.attachments-compact {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* The compact lists aren't .list containers, so remove the browser's own list indent and bullets */
+.checklist-compact .checklist-items,
+.attachments-compact .attachment-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Smaller rows than in the panel, so a card doesn't grow too much */
+.checklist-compact .checklist-item {
+  padding: 0 var(--space-1);
+}
+
+.checklist-compact .checklist-item label {
+  min-height: var(--avatar-sm);
+  font-size: var(--fs-small);
+}
+
+.checklist-compact .inline-add input {
+  min-height: var(--avatar-sm);
+  font-size: var(--fs-small);
+}
+
+.checklist-compact .inline-add .btn,
+.attachments-compact .btn {
+  min-height: var(--avatar-sm);
+  padding: 0 var(--space-3);
+  font-size: var(--fs-small);
+}
+
+.attachments-compact .details-section-header {
+  justify-content: flex-end;
+}
+
+.attachments-compact .attachment {
+  padding: var(--space-1);
+  min-height: var(--avatar-sm);
+}
+
+.attachments-compact .attachment-icon {
+  display: none; /* room is tight on a card: the name and size are enough */
+}
+
+.attachments-compact .attachment-name {
+  font-size: var(--fs-small);
+}
+
+.attachments-compact .icon-btn {
+  width: var(--avatar-sm);
+  height: var(--avatar-sm);
+}
+
+.checklist-compact .details-empty,
+.attachments-compact .details-empty {
+  padding: 0 var(--space-1);
+}
+
+.checklist-compact .error-message,
+.attachments-compact .error-message {
+  font-size: var(--fs-small);
+}

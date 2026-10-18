@@ -16,9 +16,10 @@ import Attachments from './Attachments';
 //   onClose()                                -> App closes the panel
 //   boardLabels                              -> the board's labels, to choose from
 //   onTaskChanged(updatedTask)               -> App puts the task's new labels on its card
+//   onAttachmentCount(taskId, count)         -> App updates the 📎 count on the card
 function TaskDetails({
     task, currentUserId, onSave, onChecklistProgress, onSessionEnded, onClose,
-    boardLabels = [], onTaskChanged,
+    boardLabels = [], onTaskChanged, onAttachmentCount = () => {},
 })
 {
     const [isEditing, setIsEditing] = useState(false);
@@ -95,7 +96,11 @@ function TaskDetails({
                         onSessionEnded={onSessionEnded}
                     />
 
-                    <Attachments taskId={task.id} onSessionEnded={onSessionEnded} />
+                    <Attachments
+                        taskId={task.id}
+                        onSessionEnded={onSessionEnded}
+                        onCountChange={(count) => onAttachmentCount(task.id, count)}
+                    />
                    
                     <Comments taskId={task.id} currentUserId={currentUserId} onSessionEnded={onSessionEnded} />
                 </div>

@@ -48,6 +48,7 @@ type Task {
   boardId: Int!
   checklistTotal: Int!
   checklistDone: Int!
+  attachmentCount: Int!
   labels: [Label!]!
 }
 

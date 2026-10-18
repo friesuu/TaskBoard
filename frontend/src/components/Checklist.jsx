@@ -6,7 +6,8 @@ import { ArrowUpIcon, ArrowDownIcon } from './Icons';
 // The checklist inside the task details panel: add, tick, reorder (↑ ↓) and delete items.
 // It loads and saves its own data. After every change it calls onProgress(done, total)
 // so App can update the "2/5" on the card without asking the server again.
-function Checklist({ taskId, onProgress, onSessionEnded })
+// compact: the smaller version that opens on a card (tick and add only; no heading, no reorder or delete).
+function Checklist({ taskId, onProgress, onSessionEnded, compact = false })
 {
     const [items, setItems] = useState(null); // null = still loading
     const [draft, setDraft] = useState('');
@@ -99,13 +100,15 @@ function Checklist({ taskId, onProgress, onSessionEnded })
     const doneCount = items ? items.filter((i) => i.done).length : 0;
 
     return(
-        <section className="details-section" aria-label="Checklist">
-            <div className="details-section-header">
-                <h3 className="details-heading">Checklist</h3>
-                {items?.length > 0 && <span className="pill pill-count">{doneCount}/{items.length}</span>}
-            </div>
+        <section className={compact ? 'checklist-compact' : 'details-section'} aria-label="Checklist">
+            {!compact && (
+                <div className="details-section-header">
+                    <h3 className="details-heading">Checklist</h3>
+                    {items?.length > 0 && <span className="pill pill-count">{doneCount}/{items.length}</span>}
+                </div>
+            )}
 
-            {items?.length > 0 && (
+            {!compact && items?.length > 0 && (
                 <div
                     className="progress-bar"
                     role="progressbar"
@@ -123,7 +126,7 @@ function Checklist({ taskId, onProgress, onSessionEnded })
             {items === null ? (
                 !error && <p className="details-empty">Loading…</p>
             ) : (
-                items.length > 0 && <ul className="list checklist-items">
+                items.length > 0 && <ul className={compact ? 'checklist-items' : 'list checklist-items'}>
                     {items.map((item, index) => (
                         <li key={item.id} className={item.done ? 'checklist-item done' : 'checklist-item'}>
                             {/* The label wraps the box, so clicking the text ticks it too */}
@@ -131,7 +134,7 @@ function Checklist({ taskId, onProgress, onSessionEnded })
                                 <input type="checkbox" checked={item.done} onChange={() => handleToggle(item)} />
                                 <span>{item.text}</span>
                             </label>
-                            <div className="checklist-actions">
+                            {!compact && <div className="checklist-actions">
                                 <button
                                     className="icon-btn"
                                     aria-label={`Move "${item.text}" up`}
@@ -149,7 +152,7 @@ function Checklist({ taskId, onProgress, onSessionEnded })
                                     aria-label={`Delete "${item.text}"`}
                                     onClick={() => handleDelete(item)}
                                 ><TrashIcon /></button>
-                            </div>
+                            </div>}
                         </li>
                     ))}
                 </ul>

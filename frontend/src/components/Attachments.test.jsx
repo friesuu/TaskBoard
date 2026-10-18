@@ -10,8 +10,8 @@ const saved = [
   { id: 1, fileName: 'plan.pdf', mimeType: 'application/pdf', size: 14540, taskId: 5 },
 ];
 
-function renderFiles(onSessionEnded = vi.fn(() => false)) {
-  render(<Attachments taskId={5} onSessionEnded={onSessionEnded} />);
+function renderFiles(onSessionEnded = vi.fn(() => false), onCountChange = vi.fn()) {
+  render(<Attachments taskId={5} onSessionEnded={onSessionEnded} onCountChange={onCountChange} />);
   return onSessionEnded;
 }
 
@@ -73,6 +73,20 @@ describe('Attachments', () => {
     await userEvent.upload(screen.getByLabelText('Choose a file to attach'), new File(['x'], 'fake.png'));
 
     expect(await screen.findByText("The file's contents don't match its .png extension")).toBeInTheDocument();
+  });
+
+  it('tells App the new number of files after an upload and a delete', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    vi.mocked(uploadAttachment).mockResolvedValue({ id: 2, fileName: 'photo.png', mimeType: 'image/png', size: 9, taskId: 5 });
+    const onCountChange = vi.fn();
+    renderFiles(vi.fn(() => false), onCountChange);
+    await screen.findByText('plan.pdf');
+
+    await userEvent.upload(screen.getByLabelText('Choose a file to attach'), new File(['png'], 'photo.png'));
+    expect(onCountChange).toHaveBeenLastCalledWith(2);
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Delete "plan.pdf"' }));
+    expect(onCountChange).toHaveBeenLastCalledWith(1);
   });
 
   it('deletes a file after you confirm', async () => {

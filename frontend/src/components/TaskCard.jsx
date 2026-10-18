@@ -1,21 +1,47 @@
+import { useState } from "react";
 import { STATUSES } from "../statuses";
 import TrashIcon from "./TrashIcon";
-import { CalendarIcon } from "./Icons";
+import { CalendarIcon, ChecklistIcon, ChevronDownIcon, PaperclipIcon } from "./Icons";
 import LabelPill from "./LabelPill";
+import Checklist from "./Checklist";
+import Attachments from "./Attachments";
 import { isOverdue } from "../dates";
 import { Draggable } from "@hello-pangea/dnd";
 
-// One card on the board. Clicking the title (or Open) asks App to open the task details panel,
-// where the task is edited; the card itself only shows a summary.
-// dragDisabled: true while filters are on (a position among SOME of the column's cards isn't the real one)
-function TaskCard({ index, task, onStatusChange, onDelete, onOpen, dragDisabled = false })
+// One card on the board. Clicking the title (or Open) asks App to open the task details panel.
+// The checklist and the files can also be opened right on the card (the ☑ and 📎 buttons):
+// tick items, add one, download or attach a file. Everything else is edited in the panel.
+//   dragDisabled: true while filters are on (a position among SOME of the column's cards isn't the real one)
+//   onChecklistProgress(taskId, done, total) / onAttachmentCount(taskId, count): App updates the counts
+//   onSessionEnded(err): an expired login goes back to the login screen
+function TaskCard({
+    index, task, onStatusChange, onDelete, onOpen, dragDisabled = false,
+    onChecklistProgress = () => {}, onAttachmentCount = () => {}, onSessionEnded = () => false,
+})
 {
+    const [openSection, setOpenSection] = useState(null); // 'checklist', 'files' or null (both folded away)
+    const toggle = (name) => setOpenSection(openSection === name ? null : name);
+
     const overdue = isOverdue(task);
     let className = 'task-card';
     if (overdue) className += ' overdue';
 
-    const hasChecklist = task.checklistTotal > 0;
-    const checklistComplete = hasChecklist && task.checklistDone === task.checklistTotal;
+    const done = task.checklistDone ?? 0;
+    const total = task.checklistTotal ?? 0;
+    const files = task.attachmentCount ?? 0;
+
+    // A button that opens / folds one section on the card
+    const quickToggle = (name, label, content, extraClass = '') => (
+        <button
+            className={`quick-toggle ${extraClass}`}
+            aria-expanded={openSection === name}
+            aria-label={label}
+            onClick={() => toggle(name)}
+        >
+            {content}
+            <ChevronDownIcon size={14} />
+        </button>
+    );
 
     return(
         <Draggable draggableId={String(task.id)} index={index} isDragDisabled={dragDisabled}>
@@ -42,25 +68,42 @@ function TaskCard({ index, task, onStatusChange, onDelete, onOpen, dragDisabled 
                     </p>
                 )}
 
-                {/* Only when there's a badge: an empty row would still add a gap */}
-                {(overdue || hasChecklist) && (
-                    <div className="task-badges">
-                        {/* Pills: the coloured dot adds meaning, the text carries it */}
-                        {overdue && (
-                            <span className="pill">
-                                <span className="dot dot-danger" aria-hidden="true" />
-                                Overdue
-                            </span>
-                        )}
-                        {hasChecklist && (
-                            <span
-                                className="pill"
-                                aria-label={`Checklist: ${task.checklistDone} of ${task.checklistTotal} done`}
-                            >
-                                <span className={checklistComplete ? 'dot dot-success' : 'dot dot-info'} aria-hidden="true" />
-                                {task.checklistDone}/{task.checklistTotal}
-                            </span>
-                        )}
+                <div className="task-badges">
+                    {/* Pill: the coloured dot adds meaning, the text carries it */}
+                    {overdue && (
+                        <span className="pill">
+                            <span className="dot dot-danger" aria-hidden="true" />
+                            Overdue
+                        </span>
+                    )}
+                    {quickToggle(
+                        'checklist',
+                        `Checklist, ${done} of ${total} done`,
+                        <><ChecklistIcon size={14} />{done}/{total}</>,
+                        total > 0 && done === total ? 'complete' : '',
+                    )}
+                    {quickToggle('files', `Files, ${files}`, <><PaperclipIcon size={14} />{files}</>)}
+                </div>
+
+                {/* The opened section: the same Checklist / Attachments as the panel, in their compact form */}
+                {openSection === 'checklist' && (
+                    <div className="task-quick-panel">
+                        <Checklist
+                            compact
+                            taskId={task.id}
+                            onProgress={(d, t) => onChecklistProgress(task.id, d, t)}
+                            onSessionEnded={onSessionEnded}
+                        />
+                    </div>
+                )}
+                {openSection === 'files' && (
+                    <div className="task-quick-panel">
+                        <Attachments
+                            compact
+                            taskId={task.id}
+                            onCountChange={(count) => onAttachmentCount(task.id, count)}
+                            onSessionEnded={onSessionEnded}
+                        />
                     </div>
                 )}
 

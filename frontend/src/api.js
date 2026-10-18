@@ -2,7 +2,8 @@ const GRAPHQL_URL = 'http://localhost:3000/graphql';
 // The backend itself (for file upload and download, which aren't GraphQL): the GraphQL address without /graphql
 const API_ORIGIN = GRAPHQL_URL.replace(/\/graphql$/, '');
 // checklistDone / checklistTotal = the "2/5" on the card
-const TASK_FIELDS = 'id title description status dueDate checklistDone checklistTotal labels { id name color }';
+const TASK_FIELDS =
+    'id title description status dueDate checklistDone checklistTotal attachmentCount labels { id name color }';
 const CHAT_FIELDS = 'id role content createdAt';
 const BOARD_FIELDS = 'id name';
 const ITEM_FIELDS = 'id text done position';

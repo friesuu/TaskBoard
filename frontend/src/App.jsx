@@ -413,6 +413,11 @@ function App()
     setTasks((prev) => prev.map((t) => (t.id === updated.id ? { ...t, ...updated } : t)));
   };
 
+  // A file was attached or deleted (on the card or in the panel): update the 📎 count on the card
+  const handleAttachmentCount = (id, attachmentCount) => {
+    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, attachmentCount } : t)));
+  };
+
   // The checklist in the details panel changed: update the "2/5" on that task's card (no server call needed)
   const handleChecklistProgress = (id, checklistDone, checklistTotal) => {
     setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, checklistDone, checklistTotal } : t)));
@@ -529,6 +534,9 @@ function App()
                 onOpen={setOpenTaskId}
                 status={s.value}
                 dragDisabled={filtersActive}
+                onChecklistProgress={handleChecklistProgress}
+                onAttachmentCount={handleAttachmentCount}
+                onSessionEnded={endedSession}
                 />
               ))}
               </div>
@@ -602,6 +610,7 @@ function App()
           onClose={() => setOpenTaskId(null)}
           boardLabels={labels}
           onTaskChanged={handleTaskChanged}
+          onAttachmentCount={handleAttachmentCount}
         />
       )}
     </div>

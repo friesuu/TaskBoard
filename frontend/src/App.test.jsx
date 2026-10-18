@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import App from './App';
 import {
   getCurrentUser, getTasks, logout, getBoards, createBoard, getChecklist, getComments, getLabels, setTaskLabels,
-  setTimeZone, getAttachments,
+  setTimeZone, getAttachments, updateChecklistItem,
 } from './api';
 
 vi.mock('./api'); // the whole backend is faked: each test decides what the "server" answers
@@ -280,6 +280,19 @@ describe('App', () => {
     await userEvent.click(within(viewSwitch).getByRole('button', { name: 'Board' }));
     expect(screen.getByRole('heading', { name: 'To do' })).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'No due date' })).not.toBeInTheDocument();
+  });
+
+  it('ticking an item on a card updates its count', async () => {
+    vi.mocked(getCurrentUser).mockResolvedValue(user);
+    vi.mocked(getTasks).mockReset().mockResolvedValue([{ ...tasks[0], checklistDone: 0, checklistTotal: 1 }]);
+    vi.mocked(getChecklist).mockResolvedValue([{ id: 9, text: 'Outline', done: false, position: 0 }]);
+    vi.mocked(updateChecklistItem).mockResolvedValue({});
+    render(<App />);
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Checklist, 0 of 1 done' }));
+    await userEvent.click(await screen.findByRole('checkbox', { name: 'Outline' }));
+
+    expect(await screen.findByRole('button', { name: 'Checklist, 1 of 1 done' })).toBeInTheDocument();
   });
 
   it('shows the error instead of loading forever when the server is down', async () => {

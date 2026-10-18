@@ -1467,6 +1467,21 @@ describe('Tasks GraphQL API (e2e)', () => {
       expect(await readFile(keptFile)).toEqual(PNG);
     });
 
+    it('the board shows how many files each task has', async () => {
+      const task = await createTask({ title: 'With files' });
+      await createTask({ title: 'Without' });
+      await upload(task.id, PNG, 'one.png').expect(201);
+      await upload(task.id, PNG, 'two.png').expect(201);
+
+      const res = await gql(`query ($boardId: Int!) { tasks(boardId: $boardId) { title attachmentCount } }`, { boardId })
+        .expect(200);
+
+      expect(res.body.data.tasks).toEqual([
+        { title: 'With files', attachmentCount: 2 },
+        { title: 'Without', attachmentCount: 0 },
+      ]);
+    });
+
     it('allows at most 20 files on a task', async () => {
       const task = await createTask({ title: 'Many files' });
       for (let i = 1; i <= 20; i++) await upload(task.id, PNG, `file${i}.png`).expect(201);
