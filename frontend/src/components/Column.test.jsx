@@ -3,7 +3,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { DragDropContext } from '@hello-pangea/dnd';
 import Column from './Column';
-import { getChecklist, updateChecklistItem, getAttachments, attachmentDownloadUrl } from '../api';
+import { getChecklist, updateChecklistItem, getAttachments, attachmentDownloadUrl, deleteAttachment } from '../api';
 
 vi.mock('../api'); // the checklist and files opened on a card load through the api
 
@@ -124,6 +124,25 @@ describe('Column and TaskCard', () => {
 
     expect(await screen.findByRole('link', { name: 'plan.pdf' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Attach file' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Delete "plan.pdf"' })).not.toBeInTheDocument();
+  });
+
+  it('deletes a file from the card after you confirm, and updates the count', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    vi.mocked(getAttachments).mockResolvedValue([{ id: 4, fileName: 'plan.pdf', mimeType: 'application/pdf', size: 900, taskId: 1 }]);
+    vi.mocked(attachmentDownloadUrl).mockReturnValue('http://api.test/api/attachments/4/download');
+    vi.mocked(deleteAttachment).mockResolvedValue(undefined);
+    const onAttachmentCount = vi.fn();
+    renderColumn(
+      [{ id: 1, title: 'Report', description: null, status: 'TODO', dueDate: null, attachmentCount: 1 }],
+      { onAttachmentCount },
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: 'Files, 1' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Delete "plan.pdf"' }));
+
+    expect(window.confirm).toHaveBeenCalledWith('Delete "plan.pdf"?');
+    expect(deleteAttachment).toHaveBeenCalledWith(4);
+    expect(screen.queryByRole('link', { name: 'plan.pdf' })).not.toBeInTheDocument();
+    expect(onAttachmentCount).toHaveBeenCalledWith(1, 0); // task 1 now has 0 files
   });
 });

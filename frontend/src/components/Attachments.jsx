@@ -7,7 +7,7 @@ import TrashIcon from './TrashIcon';
 // The "Files" part of the task panel: attach, list, download and delete files.
 // Like Checklist and Comments, it loads and saves its own data.
 // onCountChange(count): after an upload or delete, so App can update the 📎 count on the card.
-// compact: the smaller version that opens on a card (attach and download only; no heading, no delete).
+// compact: the smaller version that opens on a card (attach, download and delete; no heading).
 function Attachments({ taskId, onSessionEnded, onCountChange = () => {}, compact = false })
 {
     const [files, setFiles] = useState(null); // null = still loading
@@ -123,15 +123,13 @@ function Attachments({ taskId, onSessionEnded, onCountChange = () => {}, compact
                             >
                                 <DownloadIcon />
                             </a>
-                            {!compact && (
-                                <button
-                                    className="icon-btn icon-btn-danger"
-                                    onClick={() => handleDelete(f)}
-                                    aria-label={`Delete "${f.fileName}"`}
-                                >
-                                    <TrashIcon />
-                                </button>
-                            )}
+                            <button
+                                className="icon-btn icon-btn-danger"
+                                onClick={() => handleDelete(f)}
+                                aria-label={`Delete "${f.fileName}"`}
+                            >
+                                <TrashIcon />
+                            </button>
                         </li>
                     ))}
                 </ul>

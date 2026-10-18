@@ -10,7 +10,7 @@ import { Draggable } from "@hello-pangea/dnd";
 
 // One card on the board. Clicking the title (or Open) asks App to open the task details panel.
 // The checklist and the files can also be opened right on the card (the ☑ and 📎 buttons):
-// tick items, add one, download or attach a file. Everything else is edited in the panel.
+// tick items and add one; attach, download or delete files. Everything else is edited in the panel.
 //   dragDisabled: true while filters are on (a position among SOME of the column's cards isn't the real one)
 //   onChecklistProgress(taskId, done, total) / onAttachmentCount(taskId, count): App updates the counts
 //   onSessionEnded(err): an expired login goes back to the login screen
