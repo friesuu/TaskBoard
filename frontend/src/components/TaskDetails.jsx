@@ -6,6 +6,7 @@ import TaskLabels from './TaskLabels';
 import { STATUSES } from '../statuses';
 import { isOverdue } from '../dates';
 import { CalendarIcon, CloseIcon } from './Icons';
+import Attachments from './Attachments';
 
 // The panel that opens when you click a task: details + notes (editable), checklist, comments.
 // App decides WHICH task is open and passes it in; everything here works on that one task.
@@ -94,6 +95,8 @@ function TaskDetails({
                         onSessionEnded={onSessionEnded}
                     />
 
+                    <Attachments taskId={task.id} onSessionEnded={onSessionEnded} />
+                   
                     <Comments taskId={task.id} currentUserId={currentUserId} onSessionEnded={onSessionEnded} />
                 </div>
             </div>

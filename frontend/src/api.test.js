@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { getCurrentUser, login, moveTask, sendChatMessage, createTask, getTasks } from './api';
+import { getCurrentUser, login, moveTask, sendChatMessage, createTask, getTasks, uploadAttachment } from './api';
 
 // A fake fetch: no server needed. answer() sets what the "server" replies.
 let fetchMock;
@@ -91,5 +91,39 @@ describe('api.js', () => {
     await getTasks(3, { q: 'report', due: 'OVERDUE' });
 
     expect(lastRequest().body.variables).toEqual({ boardId: 3, filter: { q: 'report', due: 'OVERDUE' } });
+  });
+
+  describe('uploadAttachment', () => {
+    // Upload isn't GraphQL: the "server" answers with a status and JSON
+    const answerHttp = (status, body) =>
+      fetchMock.mockResolvedValueOnce({ ok: status < 400, status, json: async () => body });
+
+    it('posts the file as a form (multipart) to the upload address, with the login cookie', async () => {
+      answerHttp(201, { id: 3, fileName: 'photo.png' });
+      const file = new File(['png'], 'photo.png');
+
+      expect(await uploadAttachment(5, file)).toEqual({ id: 3, fileName: 'photo.png' });
+
+      const [url, options] = fetchMock.mock.calls.at(-1);
+      expect(url).toBe('http://localhost:3000/api/tasks/5/attachments');
+      expect(options.method).toBe('POST');
+      expect(options.credentials).toBe('include');
+      expect(options.body.get('file')).toBeInstanceOf(File);
+    });
+
+    it("throws the server's message", async () => {
+      answerHttp(400, { statusCode: 400, message: 'The file is empty' });
+      await expect(uploadAttachment(5, new File([''], 'a.txt'))).rejects.toThrow('The file is empty');
+    });
+
+    it('explains "too big" in words', async () => {
+      answerHttp(413, { statusCode: 413, message: 'File too large' });
+      await expect(uploadAttachment(5, new File(['x'], 'a.png'))).rejects.toThrow('The file is too big (10 MB at most)');
+    });
+
+    it('marks an expired login, so App can log you out', async () => {
+      answerHttp(401, { statusCode: 401, message: 'Unauthorized' });
+      await expect(uploadAttachment(5, new File(['x'], 'a.png'))).rejects.toMatchObject({ code: 'UNAUTHENTICATED' });
+    });
   });
 });

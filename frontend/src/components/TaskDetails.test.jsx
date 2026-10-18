@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import TaskDetails from './TaskDetails';
-import { getChecklist, getComments } from '../api';
+import { getChecklist, getComments, getAttachments } from '../api';
 
 vi.mock('../api');
 
@@ -26,6 +26,7 @@ describe('TaskDetails', () => {
   beforeEach(() => {
     vi.mocked(getChecklist).mockReset().mockResolvedValue([]);
     vi.mocked(getComments).mockReset().mockResolvedValue([]);
+    vi.mocked(getAttachments).mockReset().mockResolvedValue([]);
   });
 
   it('shows the task, its full notes, checklist and comments', async () => {
@@ -50,6 +51,15 @@ describe('TaskDetails', () => {
 
     expect(onSave).toHaveBeenCalledWith(5, { title: 'Plan party', description: 'New notes', dueDate: '2026-10-30' });
     expect(await screen.findByRole('button', { name: 'Edit' })).toBeInTheDocument(); // back to viewing
+  });
+
+  it("shows the task's files", async () => {
+    vi.mocked(getAttachments).mockResolvedValue([{ id: 1, fileName: 'plan.pdf', mimeType: 'application/pdf', size: 900, taskId: 5 }]);
+    renderDetails();
+
+    expect(screen.getByRole('heading', { name: 'Files' })).toBeInTheDocument();
+    expect(await screen.findByText('plan.pdf')).toBeInTheDocument();
+    expect(getAttachments).toHaveBeenCalledWith(5);
   });
 
   it('closes with ✕, Escape, or a click outside', async () => {

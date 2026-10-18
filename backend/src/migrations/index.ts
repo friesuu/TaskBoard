@@ -3,7 +3,15 @@ import { AddBoards1792125187609 } from './1792125187609-AddBoards';
 import { AddTaskDetails1792139766723 } from './1792139766723-AddTaskDetails';
 import { AddLabels1792323520653 } from './1792323520653-AddLabels';
 import { AddUserTimeZone1792329867365 } from './1792329867365-AddUserTimeZone';
+import { AddAttachments1792336190154 } from './1792336190154-AddAttachments';
 
 // Every migration, oldest first. Both the app (app.module.ts) and the command line (data-source.ts) read this list.
 // After `npm run migration:generate`, import the new class here and add it to the END of the list.
-export const migrations = [InitialSchema1792122576483, AddBoards1792125187609, AddTaskDetails1792139766723, AddLabels1792323520653, AddUserTimeZone1792329867365];
+export const migrations = [
+    InitialSchema1792122576483, 
+    AddBoards1792125187609, 
+    AddTaskDetails1792139766723, 
+    AddLabels1792323520653, 
+    AddUserTimeZone1792329867365, 
+    AddAttachments1792336190154
+];

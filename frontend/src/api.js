@@ -1,4 +1,6 @@
 const GRAPHQL_URL = 'http://localhost:3000/graphql';
+// The backend itself (for file upload and download, which aren't GraphQL): the GraphQL address without /graphql
+const API_ORIGIN = GRAPHQL_URL.replace(/\/graphql$/, '');
 // checklistDone / checklistTotal = the "2/5" on the card
 const TASK_FIELDS = 'id title description status dueDate checklistDone checklistTotal labels { id name color }';
 const CHAT_FIELDS = 'id role content createdAt';
@@ -393,5 +395,62 @@ export async function setTimeZone(timeZone)
             setTimeZone(input: $input) { id }
         }`,
         { input: { timeZone } },
+    );
+}
+
+// ----- Attachments (files on a task) -----
+
+const ATTACHMENT_FIELDS = 'id fileName mimeType size createdAt taskId';
+
+// The task's files, oldest first
+export async function getAttachments(taskId)
+{
+    const data = await graphqlRequest(
+        `query Attachments($taskId: Int!) {
+            attachments(taskId: $taskId) { ${ATTACHMENT_FIELDS} }
+        }`,
+        { taskId },
+    );
+    return data.attachments;
+}
+
+// Uploads one file. Not GraphQL: a normal form post (multipart), which is how browsers send files.
+export async function uploadAttachment(taskId, file)
+{
+    const form = new FormData();
+    form.append('file', file); // the server reads the field called "file"
+
+    const response = await fetch(`${API_ORIGIN}/api/tasks/${taskId}/attachments`, {
+        method: 'POST',
+        body: form, // no Content-Type header: the browser sets it, with the multipart boundary
+        credentials: 'include', // the login cookie
+    });
+    const body = await response.json().catch(() => ({}));
+
+    if (!response.ok)
+    {
+        const message = response.status === 413
+            ? 'The file is too big (10 MB at most)'
+            : [].concat(body.message ?? 'The upload failed').join(', ');
+        const err = new Error(message);
+        if (response.status === 401) err.code = 'UNAUTHENTICATED'; // same code as GraphQL uses, so App logs you out
+        throw err;
+    }
+    return body;
+}
+
+// Where a file downloads from. A normal link: the browser sends the login cookie and saves the file.
+export function attachmentDownloadUrl(id)
+{
+    return `${API_ORIGIN}/api/attachments/${id}/download`;
+}
+
+export async function deleteAttachment(id)
+{
+    await graphqlRequest(
+        `mutation DeleteAttachment($id: Int!) {
+            deleteAttachment(id: $id)
+        }`,
+        { id },
     );
 }

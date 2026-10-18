@@ -95,3 +95,36 @@ export function ArrowRightIcon({ size })
 {
     return <Icon size={size}><path d="M5 12h14" /><path d="m12 5 7 7-7 7" /></Icon>;
 }
+
+// A paperclip, on "Attach file"
+export function PaperclipIcon({ size })
+{
+    return(
+        <Icon size={size}>
+            <path d="m21.4 11.1-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5" />
+        </Icon>
+    );
+}
+
+// A page with a folded corner, next to each attached file
+export function FileIcon({ size })
+{
+    return(
+        <Icon size={size}>
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <path d="M14 2v6h6" />
+        </Icon>
+    );
+}
+
+// An arrow into a tray, on "Download"
+export function DownloadIcon({ size })
+{
+    return(
+        <Icon size={size}>
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <path d="m7 10 5 5 5-5" />
+            <path d="M12 15V3" />
+        </Icon>
+    );
+}

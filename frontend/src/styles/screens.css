@@ -985,3 +985,52 @@
   background-color: var(--hover);
   border-color: var(--accent);
 }
+
+/* ---------- Files (attachments) in the task panel ---------- */
+
+/* One file: icon, name and details, then Download and Delete */
+.attachment {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--control-height);
+  padding: var(--space-1) var(--space-2) var(--space-1) var(--space-4);
+}
+
+.attachment-icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: var(--avatar-sm);
+  height: var(--avatar-sm);
+  border-radius: var(--radius-check);
+  background-color: var(--tint);
+  border: 1px solid var(--tint-border);
+  color: var(--accent);
+}
+
+.attachment-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.attachment-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.attachment-name:hover {
+  color: var(--link);
+  text-decoration: underline;
+}
+
+.attachment-meta {
+  color: var(--muted);
+  font-size: var(--fs-small);
+}

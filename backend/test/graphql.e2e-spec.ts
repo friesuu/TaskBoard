@@ -9,6 +9,9 @@ import { Task } from '../src/tasks/task.entity';
 import { User } from '../src/users/user.entity';
 import { Board } from '../src/boards/board.entity';
 import { LlmService } from '../src/chat/llm.service';
+import { AttachmentsService } from '../src/attachments/attachments.service';
+import { readFile, rm, utimes } from 'fs/promises';
+import { join } from 'path';
 
 // The account every test runs as. Deleted and re-registered at the start of each run.
 const TEST_USER = { email: 'e2e@test.com', password: 'e2e-password' };
@@ -204,6 +207,18 @@ const FILTERED = `
   }
 `;
 
+const ATTACHMENTS = `
+  query Attachments($taskId: Int!) {
+    attachments(taskId: $taskId) { id fileName mimeType size taskId }
+  }
+`;
+
+const DELETE_ATTACHMENT = `
+  mutation DeleteAttachment($id: Int!) {
+    deleteAttachment(id: $id)
+  }
+`;
+
 // Each task with the names of its labels
 const TASK_LABELS = `
   query TaskLabels($boardId: Int!) {
@@ -260,6 +275,7 @@ describe('Tasks GraphQL API (e2e)', () => {
   // Runs ONCE after all tests: shut the app down
   afterAll(async () => {
     await app.close();
+    await rm(process.env.UPLOAD_DIR!, { recursive: true, force: true }); // the test uploads
   });
 
   // Runs before EVERY test: no tasks, and each user back to just their first board
@@ -1280,6 +1296,184 @@ describe('Tasks GraphQL API (e2e)', () => {
       const res = await gqlAsOther(FILTERED, { boardId, filter: { q: 'secret' } }).expect(200);
 
       expect(res.body.data.tasks).toEqual([]); // my board, their search: nothing of mine, nothing of theirs
+    });
+  });
+
+  describe('attachments', () => {
+    // The first bytes of every PNG file, then anything: enough for the type check
+    const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from('rest of a png')]);
+
+    // Upload through the normal (non-GraphQL) address, as `who`
+    const upload = (taskId: number, content: Buffer, fileName: string, who = cookie) =>
+      request(app.getHttpServer())
+        .post(`/api/tasks/${taskId}/attachments`)
+        .set('Cookie', who)
+        .attach('file', content, fileName);
+
+    const download = (id: number, who = cookie) =>
+      request(app.getHttpServer())
+        .get(`/api/attachments/${id}/download`)
+        .set('Cookie', who)
+        .buffer(true)
+        .parse((res, done) => { // collect the raw bytes, whatever the type
+          const chunks: Buffer[] = [];
+          res.on('data', (chunk: Buffer) => chunks.push(chunk));
+          res.on('end', () => done(null, Buffer.concat(chunks)));
+        });
+
+    // Where an attachment's bytes are on disk (the key never leaves the server, so read it from the database)
+    const storedPath = async (id: number) => {
+      const [row] = await tasksRepository.query('SELECT storage_key FROM attachments WHERE id = $1', [id]);
+      return join(process.env.UPLOAD_DIR!, row.storage_key as string);
+    };
+
+    it('uploads a file, stores its bytes, and never shows the storage key', async () => {
+      const task = await createTask({ title: 'With a file' });
+
+      const res = await upload(task.id, PNG, 'photo.png').expect(201);
+
+      expect(res.body).toMatchObject({ fileName: 'photo.png', mimeType: 'image/png', size: PNG.length, taskId: task.id });
+      expect(res.body.storageKey).toBeUndefined();
+      expect(await readFile(await storedPath(res.body.id))).toEqual(PNG);
+    });
+
+    it('lists a task\'s files, oldest first', async () => {
+      const task = await createTask({ title: 'With files' });
+      await upload(task.id, PNG, 'first.png').expect(201);
+      await upload(task.id, Buffer.from('a,b\n1,2\n'), 'data.csv').expect(201);
+
+      const res = await gql(ATTACHMENTS, { taskId: task.id }).expect(200);
+
+      expect(res.body.data.attachments.map((a: { fileName: string }) => a.fileName)).toEqual(['first.png', 'data.csv']);
+      expect(res.body.data.attachments[1].mimeType).toBe('text/csv; charset=utf-8');
+    });
+
+    it('downloads the exact bytes, always as a download, with nosniff', async () => {
+      const task = await createTask({ title: 'With a file' });
+      const uploaded = (await upload(task.id, PNG, 'photo.png').expect(201)).body;
+
+      const res = await download(uploaded.id).expect(200);
+
+      expect(res.body).toEqual(PNG);
+      expect(res.headers['content-type']).toBe('image/png');
+      expect(res.headers['content-disposition']).toBe('attachment; filename="photo.png"; filename*=UTF-8\'\'photo.png');
+      expect(res.headers['x-content-type-options']).toBe('nosniff');
+    });
+
+    it('keeps non-English file names', async () => {
+      const task = await createTask({ title: 'With a file' });
+
+      const uploaded = (await upload(task.id, Buffer.from('bonjour'), 'résumé.txt').expect(201)).body;
+      const res = await download(uploaded.id).expect(200);
+
+      expect(uploaded.fileName).toBe('résumé.txt');
+      expect(res.headers['content-disposition']).toBe(
+        'attachment; filename="r_sum_.txt"; filename*=UTF-8\'\'r%C3%A9sum%C3%A9.txt',
+      );
+    });
+
+    it('refuses file types that are not on the list (SVG and HTML can carry scripts)', async () => {
+      const task = await createTask({ title: 'With a file' });
+
+      for (const [content, name] of [
+        ['<svg onload="alert(1)"/>', 'drawing.svg'],
+        ['<script>alert(1)</script>', 'page.html'],
+        ['MZ...', 'program.exe'],
+        ['no extension', 'README'],
+      ]) {
+        const res = await upload(task.id, Buffer.from(content), name).expect(400);
+        expect(res.body.message).toBe(
+          "This kind of file can't be attached. Allowed: PNG, JPEG, GIF, WebP, PDF, TXT, CSV, DOCX, XLSX, PPTX, ZIP",
+        );
+      }
+    });
+
+    it('refuses a file whose contents do not match its extension', async () => {
+      const task = await createTask({ title: 'With a file' });
+
+      const fakePng = await upload(task.id, Buffer.from('<script>alert(1)</script>'), 'cat.png').expect(400);
+      const binaryTxt = await upload(task.id, Buffer.from([0x00, 0x01, 0x02]), 'notes.txt').expect(400);
+
+      expect(fakePng.body.message).toBe("The file's contents don't match its .png extension");
+      expect(binaryTxt.body.message).toBe("The file's contents don't match its .txt extension");
+    });
+
+    it('refuses an empty file, a missing file, and a file over 10 MB', async () => {
+      const task = await createTask({ title: 'With a file' });
+
+      const empty = await upload(task.id, Buffer.alloc(0), 'empty.txt').expect(400);
+      const missing = await request(app.getHttpServer())
+        .post(`/api/tasks/${task.id}/attachments`).set('Cookie', cookie).field('other', 'x').expect(400);
+      const tooBig = Buffer.concat([PNG, Buffer.alloc(10 * 1024 * 1024)]);
+      await upload(task.id, tooBig, 'huge.png').expect(413);
+
+      expect(empty.body.message).toBe('The file is empty');
+      expect(missing.body.message).toBe('No file was sent (it goes in a form field called "file")');
+      const left = await gql(ATTACHMENTS, { taskId: task.id }).expect(200);
+      expect(left.body.data.attachments).toEqual([]);
+    });
+
+    it('needs a login to upload or download', async () => {
+      const task = await createTask({ title: 'With a file' });
+      const uploaded = (await upload(task.id, PNG, 'photo.png').expect(201)).body;
+
+      await request(app.getHttpServer())
+        .post(`/api/tasks/${task.id}/attachments`).attach('file', PNG, 'photo.png').expect(401);
+      await request(app.getHttpServer()).get(`/api/attachments/${uploaded.id}/download`).expect(401);
+    });
+
+    it("another user can't upload to, list, download or delete my files", async () => {
+      const task = await createTask({ title: 'Mine' });
+      const uploaded = (await upload(task.id, PNG, 'secret.png').expect(201)).body;
+
+      const add = await upload(task.id, PNG, 'sneaky.png', otherCookie).expect(404);
+      const list = await gqlAsOther(ATTACHMENTS, { taskId: task.id }).expect(200);
+      const get = await download(uploaded.id, otherCookie).expect(404);
+      const remove = await gqlAsOther(DELETE_ATTACHMENT, { id: uploaded.id }).expect(200);
+
+      expect(add.body.message).toBe(`Task ${task.id} not found`);
+      expect(list.body.errors[0].message).toBe(`Task ${task.id} not found`);
+      expect(JSON.parse(get.body.toString()).message).toBe(`Attachment ${uploaded.id} not found`);
+      expect(remove.body.errors[0].message).toBe(`Attachment ${uploaded.id} not found`);
+      await download(uploaded.id).expect(200); // still there for me
+    });
+
+    it('deleting a file removes it from the list and from storage', async () => {
+      const task = await createTask({ title: 'With a file' });
+      const uploaded = (await upload(task.id, PNG, 'photo.png').expect(201)).body;
+      const path = await storedPath(uploaded.id);
+
+      const res = await gql(DELETE_ATTACHMENT, { id: uploaded.id }).expect(200);
+
+      expect(res.body.data.deleteAttachment).toBe(true);
+      expect((await gql(ATTACHMENTS, { taskId: task.id }).expect(200)).body.data.attachments).toEqual([]);
+      await expect(readFile(path)).rejects.toThrow(); // the file is gone
+    });
+
+    it("cleans up the files of deleted tasks", async () => {
+      const task = await createTask({ title: 'Doomed' });
+      const kept = await createTask({ title: 'Kept' });
+      const doomedFile = await storedPath((await upload(task.id, PNG, 'old.png').expect(201)).body.id);
+      const keptFile = await storedPath((await upload(kept.id, PNG, 'keep.png').expect(201)).body.id);
+      await gql(DELETE_TASK, { id: task.id }).expect(200); // the row goes (cascade), the file stays
+
+      // The clean-up skips files newer than an hour (they may be mid-upload): make both look 2 hours old
+      const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+      await utimes(doomedFile, twoHoursAgo, twoHoursAgo);
+      await utimes(keptFile, twoHoursAgo, twoHoursAgo);
+      await app.get(AttachmentsService).removeOrphanFiles();
+
+      await expect(readFile(doomedFile)).rejects.toThrow();
+      expect(await readFile(keptFile)).toEqual(PNG);
+    });
+
+    it('allows at most 20 files on a task', async () => {
+      const task = await createTask({ title: 'Many files' });
+      for (let i = 1; i <= 20; i++) await upload(task.id, PNG, `file${i}.png`).expect(201);
+
+      const res = await upload(task.id, PNG, 'one-too-many.png').expect(400);
+
+      expect(res.body.message).toBe('A task can have at most 20 files');
     });
   });
 

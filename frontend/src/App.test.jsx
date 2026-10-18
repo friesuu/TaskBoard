@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import App from './App';
 import {
   getCurrentUser, getTasks, logout, getBoards, createBoard, getChecklist, getComments, getLabels, setTaskLabels,
-  setTimeZone,
+  setTimeZone, getAttachments,
 } from './api';
 
 vi.mock('./api'); // the whole backend is faked: each test decides what the "server" answers
@@ -32,6 +32,7 @@ describe('App', () => {
     vi.mocked(getLabels).mockReset().mockResolvedValue([{ id: 7, name: 'Urgent', color: 'ORANGE' }]);
     vi.mocked(setTaskLabels).mockReset();
     vi.mocked(setTimeZone).mockReset().mockResolvedValue(undefined);
+    vi.mocked(getAttachments).mockReset().mockResolvedValue([]);
     window.history.replaceState(null, '', '/'); // every test starts without ?board=
   });
 

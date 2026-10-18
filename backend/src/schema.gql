@@ -81,6 +81,15 @@ type Comment {
   author: User!
 }
 
+type Attachment {
+  id: Int!
+  fileName: String!
+  mimeType: String!
+  size: Int!
+  createdAt: DateTime!
+  taskId: Int!
+}
+
 type Query {
   tasks(boardId: Int!, filter: TaskFilterInput): [Task!]!
   me: User!
@@ -89,6 +98,7 @@ type Query {
   checklistItems(taskId: Int!): [ChecklistItem!]!
   comments(taskId: Int!): [Comment!]!
   labels(boardId: Int!): [Label!]!
+  attachments(taskId: Int!): [Attachment!]!
 }
 
 input TaskFilterInput {
@@ -131,6 +141,7 @@ type Mutation {
   updateLabel(id: Int!, input: UpdateLabelInput!): Label!
   deleteLabel(id: Int!): Boolean!
   setTaskLabels(taskId: Int!, input: SetTaskLabelsInput!): Task!
+  deleteAttachment(id: Int!): Boolean!
 }
 
 input CreateTaskInput {
