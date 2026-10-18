@@ -139,6 +139,9 @@
   --menu-width: 220px;      /* drop-down menus (e.g. the Labels filter) */
   --menu-max-height: 320px;
   --menu-pad: 6px;          /* space inside a menu, around its items */
+  --calendar-side: 240px;   /* the "No due date" list beside the month grid */
+  --calendar-day: 112px;    /* the smallest height of a day on the month grid */
+  --calendar-chip: 28px;    /* a task on the calendar: shorter than 44px on purpose, so several fit in a day */
 
   /* ---- Motion ---- */
   --ease: 160ms ease-out;

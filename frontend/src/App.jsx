@@ -23,11 +23,13 @@ import TaskDetails from './components/TaskDetails';
 import { sortLabels } from './labelColors';
 import { EMPTY_FILTERS, hasActiveFilters, readFiltersFromUrl, toApiFilter, writeFiltersToUrl } from './filters';
 import FilterBar from './components/FilterBar';
+import CalendarView from './components/CalendarView';
+import ViewSwitch from './components/ViewSwitch';
 
 const SESSION_EXPIRED = 'Your session has expired. Please log in again.';
 
 // The pages, and the one in the address bar (?view=profile), so a refresh stays on it
-const VIEWS = ['board', 'profile', 'chat'];
+const VIEWS = ['board', 'calendar', 'profile', 'chat'];
 const viewFromUrl = () => (VIEWS.includes(getUrlParam('view')) ? getUrlParam('view') : 'board');
 
 // "Put this task at the bottom of its column" (the server treats a position past the end as the bottom)
@@ -50,7 +52,7 @@ function App()
   const [success, setSuccess] = useState(null); // e.g. "Password changed"
   const [openModal, setOpenModal] = useState(null); // null = closed, otherwise a key of MODAL_TITLES
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [view, setView] = useState(viewFromUrl); // which page is shown: 'board', 'profile' or 'chat'
+  const [view, setView] = useState(viewFromUrl); // which page is shown: 'board', 'calendar', 'profile' or 'chat'
   const [boards, setBoards] = useState([]);
   const [boardId, setBoardId] = useState(null); // the open board; null until the boards have loaded
   const [labels, setLabels] = useState([]); // the open board's labels (Board settings and the task panel use them)
@@ -58,6 +60,8 @@ function App()
   const [filters, setFilters] = useState(readFiltersFromUrl); // search + filters, from the address bar
 
   const filtersActive = hasActiveFilters(filters);
+  // The board and the calendar are two views of the same (filtered) tasks
+  const isBoardPage = view === 'board' || view === 'calendar';
   // What the server gets. useMemo keeps it the same object until the filters change,
   // so the effect that loads the tasks only runs again when they really change.
   const apiFilter = useMemo(() => toApiFilter(filters), [filters]);
@@ -117,13 +121,14 @@ function App()
 
   // Whenever the open board or the filters change, or you switch pages: load that board's tasks.
   // Switching pages reloads them so changes made by the assistant show up on the board.
-  // Only the board is filtered: the profile's numbers always count every task.
+  // Only the board and the calendar are filtered: the profile's numbers always count every task.
   useEffect(() => {
     if (!user || boardId === null) return;
     // If you switch boards (or filters) again before this answer arrives, the cleanup below sets this,
     // so a slow, out-of-date answer can't replace the newer one.
     let isStale = false;
-    getTasks(boardId, view === 'board' ? apiFilter : null)
+    const filtered = view === 'board' || view === 'calendar';
+    getTasks(boardId, filtered ? apiFilter : null)
       .then((list) => { if (!isStale) setTasks(list); })
       .catch(loadFailed);
     return () => { isStale = true; };
@@ -332,11 +337,36 @@ function App()
       if (endedSession(err)) return;
       setError(err.message);
       try{
-        setTasks(await getTasks(boardId, view === 'board' ? apiFilter : null)); // the server knows the real order
+        setTasks(await getTasks(boardId, isBoardPage ? apiFilter : null)); // the server knows the real order
       }
       catch{
         setTasks(previous); // server unreachable: put the board back as it was
       }
+    }
+  };
+
+  // The calendar moved a task to another day (dueDate 'YYYY-MM-DD', or null = no due date).
+  // Optimistic like dragging a card: show it on the new day first, undo if saving fails.
+  const handleDueDateChange = async (id, dueDate) => {
+    const previous = tasks;
+    setError(null);
+    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, dueDate } : t)));
+    try{
+      const updated = await updateTask(id, { dueDate });
+      if (filtersActive)
+      {
+        // e.g. "Due today" is on and it moved to tomorrow: ask again which tasks still match
+        setTasks(await getTasks(boardId, apiFilter));
+      }
+      else
+      {
+        setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, ...updated } : t)));
+      }
+    }
+    catch(err){
+      if (endedSession(err)) return;
+      setError(err.message);
+      setTasks(previous);
     }
   };
 
@@ -440,8 +470,9 @@ function App()
             <h1 className="page-title">{pageTitle}</h1>
           </div>
 
-          {view === 'board' && (
+          {isBoardPage && (
             <div className="page-actions">
+              <ViewSwitch view={view} onChange={setView} />
               {currentBoard && (
                 <button className="btn btn-secondary" onClick={() => openForm('board-settings')}>
                   <SettingsIcon size={16} />
@@ -476,8 +507,12 @@ function App()
             />
           )}
 
-          {view === 'board' && (
+          {isBoardPage && (
             <FilterBar filters={filters} labels={labels} onChange={handleFiltersChange} />
+          )}
+
+          {view === 'calendar' && (
+            <CalendarView tasks={tasks} onOpen={setOpenTaskId} onDueDateChange={handleDueDateChange} />
           )}
 
           {view === 'board' && (
@@ -505,7 +540,7 @@ function App()
       <Sidebar
         isOpen={isSidebarOpen}
         email={user.email}
-        currentView={view}
+        currentView={isBoardPage ? 'board' : view /* the calendar is part of the Board page */}
         boards={boards}
         currentBoardId={boardId}
         onSelectBoard={switchBoard}

@@ -89,3 +89,9 @@ export function ChevronDownIcon({ size })
 {
     return <Icon size={size}><path d="m6 9 6 6 6-6" /></Icon>;
 }
+
+// →
+export function ArrowRightIcon({ size })
+{
+    return <Icon size={size}><path d="M5 12h14" /><path d="m12 5 7 7-7 7" /></Icon>;
+}

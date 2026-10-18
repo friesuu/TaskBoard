@@ -1433,6 +1433,18 @@ describe('Tasks GraphQL API (e2e)', () => {
       expect(res.body.errors[0].extensions.code).toBe('BAD_USER_INPUT');
     });
 
+    it('clears the due date when it is set to null (the calendar\'s "No due date")', async () => {
+      const created = await createTask({ title: 'Dated', dueDate: '2026-10-20' });
+
+      const res = await gql(
+        `mutation ($id: Int!, $input: UpdateTaskInput!) { updateTask(id: $id, input: $input) { dueDate } }`,
+        { id: created.id, input: { dueDate: null } },
+      ).expect(200);
+
+      expect(res.body.errors).toBeUndefined();
+      expect(res.body.data.updateTask.dueDate).toBeNull();
+    });
+
     it('rejects a null title', async () => {
       const created = await createTask({ title: 'Write report' });
 

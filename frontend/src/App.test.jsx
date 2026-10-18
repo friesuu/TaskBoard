@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from './App';
 import {
@@ -252,6 +252,33 @@ describe('App', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Profile' }));
 
     expect(window.location.search).toBe('?board=10&view=profile');
+  });
+
+  it('opens the calendar from the address bar, with the undated tasks beside it', async () => {
+    window.history.replaceState(null, '', '/?view=calendar');
+    vi.mocked(getCurrentUser).mockResolvedValue(user);
+    render(<App />);
+
+    const undated = await screen.findByRole('region', { name: 'No due date' });
+    expect(await within(undated).findByRole('button', { name: 'Write report' })).toBeInTheDocument(); // once loaded
+    const viewSwitch = screen.getByRole('group', { name: 'View' });
+    expect(within(viewSwitch).getByRole('button', { name: 'Calendar' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('switches between the board and the calendar', async () => {
+    vi.mocked(getCurrentUser).mockResolvedValue(user);
+    render(<App />);
+    await screen.findByText('Write report');
+
+    // The switch's "Board" (the menu has a "Board" page too)
+    const viewSwitch = screen.getByRole('group', { name: 'View' });
+    await userEvent.click(within(viewSwitch).getByRole('button', { name: 'Calendar' }));
+    expect(screen.getByRole('region', { name: 'No due date' })).toBeInTheDocument();
+    expect(window.location.search).toBe('?board=10&view=calendar');
+
+    await userEvent.click(within(viewSwitch).getByRole('button', { name: 'Board' }));
+    expect(screen.getByRole('heading', { name: 'To do' })).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'No due date' })).not.toBeInTheDocument();
   });
 
   it('shows the error instead of loading forever when the server is down', async () => {
