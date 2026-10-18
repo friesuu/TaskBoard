@@ -1,5 +1,6 @@
 import { STATUSES } from "../statuses";
 import TrashIcon from "./TrashIcon";
+import { CalendarIcon } from "./Icons";
 import { isOverdue } from "../dates";
 import { Draggable } from "@hello-pangea/dnd";
 
@@ -7,8 +8,9 @@ import { Draggable } from "@hello-pangea/dnd";
 // where the task is edited; the card itself only shows a summary.
 function TaskCard({ index, task, onStatusChange, onDelete, onOpen })
 {
+    const overdue = isOverdue(task);
     let className = 'task-card';
-    if (isOverdue(task)) className += ' overdue';
+    if (overdue) className += ' overdue';
 
     const hasChecklist = task.checklistTotal > 0;
     const checklistComplete = hasChecklist && task.checklistDone === task.checklistTotal;
@@ -25,18 +27,30 @@ function TaskCard({ index, task, onStatusChange, onDelete, onOpen })
 
                 {/* Notes preview: cut to 2 lines by CSS; the full text is in the details panel */}
                 {task.description && <p className="task-notes">{task.description}</p>}
-                {task.dueDate && <p>Due: {task.dueDate}</p>}
+                {task.dueDate && (
+                    <p className="task-due">
+                        <CalendarIcon size={14} />
+                        Due {task.dueDate}
+                    </p>
+                )}
 
                 {/* Only when there's a badge: an empty row would still add a gap */}
-                {(isOverdue(task) || hasChecklist) && (
+                {(overdue || hasChecklist) && (
                     <div className="task-badges">
-                        {isOverdue(task) && <span className="overdue-label">Overdue</span>}
+                        {/* Pills: the coloured dot adds meaning, the text carries it */}
+                        {overdue && (
+                            <span className="pill">
+                                <span className="dot dot-danger" aria-hidden="true" />
+                                Overdue
+                            </span>
+                        )}
                         {hasChecklist && (
                             <span
-                                className={checklistComplete ? 'checklist-badge complete' : 'checklist-badge'}
+                                className="pill"
                                 aria-label={`Checklist: ${task.checklistDone} of ${task.checklistTotal} done`}
                             >
-                                ☑ {task.checklistDone}/{task.checklistTotal}
+                                <span className={checklistComplete ? 'dot dot-success' : 'dot dot-info'} aria-hidden="true" />
+                                {task.checklistDone}/{task.checklistTotal}
                             </span>
                         )}
                     </div>
@@ -51,13 +65,13 @@ function TaskCard({ index, task, onStatusChange, onDelete, onOpen })
                         ))}
                     </select>
 
-                    <button className="edit-button" onClick={() => onOpen(task.id)}>
+                    <button className="btn btn-secondary" onClick={() => onOpen(task.id)}>
                         Open
                     </button>
 
                     {/* Icon only, so aria-label gives screen readers a name; title shows on hover */}
                     <button
-                        className="delete-button"
+                        className="icon-btn icon-btn-danger task-delete"
                         aria-label={`Delete "${task.title}"`}
                         title="Delete"
                         onClick={() => {

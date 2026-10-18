@@ -1,0 +1,289 @@
+/* =====================================================================
+   App shell (DESIGN.md section 8): the page, the main panel, the page header,
+   and the navigation panel that slides in from the menu button.
+   ===================================================================== */
+
+/* The dark page with the main panel on it: 16px around the panel */
+.app-shell {
+  display: flex;
+  height: 100vh;
+  height: 100dvh;
+  padding: var(--space-4);
+  background-color: var(--page);
+}
+
+.main-panel {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--panel);
+  border: 1px solid var(--border-panel);
+  border-radius: var(--radius-panel);
+  box-shadow: var(--shadow-panel);
+  overflow: hidden; /* the rounded corners clip the scrolling content */
+}
+
+/* Page title on the left, this page's actions on the right, a divider underneath */
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-8) var(--space-3) var(--space-5);
+  border-bottom: 1px solid var(--divider);
+}
+
+.page-header-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.page-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.page-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: var(--space-3);
+}
+
+/* Only the content scrolls; the header stays put */
+.page-content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-8);
+  overflow-y: auto;
+}
+
+/* The chat fills the panel itself (its messages scroll, its composer stays at the bottom) */
+.page-content-chat {
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.page-content-chat > .error-message,
+.page-content-chat > .success-message {
+  margin: var(--space-4) var(--space-8) 0;
+}
+
+/* Loading and log-in: one thing in the middle of the page */
+.center-screen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: var(--space-4);
+  background-color: var(--page);
+}
+
+/* ---------- Navigation panel (Sidebar) ---------- */
+
+/* The dark layer behind the open menu */
+.sidebar-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  background-color: var(--scrim);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--ease);
+}
+
+.sidebar-backdrop.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* A rounded panel that floats in from the left, 16px from the page edges */
+.sidebar {
+  position: fixed;
+  top: var(--space-4);
+  bottom: var(--space-4);
+  left: var(--space-4);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  width: var(--nav-width);
+  padding: var(--space-3);
+  background-color: var(--nav);
+  border: 1px solid var(--border-nav);
+  border-radius: var(--radius-nav);
+  box-shadow: var(--highlight), var(--shadow-float);
+  overflow-y: auto;
+  transform: translateX(calc(-100% - 2 * var(--space-4)));
+  transition: transform var(--ease);
+}
+
+.sidebar.open {
+  transform: translateX(0);
+}
+
+/* Brand ("Task Board") and the close button */
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding-left: var(--space-2);
+}
+
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.sidebar-brand-mark {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: var(--avatar-sm);
+  height: var(--avatar-sm);
+  border-radius: var(--radius-pill);
+  background-color: var(--tint);
+  border: 1px solid var(--tint-border);
+  color: var(--accent);
+}
+
+.sidebar-brand-mark svg {
+  width: var(--spinner);
+  height: var(--spinner);
+}
+
+.sidebar-brand-name {
+  font-size: var(--fs-brand);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* "Logged in as" + the email */
+.sidebar-account {
+  padding: var(--space-4) var(--space-3) var(--space-3);
+}
+
+.sidebar-account .sidebar-group-title {
+  padding: 0;
+}
+
+.sidebar-email {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-2);
+  font-size: var(--fs-small);
+}
+
+/* Groups of items, a divider between groups */
+.sidebar-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--divider);
+}
+
+/* Dark nav section label: small, uppercase, spaced out */
+.sidebar-group-title {
+  padding: 0 var(--space-3) var(--space-2);
+  color: var(--muted);
+  font-size: var(--fs-nav-label);
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.sidebar-boards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+/* One option: 44px, icon + label */
+.sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: var(--control-height);
+  padding: 0 var(--space-3);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  color: var(--text-2);
+  font-size: var(--fs-body);
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--ease), color var(--ease);
+}
+
+.sidebar-item svg {
+  flex-shrink: 0;
+  color: var(--muted);
+}
+
+.sidebar-item:hover {
+  background-color: var(--hover);
+  color: var(--text);
+}
+
+/* The page / board you're on: raised, outlined, accent icon */
+.sidebar-item.active {
+  background-color: var(--selected-bg);
+  border-color: var(--border);
+  color: var(--selected-text);
+}
+
+.sidebar-item.active svg {
+  color: var(--accent);
+}
+
+/* Board items have a dot where pages have an icon (accent = the open board) */
+.nav-dot {
+  flex-shrink: 0;
+  width: var(--dot);
+  height: var(--dot);
+  margin: 0 var(--space-2) 0 var(--space-1);
+  border-radius: var(--radius-pill);
+  background-color: var(--neutral-dot);
+}
+
+.board-item.active .nav-dot {
+  background-color: var(--accent);
+}
+
+.board-item span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-item-add svg {
+  color: var(--accent);
+}
+
+/* Log out: at the very bottom, set apart, in danger colour */
+.sidebar-footer {
+  margin-top: auto;
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--divider);
+}
+
+.sidebar-item.danger,
+.sidebar-item.danger svg {
+  color: var(--danger-text);
+}

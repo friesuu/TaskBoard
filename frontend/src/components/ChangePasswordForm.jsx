@@ -80,7 +80,9 @@ function ChangePasswordForm({ email, onChangePassword })
                 />
             </div>
 
-            <button type="submit" disabled={isSubmitting}>Change password</button>
+            <div className="form-actions">
+                <button type="submit" className="btn btn-primary" disabled={isSubmitting}>Change password</button>
+            </div>
         </form>
     );
 }

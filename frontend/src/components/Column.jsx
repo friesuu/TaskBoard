@@ -1,13 +1,17 @@
 import TaskCard from './TaskCard.jsx';
 import { Droppable } from '@hello-pangea/dnd';
+import { STATUSES } from '../statuses';
 
 function Column({status, title, tasks, onStatusChange, onDelete, onOpen})
 {
+    const tone = STATUSES.find((s) => s.value === status)?.tone ?? 'neutral'; // the column's status colour
+
     return(
         <Droppable droppableId={status}>
             {(provided, snapshot) => (
-                <section className={snapshot.isDraggingOver ? 'column drag-over' : 'column'}>
-                    <h2>
+                <section className={`column column-${tone}${snapshot.isDraggingOver ? ' drag-over' : ''}`}>
+                    <h2 className="column-header">
+                        <span className={`dot dot-${tone}`} aria-hidden="true" />
                         {title}
                     </h2>
 

@@ -35,7 +35,7 @@ describe('Profile', () => {
     const onChangePassword = vi.fn();
     render(<Profile user={{ email: 'sam@test.com' }} tasks={[]} onBack={onBack} onChangePassword={onChangePassword} />);
 
-    await userEvent.click(screen.getByRole('button', { name: '← Back to board' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Back to board' }));
     await userEvent.click(screen.getByRole('button', { name: 'Change password' }));
 
     expect(onBack).toHaveBeenCalledOnce();

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { getChecklist, addChecklistItem, updateChecklistItem, moveChecklistItem, deleteChecklistItem } from '../api';
 import TrashIcon from './TrashIcon';
+import { ArrowUpIcon, ArrowDownIcon } from './Icons';
 
 // The checklist inside the task details panel: add, tick, reorder (↑ ↓) and delete items.
 // It loads and saves its own data. After every change it calls onProgress(done, total)
@@ -101,7 +102,7 @@ function Checklist({ taskId, onProgress, onSessionEnded })
         <section className="details-section" aria-label="Checklist">
             <div className="details-section-header">
                 <h3 className="details-heading">Checklist</h3>
-                {items?.length > 0 && <span className="checklist-count">{doneCount}/{items.length}</span>}
+                {items?.length > 0 && <span className="pill pill-count">{doneCount}/{items.length}</span>}
             </div>
 
             {items?.length > 0 && (
@@ -122,7 +123,7 @@ function Checklist({ taskId, onProgress, onSessionEnded })
             {items === null ? (
                 !error && <p className="details-empty">Loading…</p>
             ) : (
-                <ul className="checklist-items">
+                items.length > 0 && <ul className="list checklist-items">
                     {items.map((item, index) => (
                         <li key={item.id} className={item.done ? 'checklist-item done' : 'checklist-item'}>
                             {/* The label wraps the box, so clicking the text ticks it too */}
@@ -132,18 +133,22 @@ function Checklist({ taskId, onProgress, onSessionEnded })
                             </label>
                             <div className="checklist-actions">
                                 <button
+                                    className="icon-btn"
                                     aria-label={`Move "${item.text}" up`}
                                     disabled={index === 0}
                                     onClick={() => handleMove(item, index - 1)}
-                                >↑</button>
+                                ><ArrowUpIcon /></button>
                                 <button
+                                    className="icon-btn"
                                     aria-label={`Move "${item.text}" down`}
                                     disabled={index === items.length - 1}
                                     onClick={() => handleMove(item, index + 1)}
-                                >↓</button>
-                                <button aria-label={`Delete "${item.text}"`} onClick={() => handleDelete(item)}>
-                                    <TrashIcon />
-                                </button>
+                                ><ArrowDownIcon /></button>
+                                <button
+                                    className="icon-btn icon-btn-danger"
+                                    aria-label={`Delete "${item.text}"`}
+                                    onClick={() => handleDelete(item)}
+                                ><TrashIcon /></button>
                             </div>
                         </li>
                     ))}
@@ -159,7 +164,7 @@ function Checklist({ taskId, onProgress, onSessionEnded })
                         placeholder="Add an item…"
                         aria-label="New checklist item"
                     />
-                    <button type="submit" className="add-task-btn" disabled={isSaving || !draft.trim()}>Add</button>
+                    <button type="submit" className="btn btn-secondary" disabled={isSaving || !draft.trim()}>Add</button>
                 </form>
             )}
         </section>

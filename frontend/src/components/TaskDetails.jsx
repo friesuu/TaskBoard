@@ -4,6 +4,7 @@ import Checklist from './Checklist';
 import Comments from './Comments';
 import { STATUSES } from '../statuses';
 import { isOverdue } from '../dates';
+import { CalendarIcon, CloseIcon } from './Icons';
 
 // The panel that opens when you click a task: details + notes (editable), checklist, comments.
 // App decides WHICH task is open and passes it in; everything here works on that one task.
@@ -31,12 +32,12 @@ function TaskDetails({ task, currentUserId, onSave, onChecklistProgress, onSessi
         setIsEditing(false);
     };
 
-    const statusLabel = STATUSES.find((s) => s.value === task.status)?.label;
+    const status = STATUSES.find((s) => s.value === task.status);
 
     return(
         <div className="modal-backdrop" onClick={onClose}>
             <div
-                className="modal-content task-details"
+                className="modal modal-wide"
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby="task-details-title"
@@ -44,19 +45,27 @@ function TaskDetails({ task, currentUserId, onSave, onChecklistProgress, onSessi
             >
                 <header className="modal-header">
                     <h2 id="task-details-title">{task.title}</h2>
-                    <button className="close-btn" onClick={onClose} aria-label="Close task">✕</button>
+                    <button className="icon-btn" onClick={onClose} aria-label="Close task"><CloseIcon /></button>
                 </header>
 
-                <div className="task-details-body">
+                <div className="modal-body task-details-body">
                     {isEditing ? (
                         <TaskEditForm task={task} onSave={handleSave} onCancel={() => setIsEditing(false)} />
                     ) : (
                         <section className="details-section">
                             <div className="details-meta">
-                                <span className="status-pill">{statusLabel}</span>
-                                {task.dueDate && <span>Due {task.dueDate}</span>}
-                                {isOverdue(task) && <span className="overdue-label">Overdue</span>}
-                                <button className="logout-btn details-edit" onClick={() => setIsEditing(true)}>Edit</button>
+                                <span className="pill">
+                                    <span className={`dot dot-${status?.tone ?? 'neutral'}`} aria-hidden="true" />
+                                    {status?.label}
+                                </span>
+                                {task.dueDate && <span className="details-due"><CalendarIcon size={14} />Due {task.dueDate}</span>}
+                                {isOverdue(task) && (
+                                    <span className="pill">
+                                        <span className="dot dot-danger" aria-hidden="true" />
+                                        Overdue
+                                    </span>
+                                )}
+                                <button className="btn btn-secondary details-edit" onClick={() => setIsEditing(true)}>Edit</button>
                             </div>
 
                             <h3 className="details-heading">Notes</h3>

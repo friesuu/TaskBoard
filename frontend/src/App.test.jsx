@@ -43,7 +43,9 @@ describe('App', () => {
 
     expect(await screen.findByText('Write report')).toBeInTheDocument();
     expect(screen.getByText('Fix login')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Task Board' })).toBeInTheDocument();
+    // The page title is the open board; the app's name is in the navigation
+    expect(await screen.findByRole('heading', { name: 'My board' })).toBeInTheDocument();
+    expect(screen.getByText('Task Board')).toBeInTheDocument();
   });
 
   it('goes back to the login form when the session has expired', async () => {

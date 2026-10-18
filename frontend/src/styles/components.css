@@ -1,0 +1,416 @@
+/* =====================================================================
+   Shared components (DESIGN.md section 9): buttons, form controls, alerts,
+   pills, cards, lists, modals, empty states, loading.
+   Every screen uses these, so they look the same everywhere.
+   ===================================================================== */
+
+/* ---------- Buttons ---------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: var(--control-height);
+  padding: 0 var(--space-4);
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  background: transparent;
+  font-size: var(--fs-body);
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color var(--ease), border-color var(--ease), color var(--ease), filter var(--ease);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Primary: one per view or section */
+.btn-primary {
+  background-color: var(--primary-bg);
+  color: var(--primary-text);
+}
+
+.btn-primary:not(:disabled):hover {
+  filter: brightness(0.92);
+}
+
+.btn-secondary {
+  background-color: var(--raised);
+  border-color: var(--border);
+  color: var(--text);
+  box-shadow: var(--highlight);
+}
+
+.btn-secondary:not(:disabled):hover {
+  background-color: var(--hover);
+  border-color: var(--border-strong);
+}
+
+.btn-ghost {
+  color: var(--text-2);
+}
+
+.btn-ghost:not(:disabled):hover {
+  background-color: var(--hover);
+  color: var(--text);
+}
+
+/* Dark danger: outlined, the colour only on the text */
+.btn-danger {
+  border-color: var(--border);
+  color: var(--danger-text);
+}
+
+.btn-danger:not(:disabled):hover {
+  background-color: var(--hover);
+}
+
+.btn-block {
+  width: 100%;
+}
+
+/* A ghost button whose action destroys something (e.g. Delete comment) */
+.btn.danger-text,
+.btn.danger-text:not(:disabled):hover {
+  color: var(--danger-text);
+}
+
+/* Icon-only buttons: round, 44px, muted icon. Always have an aria-label in the JSX. */
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: var(--control-height);
+  height: var(--control-height);
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background-color var(--ease), color var(--ease);
+}
+
+.icon-btn:not(:disabled):hover {
+  background-color: var(--hover);
+  color: var(--text);
+}
+
+.icon-btn-danger:not(:disabled):hover {
+  color: var(--danger);
+}
+
+.icon-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ---------- Forms ---------- */
+
+.task-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* A label above its control */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.field label {
+  font-size: var(--fs-small);
+  font-weight: 500;
+  color: var(--text-2);
+}
+
+/* Actions sit bottom-right, the main one last */
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+}
+
+/* Every text box, dropdown and text area in the app */
+input:not([type="checkbox"]):not([type="radio"]),
+select,
+textarea {
+  width: 100%;
+  min-height: var(--control-height);
+  padding: 0 var(--input-pad-x);
+  background-color: var(--raised);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  box-shadow: var(--highlight);
+  color: var(--text);
+  font-size: var(--fs-body);
+  transition: border-color var(--ease);
+}
+
+textarea {
+  padding-top: var(--space-3);
+  padding-bottom: var(--space-3);
+  line-height: 1.5;
+  resize: vertical;
+}
+
+select {
+  cursor: pointer;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--accent);
+}
+
+/* e.g. the account email in "Change password": shown, not editable */
+input[readonly] {
+  background-color: var(--sunken);
+  color: var(--text-2);
+}
+
+/* Checkbox: off = raised box, on = accent fill with a dark tick */
+input[type="checkbox"] {
+  appearance: none;
+  display: inline-grid;
+  place-content: center;
+  flex-shrink: 0;
+  width: var(--checkbox);
+  height: var(--checkbox);
+  margin: 0;
+  background-color: var(--raised);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-check);
+  cursor: pointer;
+  transition: background-color var(--ease), border-color var(--ease);
+}
+
+input[type="checkbox"]::before {
+  content: "";
+  width: 5px;
+  height: 9px;
+  margin-top: -2px;
+  border: solid var(--primary-text);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg) scale(0);
+  transition: transform var(--ease);
+}
+
+input[type="checkbox"]:checked {
+  background-color: var(--accent);
+  border-color: var(--accent);
+}
+
+input[type="checkbox"]:checked::before {
+  transform: rotate(45deg) scale(1);
+}
+
+/* ---------- Alerts: an icon + the message (never colour alone) ---------- */
+
+.error-message,
+.success-message {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  background-color: var(--raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  color: var(--text);
+  font-size: var(--fs-body);
+  line-height: 1.5;
+}
+
+/* The icon is a shape (mask); its colour comes from the status token */
+.error-message::before,
+.success-message::before {
+  content: "";
+  flex-shrink: 0;
+  width: var(--icon);
+  height: var(--icon);
+  margin-top: 2px;
+  -webkit-mask: var(--alert-icon) center / contain no-repeat;
+  mask: var(--alert-icon) center / contain no-repeat;
+}
+
+.error-message::before {
+  --alert-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M12 8v4'/%3E%3Cpath d='M12 16h.01'/%3E%3C/svg%3E");
+  background-color: var(--danger);
+}
+
+.success-message::before {
+  --alert-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='m9 12 2 2 4-4'/%3E%3C/svg%3E");
+  background-color: var(--success);
+}
+
+/* ---------- Pills and status dots ---------- */
+
+/* Dark pills: outlined, with a coloured status dot before the text */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--pill-pad);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  color: var(--text-pill);
+  font-size: var(--fs-pill);
+  font-weight: 500;
+  line-height: 1.5;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.dot {
+  display: inline-block;
+  flex-shrink: 0;
+  width: var(--dot);
+  height: var(--dot);
+  border-radius: var(--radius-pill);
+  background-color: var(--neutral-dot);
+}
+
+.dot-info { background-color: var(--info); }
+.dot-success { background-color: var(--success); }
+.dot-warning { background-color: var(--warning); }
+.dot-danger { background-color: var(--danger); }
+.dot-neutral { background-color: var(--neutral-dot); }
+
+/* ---------- Cards and lists ---------- */
+
+.card {
+  background-color: var(--raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  padding: var(--space-5);
+}
+
+.list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  background-color: var(--raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+}
+
+.list > li + li {
+  border-top: 1px solid var(--divider-subtle);
+}
+
+/* ---------- Modals ---------- */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+  background-color: var(--scrim);
+  animation: fade-in var(--ease);
+}
+
+.modal {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: var(--modal-width);
+  max-height: calc(100vh - 2 * var(--space-4));
+  max-height: calc(100dvh - 2 * var(--space-4));
+  background-color: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-nav);
+  box-shadow: var(--shadow-float);
+  overflow: hidden;
+}
+
+.modal-wide {
+  max-width: var(--modal-wide);
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-3) var(--space-3) var(--space-6);
+  border-bottom: 1px solid var(--divider);
+}
+
+.modal-header h2 {
+  overflow-wrap: anywhere;
+}
+
+/* Only the inside scrolls; the title and ✕ stay visible */
+.modal-body {
+  padding: var(--space-6);
+  overflow-y: auto;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* ---------- Empty states and loading ---------- */
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-10) var(--space-4);
+  text-align: center;
+}
+
+.empty-state-icon {
+  display: grid;
+  place-items: center;
+  width: var(--empty-icon);
+  height: var(--empty-icon);
+  margin-bottom: var(--space-2);
+  border-radius: var(--radius-pill);
+  background-color: var(--sunken);
+  border: 1px solid var(--border);
+  color: var(--accent);
+}
+
+.empty-state p {
+  color: var(--muted);
+}
+
+.loading {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--muted);
+}
+
+.spinner {
+  display: inline-block;
+  flex-shrink: 0;
+  width: var(--spinner);
+  height: var(--spinner);
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: var(--radius-pill);
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

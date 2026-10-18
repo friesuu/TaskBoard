@@ -63,7 +63,9 @@ function TaskForm({ onCreate }) {
         />
       </div>
 
-      <button type="submit">Add Task</button>
+      <div className="form-actions">
+        <button type="submit" className="btn btn-primary">Add task</button>
+      </div>
     </form>
   );
 }

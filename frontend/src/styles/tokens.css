@@ -1,0 +1,130 @@
+/* =====================================================================
+   Design tokens: the Haze design system (design/DESIGN (2).md).
+   EVERY colour, font, size, radius, space and shadow the app uses lives here;
+   components only refer to these names, never to raw values.
+
+   Only the DARK theme exists for now (index.html sets data-theme="dark" on <html>).
+   Adding light later = a light block on :root + a theme switch; no component changes.
+   ===================================================================== */
+
+[data-theme="dark"] {
+  color-scheme: dark; /* native controls (date picker, select menus, scrollbars) draw dark too */
+
+  /* ---- Surfaces ---- */
+  --page: #0D0E12;          /* behind the panels */
+  --nav: #121318;           /* side navigation panel */
+  --panel: #15161C;         /* main content panel, modals */
+  --raised: #1B1D24;        /* cards, inputs, buttons, list containers */
+  --sunken: #111217;        /* wells, progress tracks */
+  --column: #0A0B0E;        /* board columns: a clearly darker well than the board, so the cards pop */
+  --column-border: #2C2F3B; /* and a stronger outline around it */
+  --bar: #131419;           /* sticky bars inside a panel (chat composer) */
+  --hover: #17181E;         /* hover / pressed rows and nav items */
+  --selected-bg: #1B1D24;   /* current nav item (+ 1px --border) */
+  --selected-text: #E7E8EE;
+
+  /* ---- Borders ---- */
+  --border-nav: #22242C;
+  --border-panel: #24262F;
+  --border: #2A2C36;        /* cards, rows, pills, secondary buttons */
+  --border-strong: #2C2F3A; /* inputs */
+  --divider: #22242C;       /* header / section dividers */
+  --divider-subtle: #262833;/* between list rows */
+
+  /* ---- Text ---- */
+  --text: #E7E8EE;
+  --text-2: #A6A9B6;        /* secondary text, labels */
+  --text-pill: #C9CBD6;
+  --muted: #7E828F;         /* help text, meta, timestamps */
+  --placeholder: #6F7380;
+  --link: #B9C0FF;
+
+  /* ---- Accent and primary ---- */
+  /* Brighter than the design's defaults, by request (same hues, more colour) */
+  --accent: #99A3FF;        /* focus rings, checked controls, accent icons and dots */
+  --primary-bg: #E7E8EE;    /* primary buttons */
+  --primary-text: #0D0E12;  /* text on primary buttons, ticks on checked boxes */
+  --tint: #1D1F2B;          /* avatars, soft highlights */
+  --tint-border: #2A2D40;
+  --scrim: rgba(0, 0, 0, 0.6);
+
+  /* ---- Status palette: one meaning each, everywhere ---- */
+  --info: #99A3FF;          /* periwinkle: information, "to do" / later */
+  --success: #4FDBA8;       /* mint: done, complete */
+  --warning: #FFA26B;       /* peach: in progress, needs attention */
+  --danger: #FF002F;        /* red (the app's red from before the redesign): dots, icons, the overdue bar */
+  --danger-text: #FF5370;   /* red for TEXT (the old error red): readable on the dark panels (4.5:1+) */
+  --neutral-dot: #3A3D4A;   /* no status */
+  /* Overdue cards, as before the redesign: a faint red tint, a dark-red border and a thick red bar on the left.
+     The tint is mixed into the card colour so the card stays as raised as the others. */
+  --danger-surface: color-mix(in srgb, var(--danger) 5%, var(--raised));
+  --danger-border: rgba(153, 25, 48, 0.733);
+  --danger-bar: 4px;
+  --neutral-text: #7E828F;
+
+  /* ---- Chat ---- */
+  --bubble-user: #1F2130;
+  --bubble-user-border: #2A2D40;
+
+  /* ---- Shadows (dark: borders do most of the work) ---- */
+  --shadow-panel: inset 0 1px 0 rgba(255, 255, 255, 0.03), 0 24px 60px rgba(0, 0, 0, 0.45);
+  --highlight: inset 0 1px 0 rgba(255, 255, 255, 0.04); /* top edge of nav, inputs, raised buttons */
+  --shadow-float: 0 16px 40px rgba(0, 0, 0, 0.5);       /* menus, modals, dragged cards (+ 1px --border) */
+}
+
+/* Theme-independent tokens */
+:root {
+  /* ---- Type (Outfit 400/500/600, never 700) ---- */
+  --font: 'Outfit', ui-sans-serif, system-ui, sans-serif;
+  --fs-h1: 22px;            /* page title */
+  --fs-h2: 18px;            /* section title, modal title */
+  --fs-h3: 16px;            /* card / group title */
+  --fs-body: 15px;
+  --fs-small: 13px;         /* help text, form labels, meta */
+  --fs-pill: 12px;          /* pills, badges, counts */
+  --fs-nav-label: 11px;     /* uppercase section labels in the nav */
+  --fs-brand: 17px;         /* "Task Board" */
+
+  /* ---- Spacing scale: these steps only ---- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  /* ---- Radius ---- */
+  --radius-panel: 28px;     /* main panel */
+  --radius-nav: 24px;       /* nav panel, modals */
+  --radius-tray: 20px;      /* large cards, trays (board columns) */
+  --radius-card: 16px;      /* cards, lists, menus, alerts */
+  --radius-control: 14px;   /* buttons, inputs, nav items, rows */
+  --radius-check: 6px;      /* checkboxes */
+  --radius-pill: 999px;     /* pills, badges, icon buttons, avatars */
+
+  /* ---- Component sizes (from the design's component specs) ---- */
+  --control-height: 44px;   /* every button / input / tap target */
+  --input-pad-x: 14px;      /* left/right padding inside inputs */
+  --pill-pad: 2px 10px;     /* pills and badges */
+  --radius-bubble: 22px;    /* chat bubbles and the chat composer */
+  --checkbox: 18px;
+  --icon: 18px;             /* icons drawn by CSS (alert icons) */
+  --dot: 6px;               /* status dots */
+  --avatar: 40px;
+  --avatar-sm: 30px;        /* the assistant's avatar in the chat */
+  --empty-icon: 48px;       /* the circle in an empty state */
+  --spinner: 16px;
+  --progress-height: 6px;
+  --nav-width: 280px;       /* the slide-in navigation panel */
+  --modal-width: 520px;
+  --modal-wide: 640px;      /* the task details dialog: three sections */
+  --content-width: 720px;   /* reading pages: profile, chat, forms */
+  --auth-width: 420px;      /* the log-in card */
+  --composer-max: 200px;    /* the chat box grows up to this, then scrolls */
+
+  /* ---- Motion ---- */
+  --ease: 160ms ease-out;
+}

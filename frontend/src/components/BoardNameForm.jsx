@@ -43,7 +43,9 @@ function BoardNameForm({ initialName = '', submitLabel, onSubmit })
                 />
             </div>
 
-            <button type="submit" disabled={isSaving || !name.trim()}>{submitLabel}</button>
+            <div className="form-actions">
+                <button type="submit" className="btn btn-primary" disabled={isSaving || !name.trim()}>{submitLabel}</button>
+            </div>
         </form>
     );
 }

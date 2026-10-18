@@ -24,7 +24,7 @@ function BoardSettings({ board, canDelete, onRename, onDelete })
         <div className="board-settings">
             <BoardNameForm initialName={board.name} submitLabel="Rename" onSubmit={onRename} />
 
-            <div className="danger-zone">
+            <div className="card danger-zone">
                 <h3>Delete board</h3>
                 {error && <p className="error-message">{error}</p>}
                 <p className="profile-hint">
@@ -32,7 +32,7 @@ function BoardSettings({ board, canDelete, onRename, onDelete })
                         ? 'Deletes this board and every task on it.'
                         : "This is your only board, so it can't be deleted."}
                 </p>
-                <button className="danger-btn" onClick={handleDelete} disabled={!canDelete}>
+                <button className="btn btn-danger" onClick={handleDelete} disabled={!canDelete}>
                     Delete board
                 </button>
             </div>

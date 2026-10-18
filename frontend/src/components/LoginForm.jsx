@@ -40,9 +40,9 @@ function LoginForm({ onLoggedIn, notice })
     };
 
     return(
-        <main className="container">
-            <form onSubmit={handleSubmit} className="task-form login-card">
-                <h2>{mode === 'login' ? 'Log in' : 'Create an account'}</h2>
+        <main className="center-screen">
+            <form onSubmit={handleSubmit} className="task-form auth-card">
+                <h1>{mode === 'login' ? 'Log in' : 'Create an account'}</h1>
 
                 {/* This form's own error wins; otherwise show App's notice */}
                 {(error || notice) && <div className="error-message">{error || notice}</div>}
@@ -72,12 +72,12 @@ function LoginForm({ onLoggedIn, notice })
                     />
                 </div>
 
-                <button type="submit" disabled={isSubmitting}>
+                <button type="submit" className="btn btn-primary btn-block" disabled={isSubmitting}>
                     {mode === 'login' ? 'Log in' : 'Register'}
                 </button>
 
                 {/* type="button": inside a form, a button without a type would submit the form */}
-                <button type="button" className="link-button" onClick={switchMode}>
+                <button type="button" className="btn btn-ghost link-button" onClick={switchMode}>
                     {mode === 'login' ? 'No account? Register' : 'Have an account? Log in'}
                 </button>
             </form>

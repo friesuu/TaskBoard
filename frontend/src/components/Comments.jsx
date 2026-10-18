@@ -82,7 +82,7 @@ function Comments({ taskId, currentUserId, onSessionEnded })
             {comments?.length === 0 && <p className="details-empty">No comments yet.</p>}
 
             {comments?.length > 0 && (
-                <ol className="comment-list">
+                <ol className="list comment-list">
                     {comments.map((c) => (
                         <li key={c.id} className="comment">
                             <div className="comment-meta">
@@ -101,11 +101,11 @@ function Comments({ taskId, currentUserId, onSessionEnded })
                                         aria-label="Edit comment"
                                     />
                                     <div className="comment-actions">
-                                        <button type="submit" className="add-task-btn" disabled={isSaving || !editDraft.trim()}>
-                                            Save
-                                        </button>
-                                        <button type="button" className="logout-btn" onClick={() => setEditingId(null)}>
+                                        <button type="button" className="btn btn-secondary" onClick={() => setEditingId(null)}>
                                             Cancel
+                                        </button>
+                                        <button type="submit" className="btn btn-primary" disabled={isSaving || !editDraft.trim()}>
+                                            Save
                                         </button>
                                     </div>
                                 </form>
@@ -115,10 +115,10 @@ function Comments({ taskId, currentUserId, onSessionEnded })
 
                             {c.author.id === currentUserId && editingId !== c.id && (
                                 <div className="comment-actions">
-                                    <button className="text-btn" onClick={() => startEditing(c)} aria-label="Edit comment">
+                                    <button className="btn btn-ghost" onClick={() => startEditing(c)} aria-label="Edit comment">
                                         Edit
                                     </button>
-                                    <button className="text-btn danger" onClick={() => handleDelete(c)} aria-label="Delete comment">
+                                    <button className="btn btn-ghost danger-text" onClick={() => handleDelete(c)} aria-label="Delete comment">
                                         Delete
                                     </button>
                                 </div>
@@ -138,7 +138,7 @@ function Comments({ taskId, currentUserId, onSessionEnded })
                         placeholder="Write a comment…"
                         aria-label="New comment"
                     />
-                    <button type="submit" className="add-task-btn" disabled={isSaving || !draft.trim()}>
+                    <button type="submit" className="btn btn-secondary" disabled={isSaving || !draft.trim()}>
                         Comment
                     </button>
                 </form>

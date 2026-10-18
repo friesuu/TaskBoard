@@ -1,0 +1,663 @@
+/* =====================================================================
+   Screens: board, task details, board settings, profile, assistant, log in.
+   Built from the shared components; this file only adds each screen's layout.
+   ===================================================================== */
+
+/* ---------- Board ---------- */
+
+/* Three columns that fill the panel's width (and its height, so there's room to drop cards) */
+.board {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+/* A column is a tray: a clearly darker well than the board, with its own outline,
+   so the board, the columns and the raised cards read as three separate layers */
+.column {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-3);
+  background-color: var(--column);
+  border: 1px solid var(--column-border);
+  border-radius: var(--radius-tray);
+  transition: background-color var(--ease), border-color var(--ease);
+}
+
+/* Each column's status colour (set by Column.jsx), used for its title line */
+.column-info { --tone: var(--info); }
+.column-warning { --tone: var(--warning); }
+.column-success { --tone: var(--success); }
+
+/* While a card is dragged over it */
+.column.drag-over {
+  background-color: var(--hover);
+  border-color: var(--accent);
+}
+
+/* Title with its status dot, and a line in the column's status colour under it */
+.column-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-2) var(--space-3);
+  border-bottom: 2px solid color-mix(in srgb, var(--tone, var(--divider)) 70%, transparent);
+  font-size: var(--fs-h3);
+}
+
+/* The drop area: stretches to the bottom of the column */
+.task-list {
+  flex: 1;
+  padding-top: var(--space-3);
+}
+
+.empty-message {
+  padding: var(--space-6) 0;
+  color: var(--muted);
+  font-size: var(--fs-small);
+  text-align: center;
+}
+
+/* A card. Spacing between cards is a margin (the drag-and-drop library measures margins, not gaps). */
+.task-card {
+  container-type: inline-size; /* lets the button row react to the card's own width (below) */
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+  padding: var(--space-4);
+  background-color: var(--raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  transition: border-color var(--ease), box-shadow var(--ease);
+}
+
+.task-card:hover {
+  border-color: var(--border-strong);
+}
+
+/* Being dragged: lifted, with an accent outline */
+.task-card.dragging {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-float);
+}
+
+/* The title is a button (it opens the task) that reads as the card title */
+.task-title-btn {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.task-title-btn:hover {
+  text-decoration: underline;
+  text-decoration-color: var(--muted);
+  text-underline-offset: 3px;
+}
+
+/* Notes preview: at most 2 lines, then "…" */
+.task-notes {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: pre-line;
+  color: var(--text-2);
+  font-size: var(--fs-small);
+  line-height: 1.5;
+}
+
+.task-due {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--muted);
+  font-size: var(--fs-small);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Overdue: the whole card turns rose (tint + border), and so does the date.
+   The "Overdue" pill says it in words too, so colour is never the only signal. */
+.task-card.overdue {
+  background-color: var(--danger-surface);
+  border-color: var(--danger-border);
+  border-left: var(--danger-bar) solid var(--danger); /* the thick red bar from before the redesign */
+}
+
+.task-card.overdue:hover {
+  border-color: var(--danger);
+}
+
+.task-card.overdue .task-due {
+  color: var(--danger-text);
+}
+
+.task-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.task-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.task-actions select {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+}
+
+/* In a narrow card (smaller windows) the dropdown gets its own line, so "In Progress" isn't cut off;
+   Open and the bin go underneath */
+@container (max-width: 280px) {
+  .task-actions select {
+    flex-basis: 100%;
+  }
+}
+
+.task-delete {
+  margin-left: auto;
+}
+
+/* ---------- Task details dialog ---------- */
+
+/* Sections (details, checklist, comments) separated by dividers */
+.task-details-body {
+  padding: 0;
+}
+
+.task-details-body > * {
+  padding: var(--space-6);
+}
+
+.task-details-body > * + * {
+  border-top: 1px solid var(--divider);
+}
+
+.details-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.details-section-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.details-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.details-due {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--muted);
+  font-size: var(--fs-small);
+  font-variant-numeric: tabular-nums;
+}
+
+.details-edit {
+  margin-left: auto;
+}
+
+.details-heading {
+  margin-top: var(--space-2);
+}
+
+.details-section-header .details-heading {
+  margin-top: 0;
+}
+
+/* Full notes, keeping the line breaks you typed */
+.details-notes {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.details-empty {
+  color: var(--muted);
+  font-size: var(--fs-small);
+}
+
+/* Checklist progress: a thin mint bar in a sunken track */
+.progress-bar {
+  height: var(--progress-height);
+  border-radius: var(--radius-pill);
+  background-color: var(--sunken);
+  border: 1px solid var(--divider);
+  overflow: hidden;
+}
+
+.progress-bar > div {
+  height: 100%;
+  border-radius: inherit;
+  background-color: var(--success);
+  transition: width var(--ease);
+}
+
+/* A checklist row: the whole label (box + text) is the tap target */
+.checklist-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-2) 0 var(--space-4);
+  transition: background-color var(--ease);
+}
+
+.checklist-item:hover {
+  background-color: var(--hover);
+}
+
+.checklist-item label {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--control-height);
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.checklist-item.done label span {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.checklist-actions {
+  display: flex;
+  gap: var(--space-1);
+}
+
+/* "Add an item" / "Write a comment": the box with its button beside it */
+.inline-add,
+.comment-form {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.inline-add input,
+.comment-form textarea {
+  flex: 1;
+}
+
+/* Comments: author and time on top, then the text */
+.comment {
+  padding: var(--space-3) var(--space-4);
+}
+
+.comment-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+  color: var(--muted);
+  font-size: var(--fs-small);
+  font-variant-numeric: tabular-nums;
+}
+
+.comment-author {
+  color: var(--text-2);
+  font-weight: 500;
+}
+
+.comment-edited {
+  font-style: italic;
+}
+
+.comment-body {
+  margin-top: var(--space-1);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Edit / Delete under your own comment, lined up with the text */
+.comment > .comment-actions {
+  display: flex;
+  gap: var(--space-2);
+  margin: var(--space-1) 0 0 calc(-1 * var(--space-4));
+}
+
+/* Editing a comment: the box, then Cancel / Save on the right */
+.comment .comment-form {
+  flex-direction: column;
+  align-items: stretch;
+  margin-top: var(--space-2);
+}
+
+.comment .comment-form .comment-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-3);
+}
+
+/* ---------- Board settings dialog ---------- */
+
+.board-settings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.danger-zone {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.danger-zone .btn-danger {
+  margin-top: var(--space-2);
+}
+
+/* Help text under a control or in a card */
+.profile-hint {
+  color: var(--muted);
+  font-size: var(--fs-small);
+}
+
+/* ---------- Profile ---------- */
+
+/* A reading page: 720px wide, centred */
+.profile {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  width: 100%;
+  max-width: var(--content-width);
+  margin: 0 auto;
+}
+
+/* Ghost button, lined up with the content's left edge */
+.back-link {
+  align-self: flex-start;
+  margin-left: calc(-1 * var(--space-4));
+}
+
+.profile-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.avatar {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: var(--avatar);
+  height: var(--avatar);
+  border-radius: var(--radius-pill);
+  background-color: var(--tint);
+  border: 1px solid var(--tint-border);
+  color: var(--accent);
+  font-size: var(--fs-small);
+  font-weight: 600;
+}
+
+.profile-identity {
+  min-width: 0;
+}
+
+.profile-email {
+  font-size: var(--fs-h3);
+  overflow-wrap: anywhere;
+}
+
+.profile-label {
+  color: var(--muted);
+  font-size: var(--fs-small);
+}
+
+/* Section titles: 32px from the section above (16px gap + 16px margin) */
+.profile-heading {
+  margin-top: var(--space-4);
+}
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4);
+}
+
+.stat-label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-2);
+  font-size: var(--fs-small);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.stat-number {
+  font-size: var(--fs-h1);
+  font-weight: 600;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat.overdue .stat-number {
+  color: var(--danger-text);
+}
+
+.profile-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+/* ---------- Assistant (chat) ---------- */
+
+.chat {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* "Working on: <board>" on the left, Clear chat on the right */
+.chat-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-8);
+  border-bottom: 1px solid var(--divider);
+}
+
+.chat-toolbar .btn {
+  margin-left: auto;
+}
+
+/* Only the messages scroll */
+.chat-messages {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-8);
+}
+
+.chat-thread {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  max-width: var(--content-width);
+  margin: 0 auto;
+}
+
+/* Your messages: a bubble on the right */
+.chat-message.user {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.chat-bubble {
+  max-width: 78%;
+  padding: var(--space-3) var(--space-4);
+  background-color: var(--bubble-user);
+  border: 1px solid var(--bubble-user-border);
+  border-radius: var(--radius-bubble);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* The assistant's messages: no bubble, an avatar and a sender label */
+.chat-message.assistant {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.chat-avatar {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: var(--avatar-sm);
+  height: var(--avatar-sm);
+  border-radius: var(--radius-pill);
+  background-color: var(--tint);
+  border: 1px solid var(--tint-border);
+  color: var(--accent);
+}
+
+.chat-avatar svg {
+  width: var(--spinner);
+  height: var(--spinner);
+}
+
+.chat-message-body {
+  min-width: 0;
+}
+
+.chat-sender {
+  color: var(--text-2);
+  font-size: var(--fs-small);
+  font-weight: 500;
+}
+
+.chat-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* The composer bar at the bottom of the panel */
+.chat-composer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-8) var(--space-5);
+  background-color: var(--bar);
+  border-top: 1px solid var(--divider);
+}
+
+.chat-composer > * {
+  width: 100%;
+  max-width: var(--content-width);
+  margin: 0 auto;
+}
+
+/* A rounded box: the message on the left, the round Send button on the right */
+.composer-box {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-2);
+  background-color: var(--raised);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-bubble);
+  box-shadow: var(--highlight);
+  transition: border-color var(--ease);
+}
+
+.composer-box:focus-within {
+  border-color: var(--accent);
+}
+
+/* The text box blends into the composer (the composer shows the focus instead) */
+.composer-box textarea {
+  flex: 1;
+  max-height: var(--composer-max);
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  resize: none;
+}
+
+.composer-box textarea:focus-visible {
+  outline: none;
+}
+
+.composer-box:has(textarea:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.send-btn {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: var(--control-height);
+  height: var(--control-height);
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-pill);
+  background-color: var(--primary-bg);
+  color: var(--primary-text);
+  cursor: pointer;
+  transition: filter var(--ease);
+}
+
+.send-btn:not(:disabled):hover {
+  filter: brightness(0.92);
+}
+
+.send-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ---------- Log in / Create an account ---------- */
+
+.auth-card {
+  width: 100%;
+  max-width: var(--auth-width);
+  padding: var(--space-8);
+  background-color: var(--panel);
+  border: 1px solid var(--border-panel);
+  border-radius: var(--radius-nav);
+  box-shadow: var(--shadow-panel);
+}
+
+.auth-card .btn-primary {
+  margin-top: var(--space-2);
+}
+
+.link-button {
+  align-self: center;
+  color: var(--link);
+}

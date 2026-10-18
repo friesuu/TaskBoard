@@ -58,8 +58,11 @@ function TaskEditForm({ task, onSave, onCancel }) {
         />
       </div>
 
-      <button type="submit">Save</button>
-      <button type="button" onClick={onCancel}>Cancel</button>
+      {/* Actions bottom-right, the main one last */}
+      <div className="form-actions">
+        <button type="button" className="btn btn-secondary" onClick={onCancel}>Cancel</button>
+        <button type="submit" className="btn btn-primary">Save</button>
+      </div>
     </form>
   );
 }

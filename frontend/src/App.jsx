@@ -18,6 +18,7 @@ import ChatPanel from './components/ChatPanel';
 import BoardNameForm from './components/BoardNameForm';
 import BoardSettings from './components/BoardSettings';
 import { getUrlParam, setUrlParam } from './url';
+import { AddIcon, CloseIcon, SettingsIcon } from './components/Icons';
 import TaskDetails from './components/TaskDetails';
 
 const SESSION_EXPIRED = 'Your session has expired. Please log in again.';
@@ -316,40 +317,97 @@ function App()
   if (user === undefined)
   {
     // Still waiting for "me". If that failed (server down...), show why instead of loading forever.
-    return <main className="container">{error ? <p className="error-message">{error}</p> : <p>Loading…</p>}</main>;
+    return(
+      <main className="center-screen">
+        {error
+          ? <p className="error-message">{error}</p>
+          : <p className="loading"><span className="spinner" aria-hidden="true" />Loading…</p>}
+      </main>
+    );
   }
   if (user === null)
   {
     return <LoginForm onLoggedIn={handleLoggedIn} notice={error} />;
   }
 
+  // The page header's title: the open board's name, or the page you're on
+  const pageTitle = view === 'profile' ? 'Profile' : view === 'chat' ? 'Assistant' : (currentBoard?.name ?? '');
+
   return(
-    <main className="container">
-      <header className="header">
-        {/* Menu button on the LEFT, next to the title, because the menu now slides in from the left */}
-        <div className="header-left">
-          {/* aria-expanded tells screen readers whether the menu is open */}
-          <button
-            className="menu-btn"
-            onClick={() => setIsSidebarOpen(true)}
-            aria-label="Open menu"
-            aria-expanded={isSidebarOpen}
-            aria-controls="app-menu"
-          >
-            <MenuIcon />
-          </button>
-          <h1 className='header-title'>
-            Task Board
-          </h1>
-        </div>
-        <div className="header-user">
-          {view === 'board' && (
-            <button className="add-task-btn" onClick={() => openForm('add')}>
-              + Add Task
+    // The app shell: the dark page with the main panel on it. The navigation (Sidebar) slides in over it.
+    <div className="app-shell">
+      <main className="main-panel">
+        {/* Page header: menu button and page title on the left, this page's actions on the right */}
+        <header className="page-header">
+          <div className="page-header-title">
+            {/* aria-expanded tells screen readers whether the menu is open */}
+            <button
+              className="icon-btn"
+              onClick={() => setIsSidebarOpen(true)}
+              aria-label="Open menu"
+              aria-expanded={isSidebarOpen}
+              aria-controls="app-menu"
+            >
+              <MenuIcon />
             </button>
+            <h1 className="page-title">{pageTitle}</h1>
+          </div>
+
+          {view === 'board' && (
+            <div className="page-actions">
+              {currentBoard && (
+                <button className="btn btn-secondary" onClick={() => openForm('board-settings')}>
+                  <SettingsIcon size={16} />
+                  Board settings
+                </button>
+              )}
+              <button className="btn btn-primary" onClick={() => openForm('add')}>
+                <AddIcon size={16} />
+                Add task
+              </button>
+            </div>
+          )}
+        </header>
+
+        {/* Only this part scrolls; the header stays put. The chat manages its own scrolling. */}
+        <div className={view === 'chat' ? 'page-content page-content-chat' : 'page-content'}>
+          {error && <p className="error-message">{error}</p>}
+          {success && <p className="success-message">{success}</p>}
+
+          {/* "view" picks the page. Both use the same tasks, so the profile's numbers are always up to date. */}
+          {view === 'chat' && (
+            <ChatPanel boardId={boardId} boardName={currentBoard?.name} onSessionEnded={endedSession} />
+          )}
+
+          {view === 'profile' && (
+            <Profile
+              user={user}
+              tasks={tasks}
+              boardName={currentBoard?.name}
+              onBack={() => setView('board')}
+              onChangePassword={() => openForm('password')}
+            />
+          )}
+
+          {view === 'board' && (
+            <DragDropContext onDragEnd={handleDragEnd}>
+              <div className="board">
+              {STATUSES.map((s) => (
+                <Column
+                key={s.value}
+                title={s.label}
+                tasks={tasks.filter((t) => t.status === s.value)}
+                onStatusChange={handleStatusChange}
+                onDelete={handleDelete}
+                onOpen={setOpenTaskId}
+                status={s.value}
+                />
+              ))}
+              </div>
+            </DragDropContext>
           )}
         </div>
-      </header>
+      </main>
 
       <Sidebar
         isOpen={isSidebarOpen}
@@ -367,36 +425,38 @@ function App()
         onLogout={logoutFromMenu}
       />
 
-      {error && <p className="error-message">{error}</p>}
-      {success && <p className="success-message">{success}</p>}
-
       {/* One modal; openModal decides which form is inside it */}
       {openModal && (
         <div className="modal-backdrop" onClick={() => setOpenModal(null)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="modal-title"
+            onClick={(e) => e.stopPropagation()}
+          >
             <header className="modal-header">
-              <h2>{MODAL_TITLES[openModal]}</h2>
-              <button
-                className="close-btn"
-                onClick={() => setOpenModal(null)}
-              >
-                ✕
+              <h2 id="modal-title">{MODAL_TITLES[openModal]}</h2>
+              <button className="icon-btn" onClick={() => setOpenModal(null)} aria-label="Close">
+                <CloseIcon />
               </button>
             </header>
 
-            {openModal === 'add' && <TaskForm onCreate={handleCreate} />}
-            {openModal === 'password' && (
-              <ChangePasswordForm email={user.email} onChangePassword={handleChangePassword} />
-            )}
-            {openModal === 'new-board' && <BoardNameForm submitLabel="Create board" onSubmit={handleCreateBoard} />}
-            {openModal === 'board-settings' && currentBoard && (
-              <BoardSettings
-                board={currentBoard}
-                canDelete={boards.length > 1}
-                onRename={handleRenameBoard}
-                onDelete={handleDeleteBoard}
-              />
-            )}
+            <div className="modal-body">
+              {openModal === 'add' && <TaskForm onCreate={handleCreate} />}
+              {openModal === 'password' && (
+                <ChangePasswordForm email={user.email} onChangePassword={handleChangePassword} />
+              )}
+              {openModal === 'new-board' && <BoardNameForm submitLabel="Create board" onSubmit={handleCreateBoard} />}
+              {openModal === 'board-settings' && currentBoard && (
+                <BoardSettings
+                  board={currentBoard}
+                  canDelete={boards.length > 1}
+                  onRename={handleRenameBoard}
+                  onDelete={handleDeleteBoard}
+                />
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -411,50 +471,7 @@ function App()
           onClose={() => setOpenTaskId(null)}
         />
       )}
-
-      {/* "view" picks the page. Both use the same tasks, so the profile's numbers are always up to date. */}
-      {view === 'chat' && (
-        <ChatPanel boardId={boardId} boardName={currentBoard?.name} onSessionEnded={endedSession} />
-      )}
-
-      {view === 'profile' && (
-        <Profile
-          user={user}
-          tasks={tasks}
-          boardName={currentBoard?.name}
-          onBack={() => setView('board')}
-          onChangePassword={() => openForm('password')}
-        />
-      )}
-
-      {view === 'board' && currentBoard && (
-        <div className="board-bar">
-          <h2 className="board-name">{currentBoard.name}</h2>
-          <button className="logout-btn" onClick={() => openForm('board-settings')}>
-            Board settings
-          </button>
-        </div>
-      )}
-
-      {view === 'board' && (
-        <DragDropContext onDragEnd={handleDragEnd}>
-          <div className="board">
-          {STATUSES.map((s) => (
-            <Column
-            key={s.value}
-            title={s.label}
-            tasks={tasks.filter((t) => t.status === s.value)}
-            onStatusChange={handleStatusChange}
-            onDelete={handleDelete}
-            onOpen={setOpenTaskId}
-            status={s.value}
-            />
-          ))}
-          </div>
-        </DragDropContext>
-      )}
-      
-    </main>
+    </div>
   );
 }
 export default App;

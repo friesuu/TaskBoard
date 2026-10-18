@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { BoardIcon, ProfileIcon, PasswordIcon, LogoutIcon, ChatIcon, PlusIcon } from "./SidebarIcons";
+import { CloseIcon } from "./Icons";
 
 // The menu that slides in from the LEFT.
 // It only shows buttons; App decides what each one does (the on... props).
@@ -52,14 +53,19 @@ function Sidebar({
                 aria-label="Menu"
                 inert={!isOpen}
             >
+                {/* The app's name, and who is logged in */}
                 <div className="sidebar-header">
-                    <div>
-                        <div className="sidebar-label">Logged in as</div>
-                        <div className="sidebar-email">{email}</div>
+                    <div className="sidebar-brand">
+                        <span className="sidebar-brand-mark" aria-hidden="true"><BoardIcon /></span>
+                        <span className="sidebar-brand-name">Task Board</span>
                     </div>
-                    <button ref={closeButtonRef} className="close-btn" onClick={onClose} aria-label="Close menu">
-                        ✕
+                    <button ref={closeButtonRef} className="icon-btn" onClick={onClose} aria-label="Close menu">
+                        <CloseIcon />
                     </button>
+                </div>
+                <div className="sidebar-account">
+                    <div className="sidebar-group-title">Logged in as</div>
+                    <div className="sidebar-email" title={email}>{email}</div>
                 </div>
 
                 {/* Group 1: where you can go */}
@@ -82,11 +88,13 @@ function Sidebar({
                                 onClick={() => onSelectBoard(b.id)}
                                 title={b.name}
                             >
+                                {/* A dot instead of an icon: accent for the open board */}
+                                <span className="nav-dot" aria-hidden="true" />
                                 <span>{b.name}</span>
                             </button>
                         ))}
                     </div>
-                    <button className="sidebar-item" onClick={onNewBoard}>
+                    <button className="sidebar-item sidebar-item-add" onClick={onNewBoard}>
                         <PlusIcon />
                         <span>New board</span>
                     </button>
