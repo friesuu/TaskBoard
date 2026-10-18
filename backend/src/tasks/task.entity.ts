@@ -6,12 +6,15 @@ import {
   Index,
   JoinColumn,
   ManyToOne,
+  ManyToMany,
+  JoinTable,
   VirtualColumn,
 } from 'typeorm';
 import { TaskStatus } from './tasks-status.enum';
 import { Field, Int, ObjectType } from '@nestjs/graphql';
 import { User } from '../users/user.entity';
 import { Board } from '../boards/board.entity';
+import { Label } from '../labels/label.entity';
 
 @ObjectType()
 @Entity('tasks')
@@ -82,4 +85,15 @@ export class Task {
     query: (alias) => `SELECT COUNT(*)::int FROM "checklist_items" WHERE "task_id" = ${alias}.id AND "done"`,
   })
   checklistDone: number;
+
+  // The task's labels. The link lives in a separate "task_labels" table (one row per task + label);
+  // deleting a task or a label removes its rows there.
+  @Field(() => [Label])
+  @ManyToMany(() => Label)
+  @JoinTable({
+    name: 'task_labels',
+    joinColumn: { name: 'task_id', referencedColumnName: 'id' },
+    inverseJoinColumn: { name: 'label_id', referencedColumnName: 'id' },
+  })
+  labels: Label[];
 }

@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from './App';
-import { getCurrentUser, getTasks, logout, getBoards, createBoard, getChecklist, getComments } from './api';
+import {
+  getCurrentUser, getTasks, logout, getBoards, createBoard, getChecklist, getComments, getLabels, setTaskLabels,
+} from './api';
 
 vi.mock('./api'); // the whole backend is faked: each test decides what the "server" answers
 
@@ -26,6 +28,8 @@ describe('App', () => {
     vi.mocked(createBoard).mockReset();
     vi.mocked(getChecklist).mockReset().mockResolvedValue([]);
     vi.mocked(getComments).mockReset().mockResolvedValue([]);
+    vi.mocked(getLabels).mockReset().mockResolvedValue([{ id: 7, name: 'Urgent', color: 'ORANGE' }]);
+    vi.mocked(setTaskLabels).mockReset();
     window.history.replaceState(null, '', '/'); // every test starts without ?board=
   });
 
@@ -179,6 +183,31 @@ describe('App', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Close task' }));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it("Board settings lists the open board's labels", async () => {
+    vi.mocked(getCurrentUser).mockResolvedValue(user);
+    render(<App />);
+    await screen.findByText('Write report');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Board settings' }));
+
+    expect(getLabels).toHaveBeenCalledWith(10);
+    expect(screen.getByRole('button', { name: 'Edit label "Urgent"' })).toBeInTheDocument();
+  });
+
+  it('a label picked in the task panel shows on the card', async () => {
+    vi.mocked(getCurrentUser).mockResolvedValue(user);
+    vi.mocked(setTaskLabels).mockResolvedValue({ ...tasks[0], labels: [{ id: 7, name: 'Urgent', color: 'ORANGE' }] });
+    render(<App />);
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Write report' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Edit labels' }));
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Urgent' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Close task' }));
+
+    expect(setTaskLabels).toHaveBeenCalledWith(1, [7]);
+    expect(await screen.findByText('Urgent')).toBeInTheDocument(); // on the card now
   });
 
   it('shows the error instead of loading forever when the server is down', async () => {

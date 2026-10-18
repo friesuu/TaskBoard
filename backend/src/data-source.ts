@@ -7,6 +7,7 @@ import { Board } from './boards/board.entity';
 import { migrations } from './migrations';
 import { ChecklistItem } from './checklist/checklist-item.entity';
 import { TaskComment } from './comments/task-comment.entity';
+import { Label } from './labels/label.entity';
 
 // Used only by the TypeORM command line (npm run migration:generate / :run / :revert / :show).
 // It runs outside Nest, so it reads .env itself. Values already set in the environment win,
@@ -24,6 +25,6 @@ export default new DataSource({
   username: process.env.DB_USERNAME,
   password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME,
-  entities: [Task, User, ChatMessage, Board, ChecklistItem, TaskComment], // add new entities here too
+  entities: [Task, User, ChatMessage, Board, ChecklistItem, TaskComment, Label], // add new entities here too
   migrations,
 });

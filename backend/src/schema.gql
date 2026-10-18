@@ -18,6 +18,24 @@ A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date
 """
 scalar DateTime
 
+type Label {
+  id: Int!
+  name: String!
+  color: LabelColor!
+  boardId: Int!
+}
+
+enum LabelColor {
+  GRAY
+  BLUE
+  PURPLE
+  TEAL
+  GREEN
+  YELLOW
+  ORANGE
+  PINK
+}
+
 type Task {
   id: Int!
   title: String!
@@ -29,6 +47,7 @@ type Task {
   boardId: Int!
   checklistTotal: Int!
   checklistDone: Int!
+  labels: [Label!]!
 }
 
 enum TaskStatus {
@@ -68,6 +87,7 @@ type Query {
   chatMessages: [ChatMessage!]!
   checklistItems(taskId: Int!): [ChecklistItem!]!
   comments(taskId: Int!): [Comment!]!
+  labels(boardId: Int!): [Label!]!
 }
 
 type Mutation {
@@ -91,6 +111,10 @@ type Mutation {
   addComment(taskId: Int!, input: CommentInput!): Comment!
   updateComment(id: Int!, input: CommentInput!): Comment!
   deleteComment(id: Int!): Boolean!
+  createLabel(boardId: Int!, input: LabelInput!): Label!
+  updateLabel(id: Int!, input: UpdateLabelInput!): Label!
+  deleteLabel(id: Int!): Boolean!
+  setTaskLabels(taskId: Int!, input: SetTaskLabelsInput!): Task!
 }
 
 input CreateTaskInput {
@@ -148,4 +172,18 @@ input UpdateChecklistItemInput {
 
 input CommentInput {
   body: String!
+}
+
+input LabelInput {
+  name: String!
+  color: LabelColor!
+}
+
+input UpdateLabelInput {
+  name: String
+  color: LabelColor
+}
+
+input SetTaskLabelsInput {
+  labelIds: [Int!]!
 }

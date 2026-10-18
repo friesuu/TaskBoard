@@ -16,22 +16,26 @@ export class TasksService {
     private readonly boardsService: BoardsService,
   ) {}
 
-  // One board's tasks. ownerId stays in the filter, so another user's board id just gives [].
-  findAll(ownerId: number, boardId: number): Promise<Task[]> {
-    return this.tasksRepository.find({
+  // One board's tasks, each with its labels. ownerId stays in the filter, so another user's board id just gives [].
+  async findAll(ownerId: number, boardId: number): Promise<Task[]> {
+    const tasks = await this.tasksRepository.find({
       where: { ownerId, boardId },
+      relations: { labels: true },
       order: {
         position: 'ASC',
         createdAt: 'ASC', // tie-breaker for tasks that share a position (e.g. old rows, all 0)
         id: 'ASC', // ORDER BY in SQL, 'ASC' means in ascending order
       },
     });
+    tasks.forEach(sortLabels);
+    return tasks;
   }
 
-  // One of YOUR tasks (the assistant's tools use this to check which board a task is on)
+  // One of YOUR tasks, with its labels (the assistant's tools use this to check which board a task is on)
   async findOwned(id: number, ownerId: number): Promise<Task> {
-    const task = await this.tasksRepository.findOneBy({ id, ownerId });
+    const task = await this.tasksRepository.findOne({ where: { id, ownerId }, relations: { labels: true } });
     if (!task) throw new NotFoundException(`Task ${id} not found`);
+    sortLabels(task);
     return task;
   }
 
@@ -67,7 +71,7 @@ export class TasksService {
   // Runs in a transaction so a half-finished renumbering is never saved.
   async move(id: number, dto: MoveTaskDto, ownerId: number): Promise<Task>
   {
-    return this.tasksRepository.manager.transaction(async (manager) => {
+    await this.tasksRepository.manager.transaction(async (manager) => {
       const repo = manager.getRepository(Task);
 
       const task = await repo.findOneBy({id, ownerId});
@@ -94,9 +98,9 @@ export class TasksService {
         oldColumn.forEach((t, i) => { t.position = i; });
         await repo.save(oldColumn);
       }
-
-      return task;
     });
+
+    return this.findOwned(id, ownerId); // the moved task, with its labels and checklist counts
   }
 
   // Columns are per board: positions only count between tasks on the same board
@@ -127,4 +131,9 @@ export class TasksService {
       throw new NotFoundException(`Task ${id} not found`);
     }
   }
+}
+
+// Labels in A-Z order, so they look the same on every card
+function sortLabels(task: Task): void {
+  task.labels?.sort((a, b) => a.name.localeCompare(b.name));
 }

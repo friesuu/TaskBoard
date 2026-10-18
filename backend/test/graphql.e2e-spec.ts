@@ -161,6 +161,43 @@ const DELETE_COMMENT = `
   }
 `;
 
+const LABELS = `
+  query Labels($boardId: Int!) {
+    labels(boardId: $boardId) { id name color boardId }
+  }
+`;
+
+const CREATE_LABEL = `
+  mutation CreateLabel($boardId: Int!, $input: LabelInput!) {
+    createLabel(boardId: $boardId, input: $input) { id name color boardId }
+  }
+`;
+
+const UPDATE_LABEL = `
+  mutation UpdateLabel($id: Int!, $input: UpdateLabelInput!) {
+    updateLabel(id: $id, input: $input) { id name color }
+  }
+`;
+
+const DELETE_LABEL = `
+  mutation DeleteLabel($id: Int!) {
+    deleteLabel(id: $id)
+  }
+`;
+
+const SET_TASK_LABELS = `
+  mutation SetTaskLabels($taskId: Int!, $input: SetTaskLabelsInput!) {
+    setTaskLabels(taskId: $taskId, input: $input) { id labels { id name color } }
+  }
+`;
+
+// Each task with the names of its labels
+const TASK_LABELS = `
+  query TaskLabels($boardId: Int!) {
+    tasks(boardId: $boardId) { id title labels { name color } }
+  }
+`;
+
 // Stands in for Claude in these tests: no API calls, no cost. It remembers what it was given,
 // so the tests can check what the assistant would see and try its tools directly.
 type FakeTool = { name: string; run: (input: Record<string, unknown>) => Promise<string> };
@@ -214,8 +251,8 @@ describe('Tasks GraphQL API (e2e)', () => {
 
   // Runs before EVERY test: no tasks, and each user back to just their first board
   beforeEach(async () => {
-    // CASCADE: also empties the tables that point at tasks (checklist items, comments)
-    await tasksRepository.query('TRUNCATE "tasks" CASCADE');
+    // CASCADE: also empties the tables that point at these (checklist items, comments, task labels)
+    await tasksRepository.query('TRUNCATE "tasks", "labels" CASCADE');
     await boardsRepository.delete({ id: Not(In([boardId, otherBoardId])) });
   });
 
@@ -901,6 +938,182 @@ describe('Tasks GraphQL API (e2e)', () => {
       expect(remove.body.errors[0].message).toBe(`Comment ${comment.id} not found`);
       const mine = (await gql(COMMENTS, { taskId: task.id }).expect(200)).body.data.comments;
       expect(mine.map((c: { body: string }) => c.body)).toEqual(['Private note']);
+    });
+  });
+
+  describe('labels', () => {
+    // Setup helper: a label on TEST_USER's first board (unless onBoard says otherwise). Fails loudly.
+    const createLabel = async (name: string, color = 'BLUE', onBoard = boardId) => {
+      const res = await gql(CREATE_LABEL, { boardId: onBoard, input: { name, color } }).expect(200);
+      expect(res.body.errors).toBeUndefined();
+      return res.body.data.createLabel as { id: number; name: string; color: string };
+    };
+
+    const labelNamesOn = async (taskId: number) => {
+      const res = await gql(TASK_LABELS, { boardId }).expect(200);
+      return res.body.data.tasks
+        .find((t: { id: number }) => t.id === taskId)
+        .labels.map((l: { name: string }) => l.name);
+    };
+
+    it('creates labels (trimmed) and lists them A to Z', async () => {
+      await createLabel('  Urgent  ', 'ORANGE');
+      await createLabel('Client', 'TEAL');
+
+      const res = await gql(LABELS, { boardId }).expect(200);
+
+      expect(res.body.errors).toBeUndefined();
+      expect(res.body.data.labels).toEqual([
+        expect.objectContaining({ name: 'Client', color: 'TEAL', boardId }),
+        expect.objectContaining({ name: 'Urgent', color: 'ORANGE', boardId }),
+      ]);
+    });
+
+    it('a new task has no labels', async () => {
+      const task = await createTask({ title: 'Plain' });
+
+      expect(await labelNamesOn(task.id)).toEqual([]);
+    });
+
+    it('rejects a duplicate name on the same board, ignoring capitals', async () => {
+      await createLabel('Urgent');
+
+      const res = await gql(CREATE_LABEL, { boardId, input: { name: 'URGENT', color: 'PINK' } }).expect(200);
+
+      expect(res.body.errors[0].message).toBe('There is already a label called "URGENT" on this board');
+    });
+
+    it('allows the same name on another board', async () => {
+      await createLabel('Urgent');
+      const work = (await gql(CREATE_BOARD, { input: { name: 'Work' } }).expect(200)).body.data.createBoard;
+
+      const res = await gql(CREATE_LABEL, { boardId: work.id, input: { name: 'Urgent', color: 'PINK' } }).expect(200);
+
+      expect(res.body.errors).toBeUndefined();
+    });
+
+    it('rejects an empty name, a name over 30 characters, and a colour outside the palette', async () => {
+      const empty = await gql(CREATE_LABEL, { boardId, input: { name: '  ', color: 'BLUE' } }).expect(200);
+      const long = await gql(CREATE_LABEL, { boardId, input: { name: 'a'.repeat(31), color: 'BLUE' } }).expect(200);
+      const red = await gql(CREATE_LABEL, { boardId, input: { name: 'Hot', color: 'RED' } }).expect(400);
+
+      expect(empty.body.errors[0].extensions.originalError.message).toContain('name should not be empty');
+      expect(long.body.errors[0].extensions.code).toBe('BAD_REQUEST');
+      expect(red.body.errors[0].extensions.code).toBe('BAD_USER_INPUT');
+    });
+
+    it('gives a task several labels, A to Z, and replaces them', async () => {
+      const task = await createTask({ title: 'Report' });
+      const urgent = await createLabel('Urgent', 'ORANGE');
+      const client = await createLabel('Client', 'TEAL');
+
+      const res = await gql(SET_TASK_LABELS, { taskId: task.id, input: { labelIds: [urgent.id, client.id] } }).expect(200);
+      expect(res.body.errors).toBeUndefined();
+      expect(res.body.data.setTaskLabels.labels.map((l: { name: string }) => l.name)).toEqual(['Client', 'Urgent']);
+      expect(await labelNamesOn(task.id)).toEqual(['Client', 'Urgent']);
+
+      await gql(SET_TASK_LABELS, { taskId: task.id, input: { labelIds: [urgent.id] } }).expect(200);
+      expect(await labelNamesOn(task.id)).toEqual(['Urgent']);
+
+      await gql(SET_TASK_LABELS, { taskId: task.id, input: { labelIds: [] } }).expect(200);
+      expect(await labelNamesOn(task.id)).toEqual([]);
+    });
+
+    it('keeps the labels when the task is edited or moved', async () => {
+      const task = await createTask({ title: 'Report' });
+      const urgent = await createLabel('Urgent');
+      await gql(SET_TASK_LABELS, { taskId: task.id, input: { labelIds: [urgent.id] } }).expect(200);
+
+      const moved = await gql(
+        `mutation ($id: Int!, $input: MoveTaskInput!) { moveTask(id: $id, input: $input) { labels { name } } }`,
+        { id: task.id, input: { status: 'DONE', position: 0 } },
+      ).expect(200);
+      await gql(UPDATE_TASK, { id: task.id, input: { title: 'Report v2' } }).expect(200);
+
+      expect(moved.body.data.moveTask.labels).toEqual([{ name: 'Urgent' }]);
+      expect(await labelNamesOn(task.id)).toEqual(['Urgent']);
+    });
+
+    it('renaming or recolouring a label shows on its tasks', async () => {
+      const task = await createTask({ title: 'Report' });
+      const label = await createLabel('Urgent', 'ORANGE');
+      await gql(SET_TASK_LABELS, { taskId: task.id, input: { labelIds: [label.id] } }).expect(200);
+
+      const res = await gql(UPDATE_LABEL, { id: label.id, input: { name: 'Critical', color: 'PINK' } }).expect(200);
+
+      expect(res.body.data.updateLabel).toMatchObject({ name: 'Critical', color: 'PINK' });
+      const tasks = (await gql(TASK_LABELS, { boardId }).expect(200)).body.data.tasks;
+      expect(tasks[0].labels).toEqual([{ name: 'Critical', color: 'PINK' }]);
+    });
+
+    it('deleting a label takes it off its tasks', async () => {
+      const task = await createTask({ title: 'Report' });
+      const label = await createLabel('Urgent');
+      await gql(SET_TASK_LABELS, { taskId: task.id, input: { labelIds: [label.id] } }).expect(200);
+
+      const res = await gql(DELETE_LABEL, { id: label.id }).expect(200);
+
+      expect(res.body.data.deleteLabel).toBe(true);
+      expect(await labelNamesOn(task.id)).toEqual([]);
+    });
+
+    it("can't give a task a label from another board", async () => {
+      const task = await createTask({ title: 'Report' });
+      const work = (await gql(CREATE_BOARD, { input: { name: 'Work' } }).expect(200)).body.data.createBoard;
+      const workLabel = await createLabel('Work only', 'BLUE', work.id);
+
+      const res = await gql(SET_TASK_LABELS, { taskId: task.id, input: { labelIds: [workLabel.id] } }).expect(200);
+
+      expect(res.body.errors[0].message).toBe('Label not found on this board');
+      expect(await labelNamesOn(task.id)).toEqual([]);
+    });
+
+    it('allows at most 10 labels on a task', async () => {
+      const task = await createTask({ title: 'Report' });
+
+      const res = await gql(SET_TASK_LABELS, {
+        taskId: task.id,
+        input: { labelIds: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] },
+      }).expect(200);
+
+      expect(res.body.errors[0].extensions.code).toBe('BAD_REQUEST');
+    });
+
+    it("another user can't see, change, delete or use my labels", async () => {
+      const task = await createTask({ title: 'Mine' });
+      const label = await createLabel('Secret');
+      const theirTask = (
+        await gqlAsOther(CREATE_TASK, { input: { boardId: otherBoardId, title: 'Theirs' } }).expect(200)
+      ).body.data.createTask;
+
+      const read = await gqlAsOther(LABELS, { boardId }).expect(200);
+      const add = await gqlAsOther(CREATE_LABEL, { boardId, input: { name: 'Sneaky', color: 'BLUE' } }).expect(200);
+      const rename = await gqlAsOther(UPDATE_LABEL, { id: label.id, input: { name: 'Hacked' } }).expect(200);
+      const remove = await gqlAsOther(DELETE_LABEL, { id: label.id }).expect(200);
+      const onMyTask = await gqlAsOther(SET_TASK_LABELS, { taskId: task.id, input: { labelIds: [] } }).expect(200);
+      const onTheirTask = await gqlAsOther(SET_TASK_LABELS, {
+        taskId: theirTask.id,
+        input: { labelIds: [label.id] },
+      }).expect(200);
+
+      expect(read.body.errors[0].message).toBe(`Board ${boardId} not found`);
+      expect(add.body.errors[0].message).toBe(`Board ${boardId} not found`);
+      expect(rename.body.errors[0].message).toBe(`Label ${label.id} not found`);
+      expect(remove.body.errors[0].message).toBe(`Label ${label.id} not found`);
+      expect(onMyTask.body.errors[0].message).toBe(`Task ${task.id} not found`);
+      expect(onTheirTask.body.errors[0].message).toBe('Label not found on this board');
+      const mine = (await gql(LABELS, { boardId }).expect(200)).body.data.labels;
+      expect(mine.map((l: { name: string }) => l.name)).toEqual(['Secret']);
+    });
+
+    it('deleting a board deletes its labels', async () => {
+      const work = (await gql(CREATE_BOARD, { input: { name: 'Work' } }).expect(200)).body.data.createBoard;
+      await createLabel('Work only', 'BLUE', work.id);
+
+      await gql(DELETE_BOARD, { id: work.id }).expect(200);
+
+      const left = await tasksRepository.query('SELECT count(*)::int AS n FROM labels WHERE board_id = $1', [work.id]);
+      expect(left).toEqual([{ n: 0 }]);
     });
   });
 

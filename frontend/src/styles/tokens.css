@@ -62,6 +62,16 @@
   --danger-bar: 4px;
   --neutral-text: #7E828F;
 
+  /* ---- Label palette (users pick one per label; no red: red means overdue) ---- */
+  --label-gray: #A6A9B6;
+  --label-blue: #6CB4FF;
+  --label-purple: #B98CFF;
+  --label-teal: #4FD6E0;
+  --label-green: #7EDB6F;
+  --label-yellow: #F5D062;
+  --label-orange: #FF9A4D;
+  --label-pink: #FF8AD4;
+
   /* ---- Chat ---- */
   --bubble-user: #1F2130;
   --bubble-user-border: #2A2D40;

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import TaskEditForm from './TaskEditForm';
 import Checklist from './Checklist';
 import Comments from './Comments';
+import TaskLabels from './TaskLabels';
 import { STATUSES } from '../statuses';
 import { isOverdue } from '../dates';
 import { CalendarIcon, CloseIcon } from './Icons';
@@ -12,7 +13,12 @@ import { CalendarIcon, CloseIcon } from './Icons';
 //   onChecklistProgress(taskId, done, total) -> App updates the "2/5" on the card
 //   onSessionEnded(err)                      -> App's endedSession (expired login -> login screen)
 //   onClose()                                -> App closes the panel
-function TaskDetails({ task, currentUserId, onSave, onChecklistProgress, onSessionEnded, onClose })
+//   boardLabels                              -> the board's labels, to choose from
+//   onTaskChanged(updatedTask)               -> App puts the task's new labels on its card
+function TaskDetails({
+    task, currentUserId, onSave, onChecklistProgress, onSessionEnded, onClose,
+    boardLabels = [], onTaskChanged,
+})
 {
     const [isEditing, setIsEditing] = useState(false);
 
@@ -74,6 +80,13 @@ function TaskDetails({ task, currentUserId, onSave, onChecklistProgress, onSessi
                                 : <p className="details-empty">No notes yet. Use Edit to add some.</p>}
                         </section>
                     )}
+
+                    <TaskLabels
+                        task={task}
+                        boardLabels={boardLabels}
+                        onTaskChanged={onTaskChanged}
+                        onSessionEnded={onSessionEnded}
+                    />
 
                     <Checklist
                         taskId={task.id}

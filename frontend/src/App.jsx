@@ -2,7 +2,7 @@ import './App.css';
 import { useState, useEffect, useCallback } from 'react';
 import {
   getTasks, createTask, updateTask, moveTask, deleteTask, getCurrentUser, logout, changePassword,
-  getBoards, createBoard, renameBoard, deleteBoard,
+  getBoards, createBoard, renameBoard, deleteBoard, getLabels,
 } from './api';
 import Column from './components/Column';
 import TaskForm from './components/TaskFrom';
@@ -20,6 +20,7 @@ import BoardSettings from './components/BoardSettings';
 import { getUrlParam, setUrlParam } from './url';
 import { AddIcon, CloseIcon, SettingsIcon } from './components/Icons';
 import TaskDetails from './components/TaskDetails';
+import { sortLabels } from './labelColors';
 
 const SESSION_EXPIRED = 'Your session has expired. Please log in again.';
 
@@ -43,6 +44,7 @@ function App()
   const [view, setView] = useState('board'); // which page is shown: 'board', 'profile' or 'chat'
   const [boards, setBoards] = useState([]);
   const [boardId, setBoardId] = useState(null); // the open board; null until the boards have loaded
+  const [labels, setLabels] = useState([]); // the open board's labels (Board settings and the task panel use them)
   const [openTaskId, setOpenTaskId] = useState(null); // which task's panel is open (null = none)
 
   const currentBoard = boards.find((b) => b.id === boardId);
@@ -88,6 +90,16 @@ function App()
     }).catch(loadFailed);
   }, [user, selectBoard, loadFailed]);
 
+  // Whenever the open board changes: load its labels
+  useEffect(() => {
+    if (!user || boardId === null) return;
+    let isStale = false; // same idea as the tasks below: ignore a late answer for a board you've left
+    getLabels(boardId)
+      .then((list) => { if (!isStale) setLabels(list); })
+      .catch(loadFailed);
+    return () => { isStale = true; };
+  }, [user, boardId, loadFailed]);
+
   // Whenever the open board changes, or you switch pages: load that board's tasks.
   // Switching pages reloads them so changes made by the assistant show up on the board.
   useEffect(() => {
@@ -108,6 +120,7 @@ function App()
     setTasks([]);
     setBoards([]);
     setBoardId(null);
+    setLabels([]);
     setUrlParam('board', null); // the next person starts on their own first board
     setOpenModal(null);
     setIsSidebarOpen(false);
@@ -301,6 +314,22 @@ function App()
     }
   }
 
+  // Board settings added, renamed, recoloured or deleted a label: use the new list, and update
+  // the cards that show those labels (no server call needed: the new list has everything)
+  const handleLabelsChanged = (newLabels) => {
+    setLabels(newLabels);
+    const byId = new Map(newLabels.map((l) => [l.id, l]));
+    setTasks((prev) => prev.map((t) => ({
+      ...t,
+      labels: sortLabels((t.labels ?? []).filter((l) => byId.has(l.id)).map((l) => byId.get(l.id))),
+    })));
+  };
+
+  // The task panel changed a task's labels: put the updated task on the board
+  const handleTaskChanged = (updated) => {
+    setTasks((prev) => prev.map((t) => (t.id === updated.id ? { ...t, ...updated } : t)));
+  };
+
   // The checklist in the details panel changed: update the "2/5" on that task's card (no server call needed)
   const handleChecklistProgress = (id, checklistDone, checklistTotal) => {
     setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, checklistDone, checklistTotal } : t)));
@@ -454,6 +483,9 @@ function App()
                   canDelete={boards.length > 1}
                   onRename={handleRenameBoard}
                   onDelete={handleDeleteBoard}
+                  labels={labels}
+                  onLabelsChanged={handleLabelsChanged}
+                  onSessionEnded={endedSession}
                 />
               )}
             </div>
@@ -469,6 +501,8 @@ function App()
           onChecklistProgress={handleChecklistProgress}
           onSessionEnded={endedSession}
           onClose={() => setOpenTaskId(null)}
+          boardLabels={labels}
+          onTaskChanged={handleTaskChanged}
         />
       )}
     </div>

@@ -1,9 +1,10 @@
 const GRAPHQL_URL = 'http://localhost:3000/graphql';
 // checklistDone / checklistTotal = the "2/5" on the card
-const TASK_FIELDS = 'id title description status dueDate checklistDone checklistTotal';
+const TASK_FIELDS = 'id title description status dueDate checklistDone checklistTotal labels { id name color }';
 const CHAT_FIELDS = 'id role content createdAt';
 const BOARD_FIELDS = 'id name';
 const ITEM_FIELDS = 'id text done position';
+const LABEL_FIELDS = 'id name color';
 const COMMENT_FIELDS = 'id body createdAt updatedAt author { id email }';
 
 // Validation errors keep their real messages in originalError (as an array);
@@ -321,4 +322,65 @@ export async function deleteComment(id)
         }`,
         { id },
     );
+}
+
+// ----- Labels (belong to a board; a task can have several) -----
+
+// The board's labels, A to Z
+export async function getLabels(boardId)
+{
+    const data = await graphqlRequest(
+        `query Labels($boardId: Int!) {
+            labels(boardId: $boardId) { ${LABEL_FIELDS} }
+        }`,
+        { boardId },
+    );
+    return data.labels;
+}
+
+// color: one of the LABEL_COLORS values, e.g. 'BLUE'
+export async function createLabel(boardId, name, color)
+{
+    const data = await graphqlRequest(
+        `mutation CreateLabel($boardId: Int!, $input: LabelInput!) {
+            createLabel(boardId: $boardId, input: $input) { ${LABEL_FIELDS} }
+        }`,
+        { boardId, input: { name, color } },
+    );
+    return data.createLabel;
+}
+
+// changes = { name } and/or { color }
+export async function updateLabel(id, changes)
+{
+    const data = await graphqlRequest(
+        `mutation UpdateLabel($id: Int!, $input: UpdateLabelInput!) {
+            updateLabel(id: $id, input: $input) { ${LABEL_FIELDS} }
+        }`,
+        { id, input: changes },
+    );
+    return data.updateLabel;
+}
+
+// Also takes the label off every task that has it
+export async function deleteLabel(id)
+{
+    await graphqlRequest(
+        `mutation DeleteLabel($id: Int!) {
+            deleteLabel(id: $id)
+        }`,
+        { id },
+    );
+}
+
+// Replaces the task's labels with exactly these; returns the updated task
+export async function setTaskLabels(taskId, labelIds)
+{
+    const data = await graphqlRequest(
+        `mutation SetTaskLabels($taskId: Int!, $input: SetTaskLabelsInput!) {
+            setTaskLabels(taskId: $taskId, input: $input) { ${TASK_FIELDS} }
+        }`,
+        { taskId, input: { labelIds } },
+    );
+    return data.setTaskLabels;
 }

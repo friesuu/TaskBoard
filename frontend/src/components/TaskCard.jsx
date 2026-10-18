@@ -1,6 +1,7 @@
 import { STATUSES } from "../statuses";
 import TrashIcon from "./TrashIcon";
 import { CalendarIcon } from "./Icons";
+import LabelPill from "./LabelPill";
 import { isOverdue } from "../dates";
 import { Draggable } from "@hello-pangea/dnd";
 
@@ -24,6 +25,12 @@ function TaskCard({ index, task, onStatusChange, onDelete, onOpen })
                         {task.title}
                     </button>
                 </h3>
+
+                {task.labels?.length > 0 && (
+                    <div className="label-pills">
+                        {task.labels.map((l) => <LabelPill key={l.id} label={l} />)}
+                    </div>
+                )}
 
                 {/* Notes preview: cut to 2 lines by CSS; the full text is in the details panel */}
                 {task.description && <p className="task-notes">{task.description}</p>}

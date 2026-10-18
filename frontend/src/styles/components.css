@@ -414,3 +414,103 @@ input[type="checkbox"]:checked::before {
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+
+/* ---------- Labels: one colour per label, from the fixed palette ---------- */
+
+/* Sets --label for whatever is inside (pill outline, dot, swatch) */
+.label-gray { --label: var(--label-gray); }
+.label-blue { --label: var(--label-blue); }
+.label-purple { --label: var(--label-purple); }
+.label-teal { --label: var(--label-teal); }
+.label-green { --label: var(--label-green); }
+.label-yellow { --label: var(--label-yellow); }
+.label-orange { --label: var(--label-orange); }
+.label-pink { --label: var(--label-pink); }
+
+/* A label pill: like other pills, but its outline and dot take the label's colour */
+.label-pill {
+  border-color: color-mix(in srgb, var(--label) 45%, var(--border));
+}
+
+.label-dot {
+  background-color: var(--label);
+}
+
+.label-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* The colour picker: round swatches that are really radio buttons */
+.color-picker {
+  margin: 0;
+  padding: 0;
+  border: none;
+  min-width: 0;
+}
+
+.color-picker legend {
+  margin-bottom: var(--space-2);
+  padding: 0;
+  color: var(--text-2);
+  font-size: var(--fs-small);
+  font-weight: 500;
+}
+
+.swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+/* 44px tap target around a smaller round swatch */
+.swatch {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: var(--control-height);
+  height: var(--control-height);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+}
+
+/* The real radio button: invisible, but still focusable and clickable */
+.swatch input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.swatch-dot {
+  width: var(--space-6);
+  height: var(--space-6);
+  border-radius: var(--radius-pill);
+  background-color: var(--label);
+  transition: box-shadow var(--ease);
+}
+
+/* The chosen colour: a ring around it */
+.swatch input:checked + .swatch-dot {
+  box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px var(--text);
+}
+
+.swatch input:focus-visible + .swatch-dot {
+  outline: 2px solid var(--accent);
+  outline-offset: 6px;
+}
+
+/* Text only screen readers hear (e.g. the swatch's colour name) */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

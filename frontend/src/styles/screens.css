@@ -661,3 +661,43 @@
   align-self: center;
   color: var(--link);
 }
+
+/* ---------- Labels: Board settings and the task panel ---------- */
+
+.label-manager {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* One label in Board settings: the pill on the left, Edit and delete on the right */
+.label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-height: var(--control-height);
+  padding: var(--space-1) var(--space-2) var(--space-1) var(--space-4);
+}
+
+.label-row-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+/* Adding or editing a label: name, colour, then the buttons */
+.label-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.label-row .label-form {
+  flex: 1;
+  padding: var(--space-3) 0;
+}
+
+/* The tick list of the board's labels in the task panel */
+.label-picker .label-dot {
+  margin-right: calc(-1 * var(--space-1));
+}

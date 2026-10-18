@@ -70,6 +70,16 @@ describe('Column and TaskCard', () => {
     expect(onOpen).toHaveBeenCalledWith(3);
   });
 
+  it("shows the card's labels", () => {
+    renderColumn([{
+      id: 1, title: 'Labelled', description: null, status: 'TODO', dueDate: null,
+      labels: [{ id: 1, name: 'Client', color: 'TEAL' }, { id: 2, name: 'Urgent', color: 'ORANGE' }],
+    }]);
+
+    expect(screen.getByText('Client')).toBeInTheDocument();
+    expect(screen.getByText('Urgent')).toBeInTheDocument();
+  });
+
   it('shows checklist progress on the card, only when there is a checklist', () => {
     renderColumn([
       { id: 1, title: 'With list', description: null, status: 'TODO', dueDate: null, checklistDone: 2, checklistTotal: 5 },
