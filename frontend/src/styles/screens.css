@@ -59,9 +59,9 @@
   text-align: center;
 }
 
-/* A card. Spacing between cards is a margin (the drag-and-drop library measures margins, not gaps). */
+/* A card. Spacing between cards is a margin (the drag-and-drop library measures margins, not gaps).
+   The whole card opens the task when clicked. */
 .task-card {
-  container-type: inline-size; /* lets the button row react to the card's own width (below) */
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
@@ -70,6 +70,7 @@
   background-color: var(--raised);
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
+  cursor: pointer;
   transition: border-color var(--ease), box-shadow var(--ease);
 }
 
@@ -101,21 +102,25 @@
   text-underline-offset: 3px;
 }
 
-/* Notes preview: at most 2 lines, then "…" */
+/* The notes in full, with their line breaks */
 .task-notes {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  white-space: pre-line;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
   color: var(--text-2);
   font-size: var(--fs-small);
   line-height: 1.5;
 }
 
-.task-due {
+/* One quiet row under the notes: due date, ☑ checklist, 📎 files (only the ones this task has) */
+.task-meta {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+
+.task-due {
+  display: inline-flex;
   align-items: center;
   gap: var(--space-2);
   color: var(--muted);
@@ -124,7 +129,7 @@
 }
 
 /* Overdue: the whole card turns rose (tint + border), and so does the date.
-   The "Overdue" pill says it in words too, so colour is never the only signal. */
+   The date also says "· Overdue" in words, so colour is never the only signal. */
 .task-card.overdue {
   background-color: var(--danger-surface);
   border-color: var(--danger-border);
@@ -135,40 +140,9 @@
   border-color: var(--danger);
 }
 
-.task-card.overdue .task-due {
+.task-due.overdue {
   color: var(--danger-text);
-}
-
-.task-badges {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-
-.task-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-  margin-top: var(--space-2);
-}
-
-.task-actions select {
-  flex: 1;
-  width: auto;
-  min-width: 0;
-}
-
-/* In a narrow card (smaller windows) the dropdown gets its own line, so "In Progress" isn't cut off;
-   Open and the bin go underneath */
-@container (max-width: 280px) {
-  .task-actions select {
-    flex-basis: 100%;
-  }
-}
-
-.task-delete {
-  margin-left: auto;
+  font-weight: 500;
 }
 
 /* ---------- Task details dialog ---------- */
@@ -212,6 +186,21 @@
   color: var(--muted);
   font-size: var(--fs-small);
   font-variant-numeric: tabular-nums;
+}
+
+.details-due.overdue {
+  color: var(--danger-text);
+  font-weight: 500;
+}
+
+/* The column dropdown in the panel: as wide as its longest option, not the whole row */
+.details-column {
+  width: auto;
+}
+
+/* "Delete task" sits alone at the bottom of the panel */
+.details-delete {
+  align-items: flex-start;
 }
 
 .details-edit {
@@ -1037,7 +1026,7 @@
 
 /* ---------- Checklist and files opened on a card ---------- */
 
-/* ☑ 2/5 and 📎 3: small outlined buttons; the chevron turns when the section is open */
+/* ☑ 2/5 and 📎 3: quiet text buttons in the meta row; an outline shows only on hover and while open */
 .quick-toggle {
   display: inline-flex;
   align-items: center;
@@ -1045,9 +1034,9 @@
   min-height: var(--calendar-chip);
   padding: 0 var(--space-2);
   background: transparent;
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
   border-radius: var(--radius-pill);
-  color: var(--text-pill);
+  color: var(--muted);
   font-size: var(--fs-pill);
   font-weight: 500;
   font-variant-numeric: tabular-nums;
@@ -1060,18 +1049,14 @@
   border-color: var(--border-strong);
 }
 
-.quick-toggle svg:first-child {
-  color: var(--info);
+.quick-toggle:hover,
+.quick-toggle[aria-expanded="true"] {
+  color: var(--text-pill);
 }
 
 /* A finished checklist: mint icon */
-.quick-toggle.complete svg:first-child {
+.quick-toggle.complete svg {
   color: var(--success);
-}
-
-.quick-toggle svg:last-child {
-  color: var(--muted);
-  transition: transform var(--ease);
 }
 
 .quick-toggle[aria-expanded="true"] {
@@ -1079,12 +1064,9 @@
   border-color: var(--accent);
 }
 
-.quick-toggle[aria-expanded="true"] svg:last-child {
-  transform: rotate(180deg);
-}
-
-/* The opened section: a sunken well inside the card */
+/* The opened section: a sunken well inside the card (clicks in here don't open the task, so no pointer) */
 .task-quick-panel {
+  cursor: auto;
   padding: var(--space-2);
   background-color: var(--sunken);
   border: 1px solid var(--divider);

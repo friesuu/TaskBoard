@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { isOverdue, todayString } from './dates';
+import { formatDueDate, isOverdue, todayString } from './dates';
 
 describe('dates', () => {
   // Pretend today is 15 October 2026, so the tests give the same result on any day
@@ -27,5 +27,16 @@ describe('dates', () => {
 
   it('a task without a due date is never overdue', () => {
     expect(isOverdue({ dueDate: null, status: 'TODO' })).toBe(false);
+  });
+
+  it('formatDueDate says Today, Tomorrow and Yesterday', () => {
+    expect(formatDueDate('2026-10-15')).toBe('Today');
+    expect(formatDueDate('2026-10-16')).toBe('Tomorrow');
+    expect(formatDueDate('2026-10-14')).toBe('Yesterday');
+  });
+
+  it('formatDueDate shows other dates as day and month, with the year only when it is not this year', () => {
+    expect(formatDueDate('2026-10-02')).toBe('2 Oct');
+    expect(formatDueDate('2027-01-09')).toBe('9 Jan 2027');
   });
 });

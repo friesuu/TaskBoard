@@ -4,9 +4,10 @@ import Checklist from './Checklist';
 import Comments from './Comments';
 import TaskLabels from './TaskLabels';
 import { STATUSES } from '../statuses';
-import { isOverdue } from '../dates';
+import { formatDueDate, isOverdue } from '../dates';
 import { CalendarIcon, CloseIcon } from './Icons';
 import Attachments from './Attachments';
+import TrashIcon from './TrashIcon';
 
 // The panel that opens when you click a task: details + notes (editable), checklist, comments.
 // App decides WHICH task is open and passes it in; everything here works on that one task.
@@ -17,9 +18,12 @@ import Attachments from './Attachments';
 //   boardLabels                              -> the board's labels, to choose from
 //   onTaskChanged(updatedTask)               -> App puts the task's new labels on its card
 //   onAttachmentCount(taskId, count)         -> App updates the 📎 count on the card
+//   onStatusChange(taskId, status)           -> App moves it to the bottom of another column
+//   onDelete(taskId)                         -> App deletes it (the panel then closes)
 function TaskDetails({
     task, currentUserId, onSave, onChecklistProgress, onSessionEnded, onClose,
     boardLabels = [], onTaskChanged, onAttachmentCount = () => {},
+    onStatusChange = () => {}, onDelete = () => {},
 })
 {
     const [isEditing, setIsEditing] = useState(false);
@@ -40,7 +44,11 @@ function TaskDetails({
         setIsEditing(false);
     };
 
-    const status = STATUSES.find((s) => s.value === task.status);
+    const handleDelete = () => {
+        if (window.confirm(`Delete "${task.title}"?`)) onDelete(task.id);
+    };
+
+    const overdue = isOverdue(task);
 
     return(
         <div className="modal-backdrop" onClick={onClose}>
@@ -62,15 +70,20 @@ function TaskDetails({
                     ) : (
                         <section className="details-section">
                             <div className="details-meta">
-                                <span className="pill">
-                                    <span className={`dot dot-${status?.tone ?? 'neutral'}`} aria-hidden="true" />
-                                    {status?.label}
-                                </span>
-                                {task.dueDate && <span className="details-due"><CalendarIcon size={14} />Due {task.dueDate}</span>}
-                                {isOverdue(task) && (
-                                    <span className="pill">
-                                        <span className="dot dot-danger" aria-hidden="true" />
-                                        Overdue
+                                {/* Which column it's in, and moving it to another one (it lands at the bottom) */}
+                                <select
+                                    className="details-column"
+                                    value={task.status}
+                                    onChange={(e) => onStatusChange(task.id, e.target.value)}
+                                    aria-label="Column"
+                                >
+                                    {STATUSES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+                                </select>
+                                {task.dueDate && (
+                                    <span className={overdue ? 'details-due overdue' : 'details-due'}>
+                                        <CalendarIcon size={14} />
+                                        Due {formatDueDate(task.dueDate)}
+                                        {overdue && ' · Overdue'}
                                     </span>
                                 )}
                                 <button className="btn btn-secondary details-edit" onClick={() => setIsEditing(true)}>Edit</button>
@@ -103,6 +116,14 @@ function TaskDetails({
                     />
                    
                     <Comments taskId={task.id} currentUserId={currentUserId} onSessionEnded={onSessionEnded} />
+
+                    {/* At the very bottom, away from everything else: deleting the whole task */}
+                    <section className="details-section details-delete">
+                        <button className="btn btn-danger" onClick={handleDelete}>
+                            <TrashIcon />
+                            Delete task
+                        </button>
+                    </section>
                 </div>
             </div>
         </div>

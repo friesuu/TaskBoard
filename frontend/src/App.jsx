@@ -370,7 +370,7 @@ function App()
     }
   };
 
-  // The dropdown sends the task to the bottom of the chosen column.
+  // The task panel's Column dropdown sends the task to the bottom of the chosen column.
   // While filtering, the board only shows some of the column's tasks, so let the server find the real bottom.
   const handleStatusChange = (id, status) => {
     const bottom = filtersActive ? BOTTOM : tasks.filter((t) => t.status === status && t.id !== id).length;
@@ -529,8 +529,6 @@ function App()
                 key={s.value}
                 title={s.label}
                 tasks={tasks.filter((t) => t.status === s.value)}
-                onStatusChange={handleStatusChange}
-                onDelete={handleDelete}
                 onOpen={setOpenTaskId}
                 status={s.value}
                 dragDisabled={filtersActive}
@@ -611,6 +609,8 @@ function App()
           boardLabels={labels}
           onTaskChanged={handleTaskChanged}
           onAttachmentCount={handleAttachmentCount}
+          onStatusChange={handleStatusChange}
+          onDelete={handleDelete}
         />
       )}
     </div>

@@ -178,7 +178,9 @@ describe('App', () => {
     vi.mocked(getCurrentUser).mockResolvedValue(user);
     render(<App />);
 
-    await userEvent.click(await screen.findByRole('button', { name: 'Write report' }));
+    // The title button inside the card's heading (the card around it is a drag handle with the same name)
+    const heading = await screen.findByRole('heading', { name: 'Write report' });
+    await userEvent.click(within(heading).getByRole('button'));
 
     expect(screen.getByRole('dialog', { name: 'Write report' })).toBeInTheDocument();
     expect(getChecklist).toHaveBeenCalledWith(1);
@@ -204,7 +206,8 @@ describe('App', () => {
     vi.mocked(setTaskLabels).mockResolvedValue({ ...tasks[0], labels: [{ id: 7, name: 'Urgent', color: 'ORANGE' }] });
     render(<App />);
 
-    await userEvent.click(await screen.findByRole('button', { name: 'Write report' }));
+    const heading = await screen.findByRole('heading', { name: 'Write report' });
+    await userEvent.click(within(heading).getByRole('button'));
     await userEvent.click(screen.getByRole('button', { name: 'Edit labels' }));
     await userEvent.click(screen.getByRole('checkbox', { name: 'Urgent' }));
     await userEvent.click(screen.getByRole('button', { name: 'Close task' }));

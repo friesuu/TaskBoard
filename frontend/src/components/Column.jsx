@@ -3,7 +3,7 @@ import { Droppable } from '@hello-pangea/dnd';
 import { STATUSES } from '../statuses';
 
 function Column({
-    status, title, tasks, onStatusChange, onDelete, onOpen, dragDisabled,
+    status, title, tasks, onOpen, dragDisabled,
     onChecklistProgress, onAttachmentCount, onSessionEnded,
 })
 {
@@ -32,8 +32,6 @@ function Column({
                                 key={task.id}
                                 task={task}
                                 index={index}
-                                onStatusChange={onStatusChange}
-                                onDelete={onDelete}
                                 onOpen={onOpen}
                                 dragDisabled={dragDisabled}
                                 onChecklistProgress={onChecklistProgress}
