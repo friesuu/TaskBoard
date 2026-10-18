@@ -41,14 +41,14 @@ async function graphqlRequest(query, variables) {
   return body.data;
 }
 
-// The tasks of ONE board
-export async function getTasks(boardId)
+// The tasks of ONE board. filter (optional): { q, labelIds, statuses, due }, see filters.js
+export async function getTasks(boardId, filter = null)
 {
     const data = await graphqlRequest(
-        `query Tasks($boardId: Int!) {
-            tasks(boardId: $boardId) { ${TASK_FIELDS} }
+        `query Tasks($boardId: Int!, $filter: TaskFilterInput) {
+            tasks(boardId: $boardId, filter: $filter) { ${TASK_FIELDS} }
         }`,
-        { boardId },
+        { boardId, filter },
     );
     return data.tasks;
 }
@@ -141,7 +141,7 @@ export async function getCurrentUser()
 {
     try
     {
-        const data = await graphqlRequest('query { me { id email } }');
+        const data = await graphqlRequest('query { me { id email timeZone } }');
         return data.me;
     }
     catch (err)
@@ -156,7 +156,7 @@ export async function login(email, password)
 {
     const data = await graphqlRequest(
         `mutation Login($input: LoginInput!) {
-            login(input: $input) { id email }
+            login(input: $input) { id email timeZone }
         }`,
         { input: { email, password } },
     );
@@ -383,4 +383,15 @@ export async function setTaskLabels(taskId, labelIds)
         { taskId, input: { labelIds } },
     );
     return data.setTaskLabels;
+}
+
+// Tells the server this browser's time zone (e.g. 'Asia/Kuala_Lumpur'), so "today" and "this week" are right
+export async function setTimeZone(timeZone)
+{
+    await graphqlRequest(
+        `mutation SetTimeZone($input: TimeZoneInput!) {
+            setTimeZone(input: $input) { id }
+        }`,
+        { input: { timeZone } },
+    );
 }

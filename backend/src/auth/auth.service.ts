@@ -74,6 +74,12 @@ export class AuthService {
     return this.signToken(user);
   }
 
+  // Remembers the browser's time zone (the DTO has already checked it's a real one, e.g. "Europe/London")
+  async setTimeZone(user: User, timeZone: string): Promise<User> {
+    user.timeZone = timeZone;
+    return this.usersRepository.save(user);
+  }
+
   // The login token: who you are (sub) and which password "generation" it belongs to (ver)
   private signToken(user: User): Promise<string> {
     return this.jwtService.signAsync({ sub: user.id, ver: user.tokenVersion });

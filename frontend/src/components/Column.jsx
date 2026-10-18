@@ -2,7 +2,7 @@ import TaskCard from './TaskCard.jsx';
 import { Droppable } from '@hello-pangea/dnd';
 import { STATUSES } from '../statuses';
 
-function Column({status, title, tasks, onStatusChange, onDelete, onOpen})
+function Column({status, title, tasks, onStatusChange, onDelete, onOpen, dragDisabled})
 {
     const tone = STATUSES.find((s) => s.value === status)?.tone ?? 'neutral'; // the column's status colour
 
@@ -25,7 +25,7 @@ function Column({status, title, tasks, onStatusChange, onDelete, onOpen})
                         )}
 
                         {tasks.map((task, index) => (
-                            <TaskCard key={task.id} task={task} index={index} onStatusChange={onStatusChange} onDelete={onDelete} onOpen={onOpen}/>
+                            <TaskCard key={task.id} task={task} index={index} onStatusChange={onStatusChange} onDelete={onDelete} onOpen={onOpen} dragDisabled={dragDisabled}/>
                         ))}
 
                         {provided.placeholder}

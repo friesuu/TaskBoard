@@ -77,3 +77,15 @@ export function CalendarIcon({ size })
         </Icon>
     );
 }
+
+// A magnifying glass, in the search box
+export function SearchIcon({ size })
+{
+    return <Icon size={size}><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></Icon>;
+}
+
+// ⌄ on buttons that open a menu
+export function ChevronDownIcon({ size })
+{
+    return <Icon size={size}><path d="m6 9 6 6 6-6" /></Icon>;
+}

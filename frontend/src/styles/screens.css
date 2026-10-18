@@ -9,7 +9,7 @@
 .board {
   flex: 1;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--columns, 3), minmax(0, 1fr)); /* fewer when a column filter is on */
   gap: var(--space-4);
 }
 
@@ -700,4 +700,128 @@
 /* The tick list of the board's labels in the task panel */
 .label-picker .label-dot {
   margin-right: calc(-1 * var(--space-1));
+}
+
+/* ---------- Search and filters (above the board) ---------- */
+
+.filters {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* The search box, with its magnifying glass inside on the left */
+.filter-search {
+  position: relative;
+  flex: 1 1 var(--search-min);
+  min-width: 0;
+  max-width: var(--search-max);
+}
+
+.filter-search svg {
+  position: absolute;
+  top: 50%;
+  left: var(--input-pad-x);
+  transform: translateY(-50%);
+  color: var(--muted);
+  pointer-events: none;
+}
+
+/* [type="search"] makes this as specific as the general input rule, so this padding wins (room for the icon) */
+.filter-search input[type="search"] {
+  padding-left: calc(var(--input-pad-x) + var(--space-6));
+}
+
+.filter-due {
+  width: auto;
+}
+
+/* The Labels button and the menu that drops down under it */
+.filter-menu {
+  position: relative;
+}
+
+.menu {
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  left: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  min-width: var(--menu-width);
+  max-height: var(--menu-max-height);
+  overflow-y: auto;
+  padding: var(--menu-pad);
+  background-color: var(--raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-float);
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--control-height);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-control);
+  color: var(--text);
+  cursor: pointer;
+  transition: background-color var(--ease);
+}
+
+.menu-item:hover {
+  background-color: var(--hover);
+}
+
+.menu-empty {
+  padding: var(--space-3);
+  color: var(--muted);
+  font-size: var(--fs-small);
+}
+
+/* Column toggles: outlined chips; a pressed one is raised with an accent outline */
+.filter-chips {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-height);
+  padding: 0 var(--space-4);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  color: var(--text-2);
+  font-size: var(--fs-small);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color var(--ease), border-color var(--ease), color var(--ease);
+}
+
+.chip:hover {
+  background-color: var(--hover);
+  color: var(--text);
+}
+
+.chip[aria-pressed="true"] {
+  background-color: var(--selected-bg);
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+/* "Filters are on, so cards can't be dragged" */
+.filter-hint {
+  color: var(--muted);
+  font-size: var(--fs-small);
 }

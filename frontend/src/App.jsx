@@ -1,8 +1,8 @@
 import './App.css';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   getTasks, createTask, updateTask, moveTask, deleteTask, getCurrentUser, logout, changePassword,
-  getBoards, createBoard, renameBoard, deleteBoard, getLabels,
+  getBoards, createBoard, renameBoard, deleteBoard, getLabels, setTimeZone,
 } from './api';
 import Column from './components/Column';
 import TaskForm from './components/TaskFrom';
@@ -21,8 +21,17 @@ import { getUrlParam, setUrlParam } from './url';
 import { AddIcon, CloseIcon, SettingsIcon } from './components/Icons';
 import TaskDetails from './components/TaskDetails';
 import { sortLabels } from './labelColors';
+import { EMPTY_FILTERS, hasActiveFilters, readFiltersFromUrl, toApiFilter, writeFiltersToUrl } from './filters';
+import FilterBar from './components/FilterBar';
 
 const SESSION_EXPIRED = 'Your session has expired. Please log in again.';
+
+// The pages, and the one in the address bar (?view=profile), so a refresh stays on it
+const VIEWS = ['board', 'profile', 'chat'];
+const viewFromUrl = () => (VIEWS.includes(getUrlParam('view')) ? getUrlParam('view') : 'board');
+
+// "Put this task at the bottom of its column" (the server treats a position past the end as the bottom)
+const BOTTOM = 1_000_000;
 
 // The heading of each modal (openModal decides which one is open)
 const MODAL_TITLES = {
@@ -41,11 +50,17 @@ function App()
   const [success, setSuccess] = useState(null); // e.g. "Password changed"
   const [openModal, setOpenModal] = useState(null); // null = closed, otherwise a key of MODAL_TITLES
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [view, setView] = useState('board'); // which page is shown: 'board', 'profile' or 'chat'
+  const [view, setView] = useState(viewFromUrl); // which page is shown: 'board', 'profile' or 'chat'
   const [boards, setBoards] = useState([]);
   const [boardId, setBoardId] = useState(null); // the open board; null until the boards have loaded
   const [labels, setLabels] = useState([]); // the open board's labels (Board settings and the task panel use them)
   const [openTaskId, setOpenTaskId] = useState(null); // which task's panel is open (null = none)
+  const [filters, setFilters] = useState(readFiltersFromUrl); // search + filters, from the address bar
+
+  const filtersActive = hasActiveFilters(filters);
+  // What the server gets. useMemo keeps it the same object until the filters change,
+  // so the effect that loads the tasks only runs again when they really change.
+  const apiFilter = useMemo(() => toApiFilter(filters), [filters]);
 
   const currentBoard = boards.find((b) => b.id === boardId);
   const openTask = tasks.find((t) => t.id === openTaskId);
@@ -100,18 +115,38 @@ function App()
     return () => { isStale = true; };
   }, [user, boardId, loadFailed]);
 
-  // Whenever the open board changes, or you switch pages: load that board's tasks.
+  // Whenever the open board or the filters change, or you switch pages: load that board's tasks.
   // Switching pages reloads them so changes made by the assistant show up on the board.
+  // Only the board is filtered: the profile's numbers always count every task.
   useEffect(() => {
     if (!user || boardId === null) return;
-    // If you switch boards again before this answer arrives, the cleanup below sets this,
-    // so a slow answer for the OLD board can't replace the new board's tasks.
+    // If you switch boards (or filters) again before this answer arrives, the cleanup below sets this,
+    // so a slow, out-of-date answer can't replace the newer one.
     let isStale = false;
-    getTasks(boardId)
+    getTasks(boardId, view === 'board' ? apiFilter : null)
       .then((list) => { if (!isStale) setTasks(list); })
       .catch(loadFailed);
     return () => { isStale = true; };
-  }, [user, boardId, view, loadFailed]);
+  }, [user, boardId, view, apiFilter, loadFailed]);
+
+  // The page you're on goes in the address bar (the board is the default, so it's left out)
+  useEffect(() => {
+    setUrlParam('view', view === 'board' ? null : view);
+  }, [view]);
+
+  // After logging in: tell the server this browser's time zone if it doesn't have it (or it changed),
+  // so "due today" and "due this week" mean your today and your week. Best effort: on failure it uses UTC.
+  useEffect(() => {
+    if (!user) return;
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (zone && zone !== user.timeZone) setTimeZone(zone).catch(() => {});
+  }, [user]);
+
+  // New search / filters from the FilterBar: keep them, and put them in the address bar
+  const handleFiltersChange = useCallback((next) => {
+    setFilters(next);
+    writeFiltersToUrl(next);
+  }, []);
 
   // Back to the login screen. Also empties the board, so the next person on this computer
   // never sees the previous user's tasks, not even for a moment.
@@ -122,6 +157,8 @@ function App()
     setBoardId(null);
     setLabels([]);
     setUrlParam('board', null); // the next person starts on their own first board
+    setFilters(EMPTY_FILTERS); // ...with no filters of yours
+    writeFiltersToUrl(EMPTY_FILTERS);
     setOpenModal(null);
     setIsSidebarOpen(false);
     setView('board'); // the next person to log in starts on the board, not on someone's profile
@@ -199,6 +236,11 @@ function App()
     setView('chat');
   };
 
+  // Labels belong to a board, so a label filter makes no sense on another board
+  const clearLabelFilter = () => {
+    if (filters.labels.length) handleFiltersChange({ ...filters, labels: [] });
+  };
+
   // Open another board. Its tasks are cleared first, so you never drag a card from the old board.
   const switchBoard = (id) => {
     closeSidebar();
@@ -207,6 +249,7 @@ function App()
     if (id !== boardId)
     {
       setTasks([]);
+      clearLabelFilter();
       selectBoard(id);
     }
   };
@@ -248,6 +291,7 @@ function App()
       setBoards(remaining);
       setOpenModal(null);
       setTasks([]);
+      clearLabelFilter();
       selectBoard(remaining[0].id);
     }
     catch(err){
@@ -274,13 +318,21 @@ function App()
 
     try{
       const moved = await moveTask(id, status, index);
-      setTasks((prev) => prev.map((b) => (b.id === id ? moved : b)));
+      if (filtersActive)
+      {
+        // Filtered: the task may not match any more (e.g. moved out of a filtered column), so ask again
+        setTasks(await getTasks(boardId, apiFilter));
+      }
+      else
+      {
+        setTasks((prev) => prev.map((b) => (b.id === id ? moved : b)));
+      }
     }
     catch(err){
       if (endedSession(err)) return;
       setError(err.message);
       try{
-        setTasks(await getTasks(boardId)); // the server knows the real order
+        setTasks(await getTasks(boardId, view === 'board' ? apiFilter : null)); // the server knows the real order
       }
       catch{
         setTasks(previous); // server unreachable: put the board back as it was
@@ -288,9 +340,10 @@ function App()
     }
   };
 
-  // The dropdown sends the task to the bottom of the chosen column
+  // The dropdown sends the task to the bottom of the chosen column.
+  // While filtering, the board only shows some of the column's tasks, so let the server find the real bottom.
   const handleStatusChange = (id, status) => {
-    const bottom = tasks.filter((t) => t.status === status && t.id !== id).length;
+    const bottom = filtersActive ? BOTTOM : tasks.filter((t) => t.status === status && t.id !== id).length;
     handleMove(id, status, bottom);
   };
 
@@ -359,6 +412,11 @@ function App()
     return <LoginForm onLoggedIn={handleLoggedIn} notice={error} />;
   }
 
+  // The columns to show: all of them, or only the ones the column filter picked
+  const visibleStatuses = filters.status.length
+    ? STATUSES.filter((s) => filters.status.includes(s.value))
+    : STATUSES;
+
   // The page header's title: the open board's name, or the page you're on
   const pageTitle = view === 'profile' ? 'Profile' : view === 'chat' ? 'Assistant' : (currentBoard?.name ?? '');
 
@@ -419,9 +477,14 @@ function App()
           )}
 
           {view === 'board' && (
+            <FilterBar filters={filters} labels={labels} onChange={handleFiltersChange} />
+          )}
+
+          {view === 'board' && (
             <DragDropContext onDragEnd={handleDragEnd}>
-              <div className="board">
-              {STATUSES.map((s) => (
+              {/* A column filter shows only the chosen columns; --columns tells the grid how many */}
+              <div className="board" style={{ '--columns': visibleStatuses.length }}>
+              {visibleStatuses.map((s) => (
                 <Column
                 key={s.value}
                 title={s.label}
@@ -430,6 +493,7 @@ function App()
                 onDelete={handleDelete}
                 onOpen={setOpenTaskId}
                 status={s.value}
+                dragDisabled={filtersActive}
                 />
               ))}
               </div>

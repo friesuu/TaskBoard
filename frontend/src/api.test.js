@@ -83,6 +83,13 @@ describe('api.js', () => {
     answer({ data: { tasks: [] } });
     await getTasks(3);
 
-    expect(lastRequest().body.variables).toEqual({ boardId: 3 });
+    expect(lastRequest().body.variables).toEqual({ boardId: 3, filter: null });
+  });
+
+  it('getTasks sends the filter as a variable too', async () => {
+    answer({ data: { tasks: [] } });
+    await getTasks(3, { q: 'report', due: 'OVERDUE' });
+
+    expect(lastRequest().body.variables).toEqual({ boardId: 3, filter: { q: 'report', due: 'OVERDUE' } });
   });
 });

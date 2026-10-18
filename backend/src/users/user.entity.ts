@@ -20,4 +20,10 @@ export class User {
   // No @Field: the API never shows it.
   @Column({ name: 'token_version', type: 'int', default: 0 })
   tokenVersion: number;
+
+  // The user's time zone, e.g. "Asia/Kuala_Lumpur" (sent by their browser). Decides what "today"
+  // and "this week" mean in the due-date filters. null until the browser has sent it: then UTC is used.
+  @Field(() => String, { nullable: true })
+  @Column({ name: 'time_zone', type: 'varchar', length: 64, nullable: true })
+  timeZone: string | null;
 }

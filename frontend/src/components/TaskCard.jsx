@@ -7,7 +7,8 @@ import { Draggable } from "@hello-pangea/dnd";
 
 // One card on the board. Clicking the title (or Open) asks App to open the task details panel,
 // where the task is edited; the card itself only shows a summary.
-function TaskCard({ index, task, onStatusChange, onDelete, onOpen })
+// dragDisabled: true while filters are on (a position among SOME of the column's cards isn't the real one)
+function TaskCard({ index, task, onStatusChange, onDelete, onOpen, dragDisabled = false })
 {
     const overdue = isOverdue(task);
     let className = 'task-card';
@@ -17,7 +18,7 @@ function TaskCard({ index, task, onStatusChange, onDelete, onOpen })
     const checklistComplete = hasChecklist && task.checklistDone === task.checklistTotal;
 
     return(
-        <Draggable draggableId={String(task.id)} index={index}>
+        <Draggable draggableId={String(task.id)} index={index} isDragDisabled={dragDisabled}>
             {(provided, snapshot) => (
             <div ref={provided.innerRef} {...provided.draggableProps} {...provided.dragHandleProps} className={snapshot.isDragging ? `${className} dragging` : className}>
                 <h3>

@@ -134,6 +134,11 @@
   --content-width: 720px;   /* reading pages: profile, chat, forms */
   --auth-width: 420px;      /* the log-in card */
   --composer-max: 200px;    /* the chat box grows up to this, then scrolls */
+  --search-min: 240px;      /* the board's search box */
+  --search-max: 360px;
+  --menu-width: 220px;      /* drop-down menus (e.g. the Labels filter) */
+  --menu-max-height: 320px;
+  --menu-pad: 6px;          /* space inside a menu, around its items */
 
   /* ---- Motion ---- */
   --ease: 160ms ease-out;

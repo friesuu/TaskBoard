@@ -4,6 +4,7 @@ import { AuthService } from "./auth.service";
 import { RegisterDto } from "./register.dto";
 import { LoginDto } from "./login.dto";
 import { ChangePasswordDto } from "./change-password.dto";
+import { TimeZoneDto } from "./time-zone.dto";
 import type { Response } from 'express';
 import { UseGuards } from "@nestjs/common";
 import { GqlAuthGuard } from "./gql-auth.guard";
@@ -52,6 +53,14 @@ export class AuthResolver
     me(@CurrentUser() user: User): User
     {
         return user;
+    }
+
+    // The browser sends its time zone after logging in, so "today" means today for this user
+    @Mutation(() => User)
+    @UseGuards(GqlAuthGuard)
+    setTimeZone(@CurrentUser() user: User, @Args('input') input: TimeZoneDto): Promise<User>
+    {
+        return this.authService.setTimeZone(user, input.timeZone);
     }
 
     @Mutation(() => Boolean)

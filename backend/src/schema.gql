@@ -5,6 +5,7 @@
 type User {
   id: Int!
   email: String!
+  timeZone: String
 }
 
 type Board {
@@ -81,13 +82,27 @@ type Comment {
 }
 
 type Query {
-  tasks(boardId: Int!): [Task!]!
+  tasks(boardId: Int!, filter: TaskFilterInput): [Task!]!
   me: User!
   boards: [Board!]!
   chatMessages: [ChatMessage!]!
   checklistItems(taskId: Int!): [ChecklistItem!]!
   comments(taskId: Int!): [Comment!]!
   labels(boardId: Int!): [Label!]!
+}
+
+input TaskFilterInput {
+  q: String
+  labelIds: [Int!]
+  statuses: [TaskStatus!]
+  due: DueFilter
+}
+
+enum DueFilter {
+  OVERDUE
+  TODAY
+  THIS_WEEK
+  NO_DATE
 }
 
 type Mutation {
@@ -97,6 +112,7 @@ type Mutation {
   deleteTask(id: Int!): Boolean!
   register(input: RegisterInput!): User!
   login(input: LoginInput!): User!
+  setTimeZone(input: TimeZoneInput!): User!
   logout: Boolean!
   changePassword(input: ChangePasswordInput!): Boolean!
   createBoard(input: BoardNameInput!): Board!
@@ -145,6 +161,10 @@ input RegisterInput {
 input LoginInput {
   email: String!
   password: String!
+}
+
+input TimeZoneInput {
+  timeZone: String!
 }
 
 input ChangePasswordInput {

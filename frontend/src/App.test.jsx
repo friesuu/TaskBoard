@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import App from './App';
 import {
   getCurrentUser, getTasks, logout, getBoards, createBoard, getChecklist, getComments, getLabels, setTaskLabels,
+  setTimeZone,
 } from './api';
 
 vi.mock('./api'); // the whole backend is faked: each test decides what the "server" answers
@@ -30,6 +31,7 @@ describe('App', () => {
     vi.mocked(getComments).mockReset().mockResolvedValue([]);
     vi.mocked(getLabels).mockReset().mockResolvedValue([{ id: 7, name: 'Urgent', color: 'ORANGE' }]);
     vi.mocked(setTaskLabels).mockReset();
+    vi.mocked(setTimeZone).mockReset().mockResolvedValue(undefined);
     window.history.replaceState(null, '', '/'); // every test starts without ?board=
   });
 
@@ -107,7 +109,7 @@ describe('App', () => {
 
     expect(await screen.findByText('Write report')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'My board' })).toBeInTheDocument();
-    expect(getTasks).toHaveBeenCalledWith(10);
+    expect(getTasks).toHaveBeenCalledWith(10, null); // null = no filters
     expect(window.location.search).toBe('?board=10');
   });
 
@@ -126,7 +128,7 @@ describe('App', () => {
     render(<App />);
 
     expect(await screen.findByText('Write report')).toBeInTheDocument();
-    expect(getTasks).not.toHaveBeenCalledWith(999); // never asks for it
+    expect(getTasks).not.toHaveBeenCalledWith(999, null); // never asks for it
     expect(window.location.search).toBe('?board=10');
   });
 
@@ -156,7 +158,7 @@ describe('App', () => {
 
     expect(createBoard).toHaveBeenCalledWith('Holiday');
     expect(await screen.findByRole('heading', { name: 'Holiday' })).toBeInTheDocument();
-    expect(getTasks).toHaveBeenCalledWith(30);
+    expect(getTasks).toHaveBeenCalledWith(30, null);
   });
 
   it('forgets the open board when you log out', async () => {
@@ -208,6 +210,48 @@ describe('App', () => {
 
     expect(setTaskLabels).toHaveBeenCalledWith(1, [7]);
     expect(await screen.findByText('Urgent')).toBeInTheDocument(); // on the card now
+  });
+
+  it('tells the server the browser time zone after logging in', async () => {
+    vi.mocked(getCurrentUser).mockResolvedValue({ ...user, timeZone: null });
+    render(<App />);
+    await screen.findByText('Write report');
+
+    expect(setTimeZone).toHaveBeenCalledWith(Intl.DateTimeFormat().resolvedOptions().timeZone);
+  });
+
+  it('opens with the filters in the address bar, showing only the chosen columns', async () => {
+    window.history.replaceState(null, '', '/?q=report&status=TODO');
+    vi.mocked(getCurrentUser).mockResolvedValue(user);
+    render(<App />);
+    await screen.findByText('Write report');
+
+    expect(getTasks).toHaveBeenCalledWith(10, { q: 'report', statuses: ['TODO'] });
+    expect(screen.getByRole('heading', { name: 'To do' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Done' })).not.toBeInTheDocument();
+  });
+
+  it('searching from the filter bar reloads the board and updates the address bar', async () => {
+    vi.mocked(getCurrentUser).mockResolvedValue(user);
+    render(<App />);
+    await screen.findByText('Write report');
+
+    await userEvent.type(screen.getByLabelText('Search tasks'), 'report');
+
+    await vi.waitFor(() => expect(getTasks).toHaveBeenCalledWith(10, { q: 'report' }));
+    expect(window.location.search).toBe('?board=10&q=report');
+    expect(screen.getByText("Filters are on, so cards can't be dragged. Clear them to reorder.")).toBeInTheDocument();
+  });
+
+  it('remembers the page you are on in the address bar', async () => {
+    vi.mocked(getCurrentUser).mockResolvedValue(user);
+    render(<App />);
+    await screen.findByText('Write report');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Open menu' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Profile' }));
+
+    expect(window.location.search).toBe('?board=10&view=profile');
   });
 
   it('shows the error instead of loading forever when the server is down', async () => {

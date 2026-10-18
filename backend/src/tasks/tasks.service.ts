@@ -1,12 +1,14 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Brackets, Repository } from 'typeorm';
 import { Task } from './task.entity';
 import { CreateTaskDto } from './create-task.dto';
 import { UpdateTaskDto } from './update-task.dto';
 import { MoveTaskDto } from './move-task.dto';
 import { TaskStatus } from './tasks-status.enum';
 import { BoardsService } from '../boards/boards.service';
+import { DueFilter, TaskFilterDto } from './task-filter.dto';
+import { thisWeekIn, todayIn } from '../common/dates';
 
 @Injectable()
 export class TasksService {
@@ -17,16 +19,62 @@ export class TasksService {
   ) {}
 
   // One board's tasks, each with its labels. ownerId stays in the filter, so another user's board id just gives [].
-  async findAll(ownerId: number, boardId: number): Promise<Task[]> {
-    const tasks = await this.tasksRepository.find({
-      where: { ownerId, boardId },
-      relations: { labels: true },
-      order: {
-        position: 'ASC',
-        createdAt: 'ASC', // tie-breaker for tasks that share a position (e.g. old rows, all 0)
-        id: 'ASC', // ORDER BY in SQL, 'ASC' means in ascending order
-      },
-    });
+  // filter (optional): search text, labels, columns and due date, all combined.
+  // timeZone: the user's, so "today" and "this week" are their today and their week.
+  async findAll(ownerId: number, boardId: number, filter?: TaskFilterDto, timeZone: string | null = null): Promise<Task[]> {
+    const query = this.tasksRepository
+      .createQueryBuilder('task')
+      .leftJoinAndSelect('task.labels', 'label')
+      .where('task.ownerId = :ownerId', { ownerId })
+      .andWhere('task.boardId = :boardId', { boardId })
+      .orderBy('task.position', 'ASC')
+      .addOrderBy('task.createdAt', 'ASC') // tie-breaker for tasks that share a position (e.g. old rows, all 0)
+      .addOrderBy('task.id', 'ASC');
+
+    if (filter?.q) {
+      // %, _ and \ are special in ILIKE: put a \ before each, so "50%" searches for "50%"
+      const like = `%${filter.q.replace(/[\\%_]/g, '\\$&')}%`;
+      query.andWhere(new Brackets((match) => {
+        match
+          .where('task.title ILIKE :like')
+          .orWhere('task.description ILIKE :like')
+          .orWhere('EXISTS (SELECT 1 FROM checklist_items item WHERE item.task_id = task.id AND item.text ILIKE :like)');
+      }), { like });
+    }
+
+    // ANY of the labels. A separate check (not the join above), so the task still comes back with ALL its labels.
+    if (filter?.labelIds?.length) {
+      query.andWhere(
+        'EXISTS (SELECT 1 FROM task_labels link WHERE link.task_id = task.id AND link.label_id IN (:...labelIds))',
+        { labelIds: filter.labelIds },
+      );
+    }
+
+    if (filter?.statuses?.length) {
+      query.andWhere('task.status IN (:...statuses)', { statuses: filter.statuses });
+    }
+
+    if (filter?.due) {
+      const today = todayIn(timeZone);
+      switch (filter.due) {
+        case DueFilter.OVERDUE: // same rule as the red cards: due before today and not done
+          query.andWhere('task.dueDate < :today AND task.status != :done', { today, done: TaskStatus.DONE });
+          break;
+        case DueFilter.TODAY:
+          query.andWhere('task.dueDate = :today', { today });
+          break;
+        case DueFilter.THIS_WEEK: {
+          const { monday, sunday } = thisWeekIn(timeZone);
+          query.andWhere('task.dueDate BETWEEN :monday AND :sunday', { monday, sunday });
+          break;
+        }
+        case DueFilter.NO_DATE:
+          query.andWhere('task.dueDate IS NULL');
+          break;
+      }
+    }
+
+    const tasks = await query.getMany();
     tasks.forEach(sortLabels);
     return tasks;
   }

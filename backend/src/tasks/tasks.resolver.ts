@@ -8,6 +8,7 @@ import { GqlAuthGuard } from "../auth/gql-auth.guard";
 import { UseGuards } from "@nestjs/common";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { User } from "../users/user.entity";
+import { TaskFilterDto } from "./task-filter.dto";
 
 @UseGuards(GqlAuthGuard) // Uses the gql auth guard
 @Resolver(() => Task)
@@ -15,8 +16,13 @@ export class TaskResolver
 {
     constructor(private readonly tasksService: TasksService){}
     @Query(() => [Task], { name: 'tasks'})
-    findAll(@CurrentUser() user: User, @Args('boardId', { type: () => Int }) boardId: number): Promise<Task[]> {
-        return this.tasksService.findAll(user.id, boardId);
+    findAll(
+        @CurrentUser() user: User,
+        @Args('boardId', { type: () => Int }) boardId: number,
+        // Optional: leave it out to get every task on the board
+        @Args('filter', { type: () => TaskFilterDto, nullable: true }) filter?: TaskFilterDto,
+    ): Promise<Task[]> {
+        return this.tasksService.findAll(user.id, boardId, filter, user.timeZone);
     }
     
     @Mutation(() => Task)

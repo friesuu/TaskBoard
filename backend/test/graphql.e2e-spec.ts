@@ -191,6 +191,19 @@ const SET_TASK_LABELS = `
   }
 `;
 
+const SET_TIME_ZONE = `
+  mutation SetTimeZone($input: TimeZoneInput!) {
+    setTimeZone(input: $input) { id timeZone }
+  }
+`;
+
+// The board's tasks that match a filter, by title
+const FILTERED = `
+  query Filtered($boardId: Int!, $filter: TaskFilterInput) {
+    tasks(boardId: $boardId, filter: $filter) { title }
+  }
+`;
+
 // Each task with the names of its labels
 const TASK_LABELS = `
   query TaskLabels($boardId: Int!) {
@@ -1114,6 +1127,159 @@ describe('Tasks GraphQL API (e2e)', () => {
 
       const left = await tasksRepository.query('SELECT count(*)::int AS n FROM labels WHERE board_id = $1', [work.id]);
       expect(left).toEqual([{ n: 0 }]);
+    });
+  });
+
+  describe('time zone', () => {
+    it('remembers the time zone the browser sends, and me returns it', async () => {
+      const res = await gql(SET_TIME_ZONE, { input: { timeZone: 'Asia/Kuala_Lumpur' } }).expect(200);
+
+      expect(res.body.errors).toBeUndefined();
+      const me = await gql(`query { me { timeZone } }`).expect(200);
+      expect(me.body.data.me.timeZone).toBe('Asia/Kuala_Lumpur');
+    });
+
+    it('rejects a time zone that does not exist', async () => {
+      const res = await gql(SET_TIME_ZONE, { input: { timeZone: 'Mars/Olympus_Mons' } }).expect(200);
+
+      expect(res.body.errors[0].extensions.code).toBe('BAD_REQUEST');
+    });
+
+    it('needs a login', async () => {
+      const res = await gqlLoggedOut(SET_TIME_ZONE, { input: { timeZone: 'Europe/London' } }).expect(200);
+
+      expect(res.body.errors[0].extensions.code).toBe('UNAUTHENTICATED');
+    });
+  });
+
+  describe('search and filters', () => {
+    const titlesMatching = async (filter: Record<string, unknown>) => {
+      const res = await gql(FILTERED, { boardId, filter }).expect(200);
+      expect(res.body.errors).toBeUndefined();
+      return res.body.data.tasks.map((t: { title: string }) => t.title).sort();
+    };
+
+    const createLabel = async (name: string) =>
+      (await gql(CREATE_LABEL, { boardId, input: { name, color: 'BLUE' } }).expect(200)).body.data.createLabel.id;
+
+    const labelTask = (taskId: number, labelIds: number[]) =>
+      gql(SET_TASK_LABELS, { taskId, input: { labelIds } }).expect(200);
+
+    // A date as YYYY-MM-DD in a time zone, `days` from today there (worked out here, separately from the app)
+    const dateIn = (timeZone: string, days = 0) => {
+      const parts = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' })
+        .format(new Date());
+      const date = new Date(`${parts}T00:00:00Z`);
+      date.setUTCDate(date.getUTCDate() + days);
+      return date.toISOString().slice(0, 10);
+    };
+
+    it('without a filter, returns every task', async () => {
+      await createTask({ title: 'A' });
+      await createTask({ title: 'B' });
+
+      const res = await gql(FILTERED, { boardId }).expect(200);
+
+      expect(res.body.data.tasks).toHaveLength(2);
+    });
+
+    it('searches titles, notes and checklist items, ignoring capitals', async () => {
+      await createTask({ title: 'Invoice for ACME' });
+      await createTask({ title: 'Call', description: 'ask about the acme contract' });
+      const withItem = await createTask({ title: 'Prepare' });
+      await gql(ADD_ITEM, { taskId: withItem.id, input: { text: 'Print Acme slides' } }).expect(200);
+      await createTask({ title: 'Unrelated' });
+
+      expect(await titlesMatching({ q: 'acme' })).toEqual(['Call', 'Invoice for ACME', 'Prepare']);
+    });
+
+    it('treats % and _ in the search as normal characters', async () => {
+      await createTask({ title: '100% done' });
+      await createTask({ title: 'Other' });
+      await createTask({ title: 'snake_case' });
+
+      expect(await titlesMatching({ q: '%' })).toEqual(['100% done']);
+      expect(await titlesMatching({ q: '_' })).toEqual(['snake_case']);
+    });
+
+    it('matches tasks with ANY of the chosen labels, and still returns all their labels', async () => {
+      const urgent = await createLabel('Urgent');
+      const client = await createLabel('Client');
+      const a = await createTask({ title: 'Has urgent' });
+      const b = await createTask({ title: 'Has client' });
+      await createTask({ title: 'No labels' });
+      await labelTask(a.id, [urgent, client]);
+      await labelTask(b.id, [client]);
+
+      expect(await titlesMatching({ labelIds: [urgent] })).toEqual(['Has urgent']);
+      expect(await titlesMatching({ labelIds: [urgent, client] })).toEqual(['Has client', 'Has urgent']);
+
+      const res = await gql(
+        `query ($boardId: Int!, $filter: TaskFilterInput) { tasks(boardId: $boardId, filter: $filter) { labels { name } } }`,
+        { boardId, filter: { labelIds: [urgent] } },
+      ).expect(200);
+      expect(res.body.data.tasks[0].labels).toEqual([{ name: 'Client' }, { name: 'Urgent' }]);
+    });
+
+    it('filters by column', async () => {
+      await createTask({ title: 'Todo one' });
+      await createTask({ title: 'Doing', status: 'IN_PROGRESS' });
+      await createTask({ title: 'Finished', status: 'DONE' });
+
+      expect(await titlesMatching({ statuses: ['TODO', 'DONE'] })).toEqual(['Finished', 'Todo one']);
+    });
+
+    it('filters by due date in the user\'s own time zone', async () => {
+      const zone = 'Pacific/Kiritimati'; // UTC+14: its "today" is often a different date from the server's
+      await gql(SET_TIME_ZONE, { input: { timeZone: zone } }).expect(200);
+      await createTask({ title: 'Late', dueDate: dateIn(zone, -1) });
+      await createTask({ title: 'Late but done', dueDate: dateIn(zone, -1), status: 'DONE' });
+      await createTask({ title: 'Today', dueDate: dateIn(zone, 0) });
+      await createTask({ title: 'Undated' });
+
+      expect(await titlesMatching({ due: 'OVERDUE' })).toEqual(['Late']);
+      expect(await titlesMatching({ due: 'TODAY' })).toEqual(['Today']);
+      expect(await titlesMatching({ due: 'NO_DATE' })).toEqual(['Undated']);
+    });
+
+    it('"this week" is Monday to Sunday', async () => {
+      const zone = 'Asia/Kuala_Lumpur';
+      await gql(SET_TIME_ZONE, { input: { timeZone: zone } }).expect(200);
+      const today = new Date(`${dateIn(zone)}T00:00:00Z`);
+      const toMonday = -((today.getUTCDay() + 6) % 7);
+      await createTask({ title: 'Monday', dueDate: dateIn(zone, toMonday) });
+      await createTask({ title: 'Sunday', dueDate: dateIn(zone, toMonday + 6) });
+      await createTask({ title: 'Last Sunday', dueDate: dateIn(zone, toMonday - 1) });
+      await createTask({ title: 'Next Monday', dueDate: dateIn(zone, toMonday + 7) });
+
+      expect(await titlesMatching({ due: 'THIS_WEEK' })).toEqual(['Monday', 'Sunday']);
+    });
+
+    it('combines filters: a task must match all of them', async () => {
+      const urgent = await createLabel('Urgent');
+      const a = await createTask({ title: 'Report draft' });
+      const b = await createTask({ title: 'Report final', status: 'DONE' });
+      await createTask({ title: 'Report notes' });
+      await labelTask(a.id, [urgent]);
+      await labelTask(b.id, [urgent]);
+
+      expect(await titlesMatching({ q: 'report', labelIds: [urgent], statuses: ['TODO'] })).toEqual(['Report draft']);
+    });
+
+    it('rejects an unknown due filter or column', async () => {
+      const due = await gql(FILTERED, { boardId, filter: { due: 'SOMEDAY' } }).expect(400);
+      const status = await gql(FILTERED, { boardId, filter: { statuses: ['DOING'] } }).expect(400);
+
+      expect(due.body.errors[0].extensions.code).toBe('BAD_USER_INPUT');
+      expect(status.body.errors[0].extensions.code).toBe('BAD_USER_INPUT');
+    });
+
+    it("never shows another user's tasks, whatever the filter", async () => {
+      await gqlAsOther(CREATE_TASK, { input: { boardId: otherBoardId, title: 'Their secret' } }).expect(200);
+
+      const res = await gqlAsOther(FILTERED, { boardId, filter: { q: 'secret' } }).expect(200);
+
+      expect(res.body.data.tasks).toEqual([]); // my board, their search: nothing of mine, nothing of theirs
     });
   });
 
