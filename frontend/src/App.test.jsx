@@ -231,8 +231,8 @@ describe('App', () => {
     await screen.findByText('Write report');
 
     expect(getTasks).toHaveBeenCalledWith(10, { q: 'report', statuses: ['TODO'] });
-    expect(screen.getByRole('heading', { name: 'To do' })).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'Done' })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /^To do/ })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /^Done/ })).not.toBeInTheDocument();
   });
 
   it('searching from the filter bar reloads the board and updates the address bar', async () => {
@@ -281,7 +281,7 @@ describe('App', () => {
     expect(window.location.search).toBe('?board=10&view=calendar');
 
     await userEvent.click(within(viewSwitch).getByRole('button', { name: 'Board' }));
-    expect(screen.getByRole('heading', { name: 'To do' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /^To do/ })).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'No due date' })).not.toBeInTheDocument();
   });
 

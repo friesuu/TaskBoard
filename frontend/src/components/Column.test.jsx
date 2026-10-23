@@ -28,7 +28,7 @@ describe('Column and TaskCard', () => {
 
   it('shows "No tasks" when the column is empty', () => {
     renderColumn([]);
-    expect(screen.getByRole('heading', { name: 'To do' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'To do (0)' })).toBeInTheDocument();
     expect(screen.getByText('No tasks')).toBeInTheDocument();
   });
 

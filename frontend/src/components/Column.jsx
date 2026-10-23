@@ -15,7 +15,7 @@ function Column({
                 <section className={`column column-${tone}${snapshot.isDraggingOver ? ' drag-over' : ''}`}>
                     <h2 className="column-header">
                         <span className={`dot dot-${tone}`} aria-hidden="true" />
-                        {title}
+                        {title} ({tasks.length})
                     </h2>
 
                     {/* The drop area is this list, NOT the whole column. In an empty column the library
