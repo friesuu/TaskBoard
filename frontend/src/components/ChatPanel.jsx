@@ -74,12 +74,14 @@ function ChatPanel({ boardId, boardName, onSessionEnded })
     };
 
     // The assistant's messages: no bubble, a small avatar and a sender label (the design's "other messages")
-    const assistantMessage = (key, children, extraClass = '') => (
+    // responseMs: how long the answer took (null for "Thinking…" and for replies saved before this was measured)
+    const assistantMessage = (key, children, extraClass = '', responseMs = null) => (
         <div key={key} className={`chat-message assistant ${extraClass}`}>
             <span className="chat-avatar" aria-hidden="true"><ChatIcon /></span>
             <div className="chat-message-body">
                 <div className="chat-sender">Assistant</div>
                 <div className="chat-text">{children}</div>
+                {responseMs != null && <div className="chat-meta">Answered in {(responseMs / 1000).toFixed(1)} s</div>}
             </div>
         </div>
     );
@@ -111,7 +113,7 @@ function ChatPanel({ boardId, boardName, onSessionEnded })
                     {/* Plain text only: React escapes it, so an answer can never inject HTML */}
                     {messages.map((m) => (m.role === 'user'
                         ? <div key={m.id} className="chat-message user"><div className="chat-bubble">{m.content}</div></div>
-                        : assistantMessage(m.id, m.content)
+                        : assistantMessage(m.id, m.content, '', m.responseMs)
                     ))}
                     {isWaiting && assistantMessage(
                         'waiting',

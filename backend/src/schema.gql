@@ -63,6 +63,7 @@ type ChatMessage {
   role: String!
   content: String!
   createdAt: DateTime!
+  responseMs: Int
 }
 
 type ChecklistItem {

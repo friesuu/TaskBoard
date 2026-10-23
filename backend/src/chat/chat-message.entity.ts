@@ -22,6 +22,11 @@ export class ChatMessage {
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 
+  // How long Claude took to answer, in milliseconds. Only on assistant replies; null on your messages and older replies.
+  @Field(() => Int, { nullable: true })
+  @Column({ name: 'response_ms', type: 'int', nullable: true })
+  responseMs: number | null;
+
   // Same ownership pattern as tasks. No @Field: the API never shows it.
   @ManyToOne(() => User, { nullable: false, onDelete: 'CASCADE' })
   @JoinColumn({ name: 'owner_id' })

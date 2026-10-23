@@ -4,7 +4,7 @@ const API_ORIGIN = GRAPHQL_URL.replace(/\/graphql$/, '');
 // checklistDone / checklistTotal = the "2/5" on the card
 const TASK_FIELDS =
     'id title description status dueDate checklistDone checklistTotal attachmentCount labels { id name color }';
-const CHAT_FIELDS = 'id role content createdAt';
+const CHAT_FIELDS = 'id role content createdAt responseMs';
 const BOARD_FIELDS = 'id name';
 const ITEM_FIELDS = 'id text done position';
 const LABEL_FIELDS = 'id name color';

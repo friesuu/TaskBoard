@@ -45,17 +45,19 @@ export class ChatService {
     const context =
       `<my_tasks>\nToday is ${today}. Board: "${board.name}".\n${describeTasks(tasks)}\n</my_tasks>\n\n`;
 
-    // 3. Ask Claude: memory + the new message
+    // 3. Ask Claude: memory + the new message, timed so the chat can show how long the answer took
+    const started = Date.now();
     const answer = await this.llmService.reply([
       ...recent.map((m) => ({ role: m.role, content: m.content })),
       { role: 'user', content: context + text },],
       taskTools(this.tasksService, ownerId, boardId), // built for THIS user and THIS board only
     );
+    const responseMs = Date.now() - started; // in milliseconds, including any tool steps (e.g. creating tasks)
 
     // 4. Save both only now, so a failed request leaves no half-finished turn behind
     const [, saved] = await this.messagesRepository.save([
       this.messagesRepository.create({ ownerId, role: 'user', content: text }),
-      this.messagesRepository.create({ ownerId, role: 'assistant', content: answer }),
+      this.messagesRepository.create({ ownerId, role: 'assistant', content: answer, responseMs }),
     ]);
 
     

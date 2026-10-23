@@ -99,7 +99,7 @@ const DELETE_BOARD = `
 
 const SEND_CHAT = `
   mutation SendChat($input: SendChatMessageInput!) {
-    sendChatMessage(input: $input) { role content }
+    sendChatMessage(input: $input) { role content responseMs }
   }
 `;
 
@@ -232,10 +232,12 @@ type FakeTool = { name: string; run: (input: Record<string, unknown>) => Promise
 const fakeLlm = {
   lastMessages: [] as { role: string; content: string }[],
   lastTools: [] as FakeTool[],
-  reply(messages: { role: string; content: string }[], tools: FakeTool[] = []) {
+  delayMs: 0, // how long the fake "thinks" before answering (for the response time test)
+  async reply(messages: { role: string; content: string }[], tools: FakeTool[] = []) {
     this.lastMessages = messages;
     this.lastTools = tools;
-    return Promise.resolve('Fake answer');
+    if (this.delayMs > 0) await new Promise((resolve) => setTimeout(resolve, this.delayMs));
+    return 'Fake answer';
   },
 };
 
@@ -743,6 +745,24 @@ describe('Tasks GraphQL API (e2e)', () => {
       const sent = fakeLlm.lastMessages.at(-1)!.content;
       expect(sent).toContain('Work task');
       expect(sent).not.toContain('Home task');
+    });
+
+    it('saves how long the answer took on the reply, not on your message', async () => {
+      fakeLlm.delayMs = 60; // the fake takes 60 ms to answer
+      try {
+        const res = await gql(SEND_CHAT, { input: { boardId, message: 'Hi' } }).expect(200);
+        expect(res.body.errors).toBeUndefined();
+        expect(res.body.data.sendChatMessage.responseMs).toBeGreaterThanOrEqual(50);
+      } finally {
+        fakeLlm.delayMs = 0;
+      }
+
+      const history = (await gql(`query { chatMessages { role responseMs } }`).expect(200)).body.data.chatMessages;
+      expect(history).toEqual([
+        { role: 'user', responseMs: null },
+        { role: 'assistant', responseMs: expect.any(Number) },
+      ]);
+      expect(history[1].responseMs).toBeGreaterThanOrEqual(50); // saved, so it still shows after a refresh
     });
 
     it("refuses another user's board", async () => {

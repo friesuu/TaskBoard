@@ -554,6 +554,14 @@
   overflow-wrap: anywhere;
 }
 
+/* "Answered in 2.4 s" under a reply: small and quiet */
+.chat-meta {
+  margin-top: var(--space-1);
+  color: var(--muted);
+  font-size: var(--fs-small);
+  font-variant-numeric: tabular-nums;
+}
+
 /* The composer bar at the bottom of the panel */
 .chat-composer {
   display: flex;

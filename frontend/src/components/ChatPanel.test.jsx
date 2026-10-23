@@ -37,6 +37,28 @@ describe('ChatPanel', () => {
     expect(screen.getByLabelText('Message')).toHaveValue(''); // box cleared
   });
 
+  it('shows how long each answer took, only under answers that have a time', async () => {
+    vi.mocked(getChatMessages).mockResolvedValue([
+      { id: 1, role: 'user', content: 'Hi', responseMs: null },
+      { id: 2, role: 'assistant', content: 'Hello!', responseMs: 2400 },
+      { id: 3, role: 'assistant', content: 'An answer from before times were saved', responseMs: null },
+    ]);
+    render(<ChatPanel boardId={3} onSessionEnded={() => false} />);
+
+    expect(await screen.findByText('Answered in 2.4 s')).toBeInTheDocument();
+    expect(screen.getAllByText(/^Answered in/)).toHaveLength(1); // not under your message or the older answer
+  });
+
+  it('shows the time under a new answer too', async () => {
+    vi.mocked(sendChatMessage).mockResolvedValue({ id: 4, role: 'assistant', content: 'Start with the report.', responseMs: 12345 });
+    render(<ChatPanel boardId={3} onSessionEnded={() => false} />);
+    await screen.findByText('Hi');
+
+    await userEvent.type(screen.getByLabelText('Message'), 'What first?{Enter}');
+
+    expect(await screen.findByText('Answered in 12.3 s')).toBeInTheDocument();
+  });
+
   it('Shift+Enter makes a new line instead of sending', async () => {
     render(<ChatPanel boardId={3} onSessionEnded={() => false} />);
     await screen.findByText('Hi');
