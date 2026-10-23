@@ -18,3 +18,7 @@ import { TasksModule } from '../tasks/tasks.module';
   providers: [LabelsService, LabelsResolver],
 })
 export class LabelsModule {}
+
+
+// Providers are the classes that belong to this feature (label feature)
+// Imports lists what this feature borrows fro elsewhere

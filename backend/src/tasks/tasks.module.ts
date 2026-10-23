@@ -8,6 +8,7 @@ import { BoardsModule } from '../boards/boards.module';
 
 @Module({
   imports: [TypeOrmModule.forFeature([Task]), AuthModule, BoardsModule],
+  // imports: [Task, AuthModule, BoardsModule],
   providers: [TasksService, TaskResolver],
   exports: [TasksService],
 })

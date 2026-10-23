@@ -89,3 +89,6 @@ export class LabelsService {
     if (taken) throw new ConflictException(`There is already a label called "${name}" on this board`);
   }
 }
+
+// Basically the class that handles all the functions of a feature. Responsible for all the things a feature can do
+// for example, labels can be deleted, added and we can check overlapping labels

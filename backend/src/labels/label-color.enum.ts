@@ -13,3 +13,5 @@ export enum LabelColor {
 }
 
 registerEnumType(LabelColor, { name: 'LabelColor' });
+
+// ONE data type with a fixed list of allowed values

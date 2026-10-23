@@ -52,3 +52,8 @@ export class LabelsResolver {
     return this.labelsService.setTaskLabels(taskId, user.id, input.labelIds);
   }
 }
+
+// A class whose functions are called when an operation is called. Operation being mutations and queries
+// It does no logic itself
+// Just reads input and hands it over to the service
+

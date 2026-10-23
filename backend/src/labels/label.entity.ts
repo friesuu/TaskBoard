@@ -32,3 +32,8 @@ export class Label {
   @Column({ name: 'board_id', type: 'int' })
   boardId: number;
 }
+
+
+// Basically describe all the columns of the table
+// It just tells TypeORM how to read and write that table's row
+

@@ -31,3 +31,9 @@ export class SetTaskLabelsDto {
   @IsInt({ each: true })
   labelIds: number[];
 }
+
+// Data Transfer Object is basically like a container used to transfer objects or data
+// Main use is to group multiple data/info into a single object
+// It hides sensitive database fields
+// Decouples frontend from database. If a column changes in the database, the frontend won't break. 
+// We can map the new database column name to the old DTO name
