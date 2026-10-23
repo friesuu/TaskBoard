@@ -8,7 +8,9 @@ import type { Request, Response } from 'express';
 // live in the GraphQL context (the { req, res } from app.module), so we hand them over from there.
 @Injectable()
 export class GqlThrottlerGuard extends ThrottlerGuard {
-  protected getRequestResponse(context: ExecutionContext) {
+  // The return type is written out (the same one ThrottlerGuard declares): with pnpm, TypeScript can't
+  // name Express's inner types on its own, so leaving it to be guessed fails the build.
+  protected getRequestResponse(context: ExecutionContext): { req: Record<string, any>; res: Record<string, any> } {
     const { req, res } = GqlExecutionContext.create(context).getContext<{ req: Request; res: Response }>();
     return { req, res };
   }

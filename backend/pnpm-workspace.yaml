@@ -1,0 +1,5 @@
+allowBuilds:
+  '@apollo/protobufjs': false
+  '@parcel/watcher': false
+  argon2: true
+  unrs-resolver: false
