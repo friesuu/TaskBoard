@@ -10,6 +10,7 @@ import { User } from '../src/users/user.entity';
 import { Board } from '../src/boards/board.entity';
 import { LlmService } from '../src/chat/llm.service';
 import { AttachmentsService } from '../src/attachments/attachments.service';
+import { AUTH_COOKIE } from '../src/auth/auth-cookies';
 import { readFile, rm, utimes } from 'fs/promises';
 import { join } from 'path';
 
@@ -376,7 +377,7 @@ describe('Tasks GraphQL API (e2e)', () => {
     it('rejects a made-up token', async () => {
       const res = await request(app.getHttpServer())
         .post('/graphql')
-        .set('Cookie', 'token=not-a-real-token')
+        .set('Cookie', `${AUTH_COOKIE}=not-a-real-token`)
         .send({ query: TASKS, variables: { boardId } })
         .expect(200);
 
@@ -391,7 +392,7 @@ describe('Tasks GraphQL API (e2e)', () => {
     });
 
     // supertest isn't a browser and won't delete the cookie itself, so we check the instruction
-    // the server sends: "token is now empty and expired in 1970". The saved test cookie keeps
+    // the server sends: "the login cookie is now empty and expired in 1970". The saved test cookie keeps
     // working afterwards, because a JWT can't be cancelled: logout only removes it from the browser.
     it('logout tells the browser to delete the cookie', async () => {
       const res = await gql(`mutation { logout }`).expect(200);
@@ -400,7 +401,7 @@ describe('Tasks GraphQL API (e2e)', () => {
       expect(res.body.data.logout).toBe(true);
 
       const setCookie = String(res.headers['set-cookie']);
-      expect(setCookie).toContain('token=;');
+      expect(setCookie).toContain(`${AUTH_COOKIE}=;`);
       expect(setCookie).toContain('Expires=Thu, 01 Jan 1970');
       expect(setCookie).toContain('HttpOnly'); // same options as login, or browsers won't clear it
     });

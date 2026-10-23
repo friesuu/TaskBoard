@@ -2,6 +2,7 @@ import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
 import type { Request } from 'express';
 import { AuthService } from './auth.service';
 import { User } from '../users/user.entity';
+import { AUTH_COOKIE } from './auth-cookies';
 
 // The same login check as GqlAuthGuard, for normal (non-GraphQL) addresses such as file upload and download.
 // It reads the login cookie, finds the user, and puts them on the request (req.user).
@@ -12,7 +13,7 @@ export class HttpAuthGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const req = context.switchToHttp().getRequest<Request & { user?: User }>();
-    req.user = await this.authService.userFromToken(req.cookies?.token);
+    req.user = await this.authService.userFromToken(req.cookies?.[AUTH_COOKIE]);
     return true;
   }
 }
