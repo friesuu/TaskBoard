@@ -80,6 +80,7 @@
   --shadow-panel: inset 0 1px 0 rgba(255, 255, 255, 0.03), 0 24px 60px rgba(0, 0, 0, 0.45);
   --highlight: inset 0 1px 0 rgba(255, 255, 255, 0.04); /* top edge of nav, inputs, raised buttons */
   --shadow-float: 0 16px 40px rgba(0, 0, 0, 0.5);       /* menus, modals, dragged cards (+ 1px --border) */
+  --shadow-lift: 0 8px 18px rgba(0, 0, 0, 0.45);        /* a hovered task card, raised a little */
 }
 
 /* Theme-independent tokens */

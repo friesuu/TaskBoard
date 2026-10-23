@@ -60,28 +60,57 @@
 }
 
 /* A card. Spacing between cards is a margin (the drag-and-drop library measures margins, not gaps).
-   The whole card opens the task when clicked. */
+   The whole card opens the task when clicked.
+   --edge: a thin line down the left side in the column's colour (set by the tone-* classes below) */
 .task-card {
+  --edge: transparent;
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
   margin-bottom: var(--space-3);
-  padding: var(--space-4);
+  padding: calc(var(--space-4) + 2px);
   background-color: var(--raised);
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
+  box-shadow: inset 3px 0 0 var(--edge);
   cursor: pointer;
-  transition: border-color var(--ease), box-shadow var(--ease);
+  transition: border-color var(--ease), box-shadow var(--ease), translate var(--ease);
 }
 
-.task-card:hover {
+.task-card.tone-info { --edge: var(--info); }       /* To do: periwinkle */
+.task-card.tone-warning { --edge: var(--warning); } /* In progress: peach */
+.task-card.tone-success { --edge: var(--success); } /* Done: mint */
+
+/* Hover: the card rises a little. `translate` (not `transform`) so it adds to the drag library's own
+   movement instead of fighting it, and not while dragging, where the card already floats. */
+.task-card:hover:not(.dragging) {
+  translate: 0 -2px;
   border-color: var(--border-strong);
+  box-shadow: inset 3px 0 0 var(--edge), var(--shadow-lift);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .task-card:hover:not(.dragging) {
+    translate: none;
+  }
 }
 
 /* Being dragged: lifted, with an accent outline */
 .task-card.dragging {
   border-color: var(--accent);
-  box-shadow: var(--shadow-float);
+  box-shadow: inset 3px 0 0 var(--edge), var(--shadow-float);
+}
+
+/* On cards, labels are soft filled tints (no outline or dot), quieter next to the notes.
+   Everywhere else (task panel, filters, board settings) they stay outlined. */
+.task-card .label-pill {
+  border-color: transparent;
+  background-color: color-mix(in srgb, var(--label) 14%, transparent);
+  color: var(--label);
+}
+
+.task-card .label-dot {
+  display: none;
 }
 
 /* The title is a button (it opens the task) that reads as the card title */
@@ -131,6 +160,7 @@
 /* Overdue: the whole card turns rose (tint + border), and so does the date.
    The date also says "· Overdue" in words, so colour is never the only signal. */
 .task-card.overdue {
+  --edge: transparent; /* the thick red bar replaces the column's colour edge */
   background-color: var(--danger-surface);
   border-color: var(--danger-border);
   border-left: var(--danger-bar) solid var(--danger); /* the thick red bar from before the redesign */

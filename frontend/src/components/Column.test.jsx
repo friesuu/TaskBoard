@@ -55,6 +55,12 @@ describe('Column and TaskCard', () => {
     expect(screen.getByText('1 Oct · Overdue')).toBeInTheDocument();
   });
 
+  it("gives each card its column's colour edge", () => {
+    renderColumn([{ id: 1, title: 'Busy one', description: null, status: 'IN_PROGRESS', dueDate: null }]);
+    const card = screen.getByRole('heading', { name: 'Busy one' }).closest('.task-card');
+    expect(card).toHaveClass('tone-warning'); // peach, like the In progress column
+  });
+
   it('keeps the card itself simple: no column dropdown, Open button or bin', () => {
     renderColumn([{ id: 3, title: 'Card', description: null, status: 'TODO', dueDate: null }]);
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument();

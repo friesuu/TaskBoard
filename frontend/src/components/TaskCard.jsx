@@ -4,6 +4,7 @@ import LabelPill from "./LabelPill";
 import Checklist from "./Checklist";
 import Attachments from "./Attachments";
 import { formatDueDate, isOverdue } from "../dates";
+import { STATUSES } from "../statuses";
 import { Draggable } from "@hello-pangea/dnd";
 
 // One card on the board: only what the task is and what needs attention.
@@ -21,7 +22,9 @@ function TaskCard({
     const toggle = (name) => setOpenSection(openSection === name ? null : name);
 
     const overdue = isOverdue(task);
-    let className = 'task-card';
+    // tone-* = the column's colour for the thin edge on the left (an overdue card shows its red bar instead)
+    const tone = STATUSES.find((s) => s.value === task.status)?.tone ?? 'neutral';
+    let className = `task-card tone-${tone}`;
     if (overdue) className += ' overdue';
 
     const done = task.checklistDone ?? 0;
