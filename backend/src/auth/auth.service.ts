@@ -60,7 +60,7 @@ export class AuthService {
 
   // Returns a fresh token, so the person who changed the password stays logged in on THIS device
   async changePassword(user: User, dto: ChangePasswordDto): Promise<string> {
-    const valid = await argon2.verify(user.passwordHash, dto.currentPassword);
+    const valid = await this.checkPassword(user, dto.currentPassword);
     // BadRequest, not Unauthorized: the frontend treats "unauthenticated" as "session expired" and logs you out
     if (!valid) throw new BadRequestException('Current password is incorrect');
     if (dto.newPassword === dto.currentPassword) {
@@ -72,6 +72,12 @@ export class AuthService {
     await this.usersRepository.save(user);
 
     return this.signToken(user);
+  }
+
+  // Is this the user's current password? Asked again, even though they're logged in, before changing
+  // the password or deleting the account: someone at an unlocked computer shouldn't be able to do either.
+  checkPassword(user: User, password: string): Promise<boolean> {
+    return argon2.verify(user.passwordHash, password);
   }
 
   // Remembers the browser's time zone (the DTO has already checked it's a real one, e.g. "Europe/London")

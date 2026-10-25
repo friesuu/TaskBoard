@@ -9,6 +9,13 @@ import { TaskStatus } from './tasks-status.enum';
 import { BoardsService } from '../boards/boards.service';
 import { DueFilter, TaskFilterDto } from './task-filter.dto';
 import { thisWeekIn, todayIn } from '../common/dates';
+import { TaskStats } from './task-stats.type';
+
+// When a task was finished: now when it moves INTO Done, kept while it stays in Done, cleared when it leaves Done
+function completedAtFor(newStatus: TaskStatus, oldStatus: TaskStatus | null, current: Date | null): Date | null {
+  if (newStatus !== TaskStatus.DONE) return null;
+  return oldStatus === TaskStatus.DONE ? current : new Date();
+}
 
 @Injectable()
 export class TasksService {
@@ -87,10 +94,45 @@ export class TasksService {
     return task;
   }
 
+  // The profile's numbers, across ALL your boards: per column, overdue, due this week (not done yet),
+  // and finished this week. "Today" and "this week" are the user's own (timeZone). One query.
+  async stats(ownerId: number, timeZone: string | null): Promise<TaskStats> {
+    const { monday, sunday } = thisWeekIn(timeZone);
+    const count = (condition: string) => `(COUNT(*) FILTER (WHERE ${condition}))::int`;
+
+    const row = await this.tasksRepository
+      .createQueryBuilder('task')
+      .select('(COUNT(*))::int', 'total')
+      .addSelect(count('"task"."status" = :todo'), 'todo')
+      .addSelect(count('"task"."status" = :inProgress'), 'inProgress')
+      .addSelect(count('"task"."status" = :done'), 'done')
+      .addSelect(count('"task"."due_date" < :today AND "task"."status" != :done'), 'overdue')
+      .addSelect(count('"task"."due_date" BETWEEN :monday AND :sunday AND "task"."status" != :done'), 'dueThisWeek')
+      // completed_at is a moment in time: turned into the user's own calendar date before comparing
+      .addSelect(
+        count('"task"."status" = :done AND ("task"."completed_at" AT TIME ZONE :timeZone)::date BETWEEN :monday AND :sunday'),
+        'doneThisWeek',
+      )
+      .where('"task"."owner_id" = :ownerId', { ownerId })
+      .setParameters({
+        todo: TaskStatus.TODO,
+        inProgress: TaskStatus.IN_PROGRESS,
+        done: TaskStatus.DONE,
+        today: todayIn(timeZone),
+        monday,
+        sunday,
+        timeZone: timeZone ?? 'UTC',
+      })
+      .getRawOne<TaskStats>();
+
+    return row!;
+  }
+
   async create(dto: CreateTaskDto, ownerId: number): Promise<Task> {
     await this.boardsService.findOwned(dto.boardId, ownerId); // you can only add tasks to your own boards
     const task = this.tasksRepository.create(dto);
     task.position = await this.nextPosition(task.status ?? TaskStatus.TODO, dto.boardId);
+    task.completedAt = completedAtFor(task.status ?? TaskStatus.TODO, null, null); // e.g. the assistant adding a done task
     task.ownerId = ownerId;
     const saved = await this.tasksRepository.save(task);
     return this.findOwned(saved.id, ownerId); // loaded again so it comes back with its checklist counts (0/0)
@@ -109,6 +151,7 @@ export class TasksService {
     if(dto.status !== undefined && dto.status !== task.status)
     {
       task.position = await this.nextPosition(dto.status, task.boardId);
+      task.completedAt = completedAtFor(dto.status, task.status, task.completedAt);
     }
 
     this.tasksRepository.merge(task, dto);
@@ -135,6 +178,7 @@ export class TasksService {
       // Insert at the requested spot (a number past the end means "at the bottom")
       const index = Math.min(dto.position, column.length);
       task.status = dto.status;
+      task.completedAt = completedAtFor(dto.status, oldStatus, task.completedAt);
       column.splice(index, 0, task);
       column.forEach((t, i) => { t.position = i; });
       await repo.save(column);

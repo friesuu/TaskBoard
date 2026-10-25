@@ -7,7 +7,7 @@ import { CloseIcon } from "./Icons";
 // currentView ('board' or 'profile') tells it which page you're on, so that option can be highlighted.
 // boards + currentBoardId: the list of your boards, and which one is open.
 function Sidebar({
-    isOpen, email, currentView, boards = [], currentBoardId,
+    isOpen, email, name, currentView, boards = [], currentBoardId,
     onClose, onBoard, onProfile, onChangePassword, onLogout, onChat, onSelectBoard, onNewBoard,
 })
 {
@@ -65,7 +65,8 @@ function Sidebar({
                 </div>
                 <div className="sidebar-account">
                     <div className="sidebar-group-title">Logged in as</div>
-                    <div className="sidebar-email" title={email}>{email}</div>
+                    {/* Your display name if you've set one (the email stays in the tooltip), else the email */}
+                    <div className="sidebar-email" title={email}>{name || email}</div>
                 </div>
 
                 {/* Group 1: where you can go */}

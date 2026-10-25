@@ -28,6 +28,11 @@ describe('Sidebar', () => {
     expect(screen.getByText('me@test.com')).toBeInTheDocument();
   });
 
+  it('shows your display name instead of the email when you have one', () => {
+    renderSidebar({ name: 'Sam Lee' });
+    expect(screen.getByText('Sam Lee')).toHaveAttribute('title', 'me@test.com');
+  });
+
   it('highlights the page you are on', () => {
     renderSidebar({ currentView: 'profile' });
     expect(screen.getByRole('button', { name: 'Profile' })).toHaveAttribute('aria-current', 'page');

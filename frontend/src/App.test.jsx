@@ -5,6 +5,7 @@ import App from './App';
 import {
   getCurrentUser, getTasks, logout, getBoards, createBoard, getChecklist, getComments, getLabels, setTaskLabels,
   setTimeZone, getAttachments, updateChecklistItem,
+  getTaskStats,
 } from './api';
 
 vi.mock('./api'); // the whole backend is faked: each test decides what the "server" answers
@@ -32,6 +33,9 @@ describe('App', () => {
     vi.mocked(getLabels).mockReset().mockResolvedValue([{ id: 7, name: 'Urgent', color: 'ORANGE' }]);
     vi.mocked(setTaskLabels).mockReset();
     vi.mocked(setTimeZone).mockReset().mockResolvedValue(undefined);
+    vi.mocked(getTaskStats).mockReset().mockResolvedValue(
+      { total: 0, todo: 0, inProgress: 0, done: 0, overdue: 0, dueThisWeek: 0, doneThisWeek: 0 },
+    );
     vi.mocked(getAttachments).mockReset().mockResolvedValue([]);
     window.history.replaceState(null, '', '/'); // every test starts without ?board=
   });
@@ -222,6 +226,14 @@ describe('App', () => {
     await screen.findByText('Write report');
 
     expect(setTimeZone).toHaveBeenCalledWith(Intl.DateTimeFormat().resolvedOptions().timeZone);
+  });
+
+  it("doesn't overwrite a time zone you've already saved", async () => {
+    vi.mocked(getCurrentUser).mockResolvedValue({ ...user, timeZone: 'Pacific/Auckland' });
+    render(<App />);
+    await screen.findByText('Write report');
+
+    expect(setTimeZone).not.toHaveBeenCalled();
   });
 
   it('opens with the filters in the address bar, showing only the chosen columns', async () => {

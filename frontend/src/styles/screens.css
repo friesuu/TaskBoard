@@ -445,15 +445,119 @@
   font-size: var(--fs-small);
 }
 
-/* Section titles: 32px from the section above (16px gap + 16px margin) */
-.profile-heading {
-  margin-top: var(--space-4);
+/* The settings list (like the calorie tracker's): one row per setting with a short preview.
+   A row opens its content right under it, like a dropdown. */
+.settings-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow: hidden;
+}
+
+.settings-item + .settings-item {
+  border-top: 1px solid var(--divider-subtle);
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 0;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--ease);
+}
+
+.settings-row:hover {
+  background-color: var(--hover);
+}
+
+.settings-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: var(--space-4) var(--space-5);
+}
+
+.settings-label {
+  font-weight: 500;
+}
+
+/* "Delete account": the name in red */
+.settings-item.danger .settings-label {
+  color: var(--danger-text);
+}
+
+.settings-preview {
+  color: var(--muted);
+  font-size: var(--fs-small);
+  overflow-wrap: anywhere;
+}
+
+/* The chevron turns to point up while the row is open */
+.settings-chevron {
+  display: flex;
+  padding-right: var(--space-5);
+  color: var(--muted);
+  transition: rotate var(--ease);
+}
+
+.settings-row[aria-expanded="true"] .settings-chevron {
+  rotate: 180deg;
+}
+
+/* The opened row's content, under its row */
+.settings-panel {
+  padding: var(--space-1) var(--space-5) var(--space-5);
+}
+
+.settings-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* "Your tasks": how much is done, the numbers per column, and this week */
+.task-stats {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.stats-progress {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.stats-progress-text {
+  display: flex;
+  justify-content: space-between;
+  color: var(--text-2);
+  font-size: var(--fs-small);
+  font-variant-numeric: tabular-nums;
+}
+
+.stats-week-title {
+  color: var(--text-2);
+  font-size: var(--fs-small);
+  font-weight: 500;
 }
 
 .stat-grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--space-3);
+}
+
+.stat-grid-week {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .stat {
@@ -482,13 +586,6 @@
 
 .stat.overdue .stat-number {
   color: var(--danger-text);
-}
-
-.profile-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-4);
 }
 
 /* ---------- Assistant (chat) ---------- */

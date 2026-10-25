@@ -139,12 +139,13 @@ function App()
     setUrlParam('view', view === 'board' ? null : view);
   }, [view]);
 
-  // After logging in: tell the server this browser's time zone if it doesn't have it (or it changed),
+  // After logging in: if the server has no time zone for you yet, tell it this browser's,
   // so "due today" and "due this week" mean your today and your week. Best effort: on failure it uses UTC.
+  // Once it has one, it's only changed on the profile (so a choice made there isn't overwritten).
   useEffect(() => {
-    if (!user) return;
+    if (!user || user.timeZone) return;
     const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    if (zone && zone !== user.timeZone) setTimeZone(zone).catch(() => {});
+    if (zone) setTimeZone(zone).catch(() => {});
   }, [user]);
 
   // New search / filters from the FilterBar: keep them, and put them in the address bar
@@ -183,6 +184,12 @@ function App()
     setError(null); // clear "session expired" etc.
     setUser(loggedInUser); // the effect above then loads their tasks
   };
+
+  // A setting saved on the profile (display name, time zone): the menu and the board use it straight away
+  const handleUserChange = (changes) => setUser((prev) => ({ ...prev, ...changes }));
+
+  // The server has deleted the account and its login cookie: back to the login screen, saying so
+  const handleAccountDeleted = () => showLogin('Your account has been deleted.');
 
   const handleLogout = async () => {
     try{
@@ -505,10 +512,11 @@ function App()
           {view === 'profile' && (
             <Profile
               user={user}
-              tasks={tasks}
-              boardName={currentBoard?.name}
               onBack={() => setView('board')}
               onChangePassword={() => openForm('password')}
+              onUserChange={handleUserChange}
+              onAccountDeleted={handleAccountDeleted}
+              onSessionEnded={endedSession}
             />
           )}
 
@@ -546,6 +554,7 @@ function App()
       <Sidebar
         isOpen={isSidebarOpen}
         email={user.email}
+        name={user.displayName}
         currentView={isBoardPage ? 'board' : view /* the calendar is part of the Board page */}
         boards={boards}
         currentBoardId={boardId}

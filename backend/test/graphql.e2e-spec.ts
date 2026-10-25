@@ -11,6 +11,7 @@ import { Board } from '../src/boards/board.entity';
 import { LlmService } from '../src/chat/llm.service';
 import { AttachmentsService } from '../src/attachments/attachments.service';
 import { AUTH_COOKIE } from '../src/auth/auth-cookies';
+import { todayIn } from '../src/common/dates';
 import { readFile, rm, utimes } from 'fs/promises';
 import { join } from 'path';
 
@@ -1805,6 +1806,119 @@ describe('Tasks GraphQL API (e2e)', () => {
       const res = await gql(DELETE_TASK, { id: 'abc' }).expect(400);
 
       expect(res.body.errors[0].extensions.code).toBe('BAD_USER_INPUT');
+    });
+  });
+
+  describe('profile: task numbers', () => {
+    const STATS = `query { taskStats { total todo inProgress done overdue dueThisWeek doneThisWeek } }`;
+    const stats = async (who = cookie) => {
+      const res = await gqlAs(who, STATS).expect(200);
+      expect(res.body.errors).toBeUndefined();
+      return res.body.data.taskStats;
+    };
+
+    it('counts across all your boards: per column, overdue, due this week and finished this week', async () => {
+      const work = (await gql(CREATE_BOARD, { input: { name: 'Work' } }).expect(200)).body.data.createBoard;
+      await createTask({ title: 'Late', dueDate: '2000-01-01' }); // overdue (TEST_USER has no time zone: UTC)
+      await createTask({ title: 'Today', dueDate: todayIn(null) }); // due this week
+      await createTask({ title: 'Started', boardId: work.id, status: 'IN_PROGRESS' });
+      const finished = await createTask({ title: 'Finished', boardId: work.id });
+      await gql(MOVE_TASK, { id: finished.id, input: { status: 'DONE', position: 0 } }).expect(200);
+
+      expect(await stats()).toEqual({
+        total: 4, todo: 2, inProgress: 1, done: 1, overdue: 1, dueThisWeek: 1, doneThisWeek: 1,
+      });
+      expect((await stats(otherCookie)).total).toBe(0); // only your own tasks
+    });
+
+    it('a task that leaves Done no longer counts as finished; one added straight to Done does', async () => {
+      const task = await createTask({ title: 'Back and forth' });
+      await gql(MOVE_TASK, { id: task.id, input: { status: 'DONE', position: 0 } }).expect(200);
+      await gql(MOVE_TASK, { id: task.id, input: { status: 'TODO', position: 0 } }).expect(200);
+      expect((await stats()).doneThisWeek).toBe(0);
+
+      await createTask({ title: 'Already done', status: 'DONE' });
+      expect((await stats()).doneThisWeek).toBe(1);
+    });
+  });
+
+  describe('profile: display name', () => {
+    const SET_NAME = `
+      mutation SetDisplayName($input: DisplayNameInput!) { setDisplayName(input: $input) { id displayName } }
+    `;
+    const NAME_USER = { email: 'e2e-name@test.com', password: 'e2e-password' };
+
+    it('saves a trimmed name, shows it on your comments, and an empty one removes it', async () => {
+      const session = await registerAndLogIn(NAME_USER);
+      const named = await gqlAs(session, SET_NAME, { input: { displayName: '  Sam Lee  ' } }).expect(200);
+      expect(named.body.data.setDisplayName.displayName).toBe('Sam Lee');
+      expect((await gqlAs(session, `query { me { displayName } }`).expect(200)).body.data.me.displayName).toBe('Sam Lee');
+
+      const sessionBoard = (await gqlAs(session, BOARDS).expect(200)).body.data.boards[0].id;
+      const task = (await gqlAs(session, CREATE_TASK, { input: { boardId: sessionBoard, title: 'Notes' } }).expect(200))
+        .body.data.createTask;
+      const comment = await gqlAs(session, `
+        mutation { addComment(taskId: ${task.id}, input: { body: "Hi" }) { author { email displayName } } }
+      `).expect(200);
+      expect(comment.body.data.addComment.author).toEqual({ email: NAME_USER.email, displayName: 'Sam Lee' });
+
+      const cleared = await gqlAs(session, SET_NAME, { input: { displayName: '   ' } }).expect(200);
+      expect(cleared.body.data.setDisplayName.displayName).toBeNull();
+    });
+
+    it('refuses names that are too long or contain invisible characters', async () => {
+      const session = await registerAndLogIn(NAME_USER);
+
+      const tooLong = await gqlAs(session, SET_NAME, { input: { displayName: 'x'.repeat(51) } }).expect(200);
+      const hidden = await gqlAs(session, SET_NAME, { input: { displayName: 'Sam​Lee' } }).expect(200);
+
+      expect(tooLong.body.errors[0].extensions.originalError.message).toContain(
+        'displayName must be shorter than or equal to 50 characters',
+      );
+      expect(hidden.body.errors[0].extensions.originalError.message).toContain(
+        "The name can't contain invisible or control characters",
+      );
+    });
+  });
+
+  describe('profile: delete account', () => {
+    const DELETE_ACCOUNT = `mutation DeleteAccount($input: DeleteAccountInput!) { deleteAccount(input: $input) }`;
+    const DOOMED_USER = { email: 'e2e-delete@test.com', password: 'e2e-password' };
+    const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from('rest of a png')]);
+
+    it('keeps everything when the password is wrong', async () => {
+      const session = await registerAndLogIn(DOOMED_USER);
+
+      const res = await gqlAs(session, DELETE_ACCOUNT, { input: { password: 'not-my-password' } }).expect(200);
+
+      expect(res.body.errors[0].message).toBe('Password is incorrect');
+      expect(res.body.errors[0].extensions.code).not.toBe('UNAUTHENTICATED'); // so the app doesn't log you out
+      expect(await usersRepository.countBy({ email: DOOMED_USER.email })).toBe(1);
+    });
+
+    it('deletes the account, its boards, tasks and files, and logs it out', async () => {
+      const session = await registerAndLogIn(DOOMED_USER);
+      const userId = (await gqlAs(session, `query { me { id } }`).expect(200)).body.data.me.id;
+      const sessionBoard = (await gqlAs(session, BOARDS).expect(200)).body.data.boards[0].id;
+      const task = (await gqlAs(session, CREATE_TASK, { input: { boardId: sessionBoard, title: 'Mine' } }).expect(200))
+        .body.data.createTask;
+      const uploaded = (await request(app.getHttpServer())
+        .post(`/api/tasks/${task.id}/attachments`).set('Cookie', session).attach('file', PNG, 'photo.png').expect(201)).body;
+      const [row] = await tasksRepository.query('SELECT storage_key FROM attachments WHERE id = $1', [uploaded.id]);
+      const filePath = join(process.env.UPLOAD_DIR!, row.storage_key as string);
+
+      const res = await gqlAs(session, DELETE_ACCOUNT, { input: { password: DOOMED_USER.password } }).expect(200);
+
+      expect(res.body.errors).toBeUndefined();
+      expect(res.body.data.deleteAccount).toBe(true);
+      expect(String(res.headers['set-cookie'])).toContain(`${AUTH_COOKIE}=;`); // the browser removes the login cookie
+      expect(await usersRepository.countBy({ id: userId })).toBe(0);
+      expect(await boardsRepository.countBy({ ownerId: userId })).toBe(0);
+      expect(await tasksRepository.countBy({ ownerId: userId })).toBe(0);
+      await expect(readFile(filePath)).rejects.toThrow(); // the uploaded file is gone from the disk too
+
+      const after = await gqlAs(session, `query { me { id } }`).expect(200); // the old cookie no longer works
+      expect(after.body.errors[0].extensions.code).toBe('UNAUTHENTICATED');
     });
   });
 });

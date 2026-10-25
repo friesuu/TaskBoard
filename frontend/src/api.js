@@ -8,7 +8,7 @@ const CHAT_FIELDS = 'id role content createdAt responseMs';
 const BOARD_FIELDS = 'id name';
 const ITEM_FIELDS = 'id text done position';
 const LABEL_FIELDS = 'id name color';
-const COMMENT_FIELDS = 'id body createdAt updatedAt author { id email }';
+const COMMENT_FIELDS = 'id body createdAt updatedAt author { id email displayName }';
 
 // Validation errors keep their real messages in originalError (as an array);
 // other errors have a readable message directly.
@@ -144,7 +144,7 @@ export async function getCurrentUser()
 {
     try
     {
-        const data = await graphqlRequest('query { me { id email timeZone } }');
+        const data = await graphqlRequest('query { me { id email timeZone displayName } }');
         return data.me;
     }
     catch (err)
@@ -159,7 +159,7 @@ export async function login(email, password)
 {
     const data = await graphqlRequest(
         `mutation Login($input: LoginInput!) {
-            login(input: $input) { id email timeZone }
+            login(input: $input) { id email timeZone displayName }
         }`,
         { input: { email, password } },
     );
@@ -396,6 +396,41 @@ export async function setTimeZone(timeZone)
             setTimeZone(input: $input) { id }
         }`,
         { input: { timeZone } },
+    );
+}
+
+// ----- Profile -----
+
+// The profile's numbers, across all your boards:
+// { total, todo, inProgress, done, overdue, dueThisWeek, doneThisWeek }
+export async function getTaskStats()
+{
+    const data = await graphqlRequest(
+        'query { taskStats { total todo inProgress done overdue dueThisWeek doneThisWeek } }',
+    );
+    return data.taskStats;
+}
+
+// The name shown instead of your email. An empty one removes it. Returns the saved name (trimmed) or null.
+export async function setDisplayName(displayName)
+{
+    const data = await graphqlRequest(
+        `mutation SetDisplayName($input: DisplayNameInput!) {
+            setDisplayName(input: $input) { id displayName }
+        }`,
+        { input: { displayName } },
+    );
+    return data.setDisplayName.displayName;
+}
+
+// Deletes your account and everything in it. Needs your password; the server then removes the login cookie.
+export async function deleteAccount(password)
+{
+    await graphqlRequest(
+        `mutation DeleteAccount($input: DeleteAccountInput!) {
+            deleteAccount(input: $input)
+        }`,
+        { input: { password } },
     );
 }
 

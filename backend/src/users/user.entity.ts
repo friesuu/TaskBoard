@@ -26,4 +26,9 @@ export class User {
   @Field(() => String, { nullable: true })
   @Column({ name: 'time_zone', type: 'varchar', length: 64, nullable: true })
   timeZone: string | null;
+
+  // The name shown instead of the email (profile, menu, comments), e.g. "Sam Lee". null = not set: the email is shown.
+  @Field(() => String, { nullable: true })
+  @Column({ name: 'display_name', type: 'varchar', length: 50, nullable: true })
+  displayName: string | null;
 }

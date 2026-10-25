@@ -9,6 +9,7 @@ import { UseGuards } from "@nestjs/common";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { User } from "../users/user.entity";
 import { TaskFilterDto } from "./task-filter.dto";
+import { TaskStats } from "./task-stats.type";
 
 @UseGuards(GqlAuthGuard) // Uses the gql auth guard
 @Resolver(() => Task)
@@ -24,7 +25,13 @@ export class TaskResolver
     ): Promise<Task[]> {
         return this.tasksService.findAll(user.id, boardId, filter, user.timeZone);
     }
-    
+
+    // The profile's numbers, across all your boards
+    @Query(() => TaskStats)
+    taskStats(@CurrentUser() user: User): Promise<TaskStats> {
+        return this.tasksService.stats(user.id, user.timeZone);
+    }
+
     @Mutation(() => Task)
     createTask(@Args( 'input') input: CreateTaskDto, @CurrentUser() user: User): Promise<Task>
     {

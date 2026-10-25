@@ -75,6 +75,18 @@ export class AttachmentsService implements OnModuleInit, OnModuleDestroy {
     await this.storage.remove(attachment.storageKey);
   }
 
+  // Where every file on one user's tasks is stored. Deleting an account asks for these first: the rows
+  // go with the account (ON DELETE CASCADE), and the files are deleted right after with removeStoredFiles.
+  async storageKeysOwnedBy(ownerId: number): Promise<string[]> {
+    const rows = await this.attachmentsRepository.find({ where: { task: { ownerId } }, select: { storageKey: true } });
+    return rows.map((a) => a.storageKey);
+  }
+
+  // Deletes stored files. One that can't be deleted now is left for the hourly clean-up below.
+  async removeStoredFiles(keys: string[]): Promise<void> {
+    await Promise.allSettled(keys.map((key) => this.storage.remove(key)));
+  }
+
   // Deleting a task (or a board) deletes its attachment ROWS in the database (ON DELETE CASCADE),
   // but the database can't delete files. This finds stored files that no row points at any more and deletes them.
   // Runs when the app starts and then every hour. Returns how many files it deleted.

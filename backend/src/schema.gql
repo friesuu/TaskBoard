@@ -6,6 +6,7 @@ type User {
   id: Int!
   email: String!
   timeZone: String
+  displayName: String
 }
 
 type Board {
@@ -58,6 +59,16 @@ enum TaskStatus {
   DONE
 }
 
+type TaskStats {
+  total: Int!
+  todo: Int!
+  inProgress: Int!
+  done: Int!
+  overdue: Int!
+  dueThisWeek: Int!
+  doneThisWeek: Int!
+}
+
 type ChatMessage {
   id: Int!
   role: String!
@@ -94,6 +105,7 @@ type Attachment {
 
 type Query {
   tasks(boardId: Int!, filter: TaskFilterInput): [Task!]!
+  taskStats: TaskStats!
   me: User!
   boards: [Board!]!
   chatMessages: [ChatMessage!]!
@@ -144,6 +156,8 @@ type Mutation {
   deleteLabel(id: Int!): Boolean!
   setTaskLabels(taskId: Int!, input: SetTaskLabelsInput!): Task!
   deleteAttachment(id: Int!): Boolean!
+  setDisplayName(input: DisplayNameInput!): User!
+  deleteAccount(input: DeleteAccountInput!): Boolean!
 }
 
 input CreateTaskInput {
@@ -219,4 +233,12 @@ input UpdateLabelInput {
 
 input SetTaskLabelsInput {
   labelIds: [Int!]!
+}
+
+input DisplayNameInput {
+  displayName: String!
+}
+
+input DeleteAccountInput {
+  password: String!
 }

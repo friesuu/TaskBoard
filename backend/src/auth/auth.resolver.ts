@@ -10,21 +10,7 @@ import { UseGuards } from "@nestjs/common";
 import { GqlAuthGuard } from "./gql-auth.guard";
 import { CurrentUser } from "./current-user.decorator";
 import { GqlThrottlerGuard } from "../common/gql-throttler.guard";
-import { AUTH_COOKIE } from "./auth-cookies";
-
-// Shared by setting and clearing the cookie: browsers only clear a cookie if the options match
-const COOKIE_OPTIONS = {
-  httpOnly: true,
-  sameSite: 'lax' as const,
-  secure: process.env.NODE_ENV === 'production',
-};
-
-const COOKIE_MAX_AGE = 24 * 60 * 60 * 1000; // 1 day, the same as the JWT's expiresIn
-
-// Login and change-password both hand out a token the same way
-function setLoginCookie(res: Response, token: string): void {
-  res.cookie(AUTH_COOKIE, token, { ...COOKIE_OPTIONS, maxAge: COOKIE_MAX_AGE });
-}
+import { clearLoginCookie, setLoginCookie } from "./auth-cookies";
 
 @Resolver(() => User)
 export class AuthResolver
@@ -67,7 +53,7 @@ export class AuthResolver
     @Mutation(() => Boolean)
     logout(@Context() ctx: { res: Response }): boolean
     {
-        ctx.res.clearCookie(AUTH_COOKIE, COOKIE_OPTIONS);
+        clearLoginCookie(ctx.res);
         return true;
     }
 

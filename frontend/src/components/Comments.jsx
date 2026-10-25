@@ -86,7 +86,7 @@ function Comments({ taskId, currentUserId, onSessionEnded })
                     {comments.map((c) => (
                         <li key={c.id} className="comment">
                             <div className="comment-meta">
-                                <span className="comment-author">{c.author.email}</span>
+                                <span className="comment-author" title={c.author.email}>{c.author.displayName || c.author.email}</span>
                                 <time dateTime={c.createdAt}>{formatDateTime(c.createdAt)}</time>
                                 {c.updatedAt !== c.createdAt && <span className="comment-edited">(edited)</span>}
                             </div>

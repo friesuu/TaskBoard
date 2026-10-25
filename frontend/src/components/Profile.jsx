@@ -1,16 +1,42 @@
-import { STATUSES } from "../statuses";
-import { isOverdue } from "../dates";
+import { useEffect, useState } from "react";
+import { getTaskStats } from "../api";
 import { ArrowLeftIcon } from "./Icons";
+import ProfileRow from "./ProfileRow";
+import TaskStatsPanel from "./TaskStatsPanel";
+import DisplayNameForm from "./DisplayNameForm";
+import TimeZoneForm from "./TimeZoneForm";
+import DeleteAccountForm from "./DeleteAccountForm";
 
-// The profile page. Everything here comes from data App already has (the user and the open board's tasks),
-// so it needs no extra request to the server.
-function Profile({ user, tasks, boardName, onBack, onChangePassword })
+// "1 task", "12 tasks"
+const plural = (count, word) => `${count} ${word}${count === 1 ? '' : 's'}`;
+
+// The profile page: who you are, then a settings list (like the calorie tracker's). Each row shows a short
+// preview and opens under itself like a dropdown, one at a time. "Your tasks" starts open.
+//   onUserChange(changes): App merges a saved display name or time zone into the user
+//   onAccountDeleted(): App goes back to the login screen
+//   onChangePassword(): App opens the change password form
+function Profile({ user, onBack, onChangePassword, onUserChange, onAccountDeleted, onSessionEnded })
 {
-    // How many tasks are in each column, e.g. { TODO: 3, IN_PROGRESS: 1, DONE: 6 }
-    const countByStatus = Object.fromEntries(
-        STATUSES.map((s) => [s.value, tasks.filter((t) => t.status === s.value).length]),
-    );
-    const overdueCount = tasks.filter(isOverdue).length;
+    const [openRow, setOpenRow] = useState('tasks');
+    const [stats, setStats] = useState(null); // null while loading
+    const [statsError, setStatsError] = useState(null);
+
+    // The numbers across all your boards, loaded when the page opens
+    useEffect(() => {
+        let isStale = false;
+        getTaskStats()
+            .then((loaded) => { if (!isStale) setStats(loaded); })
+            .catch((err) => { if (!onSessionEnded(err)) setStatsError(err.message); });
+        return () => { isStale = true; };
+    }, [onSessionEnded]);
+
+    const toggle = (row) => setOpenRow(openRow === row ? null : row);
+    const rowProps = (row) => ({ id: row, isOpen: openRow === row, onToggle: () => toggle(row) });
+
+    const name = user.displayName || user.email;
+    const statsPreview = stats
+        ? `${plural(stats.total, 'task')} · ${stats.done} done · ${stats.overdue} overdue`
+        : 'Across all your boards';
 
     return(
         <section className="profile">
@@ -20,38 +46,40 @@ function Profile({ user, tasks, boardName, onBack, onChangePassword })
             </button>
 
             <div className="card profile-card">
-                {/* The first letter of the email, as a simple picture */}
-                <div className="avatar" aria-hidden="true">{user.email[0].toUpperCase()}</div>
+                {/* The first letter of your name (or email), as a simple picture */}
+                <div className="avatar" aria-hidden="true">{name[0].toUpperCase()}</div>
                 <div className="profile-identity">
-                    <h2 className="profile-email">{user.email}</h2>
-                    <p className="profile-label">Your account</p>
+                    <h2 className="profile-email">{name}</h2>
+                    <p className="profile-label">{user.displayName ? user.email : 'Your account'}</p>
                 </div>
             </div>
 
-            <h2 className="profile-heading">{boardName ? `Tasks on "${boardName}"` : 'Your tasks'}</h2>
-            {/* Each number has a coloured dot: the same status colours as the board */}
-            <div className="stat-grid">
-                <div className="card stat">
-                    <span className="stat-label"><span className="dot dot-neutral" aria-hidden="true" />Total</span>
-                    <span className="stat-number">{tasks.length}</span>
-                </div>
-                {STATUSES.map((s) => (
-                    <div className="card stat" key={s.value}>
-                        <span className="stat-label"><span className={`dot dot-${s.tone}`} aria-hidden="true" />{s.label}</span>
-                        <span className="stat-number">{countByStatus[s.value]}</span>
+            <ul className="card settings-list" aria-label="Profile settings">
+                <ProfileRow {...rowProps('tasks')} label="Your tasks" preview={statsPreview}>
+                    <TaskStatsPanel stats={stats} error={statsError} />
+                </ProfileRow>
+
+                <ProfileRow {...rowProps('name')} label="Display name" preview={user.displayName ?? 'Not set: your email is shown'}>
+                    <DisplayNameForm user={user} onSaved={onUserChange} onSessionEnded={onSessionEnded} />
+                </ProfileRow>
+
+                <ProfileRow {...rowProps('zone')} label="Time zone" preview={user.timeZone ?? 'Not set: UTC is used'}>
+                    <TimeZoneForm user={user} onSaved={onUserChange} onSessionEnded={onSessionEnded} />
+                </ProfileRow>
+
+                <ProfileRow {...rowProps('password')} label="Password" preview="Change your password">
+                    <div className="settings-form">
+                        <p className="profile-hint">Changing your password logs you out on every other device.</p>
+                        <div className="form-actions">
+                            <button className="btn btn-secondary" onClick={onChangePassword}>Change password</button>
+                        </div>
                     </div>
-                ))}
-                <div className={overdueCount > 0 ? 'card stat overdue' : 'card stat'}>
-                    <span className="stat-label"><span className="dot dot-danger" aria-hidden="true" />Overdue</span>
-                    <span className="stat-number">{overdueCount}</span>
-                </div>
-            </div>
+                </ProfileRow>
 
-            <h2 className="profile-heading">Security</h2>
-            <div className="card profile-actions">
-                <button className="btn btn-secondary" onClick={onChangePassword}>Change password</button>
-                <p className="profile-hint">Changing your password logs you out on every other device.</p>
-            </div>
+                <ProfileRow {...rowProps('delete')} label="Delete account" preview="Remove your account and everything in it" danger>
+                    <DeleteAccountForm onDeleted={onAccountDeleted} onSessionEnded={onSessionEnded} />
+                </ProfileRow>
+            </ul>
         </section>
     );
 }

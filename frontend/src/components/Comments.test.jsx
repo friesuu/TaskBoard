@@ -40,6 +40,14 @@ describe('Comments', () => {
     expect(getComments).toHaveBeenCalledWith(5);
   });
 
+  it("shows the author's display name when they have one", async () => {
+    vi.mocked(getComments).mockResolvedValue([{ ...theirs, author: { ...theirs.author, displayName: 'Sam Lee' } }]);
+    renderComments();
+
+    expect(await screen.findByText('Sam Lee')).toHaveAttribute('title', 'sam@test.com');
+    expect(screen.queryByText('sam@test.com')).not.toBeInTheDocument();
+  });
+
   it('marks an edited comment', async () => {
     renderComments();
 

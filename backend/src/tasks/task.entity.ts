@@ -53,6 +53,11 @@ export class Task {
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 
+  // When the task was moved into Done (null while it isn't done). Gives the profile's "finished this week".
+  // Tasks that were already done before this column existed have null: when they were finished is unknown.
+  @Column({ name: 'completed_at', type: 'timestamptz', nullable: true })
+  completedAt: Date | null;
+
   @ManyToOne(() => User, { nullable: false, onDelete: 'CASCADE' }) // Many tasks belong to one user
   @JoinColumn({ name: 'owner_id' })
   owner: User;
