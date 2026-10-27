@@ -789,6 +789,53 @@ describe('Tasks GraphQL API (e2e)', () => {
       );
       expect(await titlesIn('TODO')).toEqual(['Home task']); // unchanged, still in To do
     });
+
+    it('sees labels and checklists, and its tools change them on the current board only', async () => {
+      const work = (await gql(CREATE_BOARD, { input: { name: 'Work' } }).expect(200)).body.data.createBoard;
+      await gql(CREATE_LABEL, { boardId: work.id, input: { name: 'Urgent', color: 'ORANGE' } }).expect(200);
+      const task = await createTask({ title: 'Ship it', boardId: work.id, dueDate: '2026-11-01' });
+      const home = await createTask({ title: 'Home task' });
+      const item = (await gql(ADD_ITEM, { taskId: task.id, input: { text: 'Write notes' } }).expect(200)).body.data.addChecklistItem;
+      await gql(SEND_CHAT, { input: { boardId: work.id, message: 'Hi' } }).expect(200);
+
+      const sent = fakeLlm.lastMessages.at(-1)!.content;
+      expect(sent).toContain('Labels on this board: Urgent (orange)');
+      expect(sent).toContain(`[ ] c${item.id} Write notes`);
+
+      // Labels: create one, put both on the task, take one off, rename and recolour
+      await toolNamed('create_label').run({ name: 'Waiting', color: 'blue' });
+      expect(await toolNamed('change_task_labels').run({ id: task.id, add: ['urgent', 'Waiting'] })).toContain('now has: Urgent, Waiting');
+      expect(await toolNamed('change_task_labels').run({ id: task.id, remove: ['Waiting'] })).toContain('now has: Urgent.');
+      await toolNamed('update_label').run({ name: 'Urgent', newName: 'Asap', color: 'pink' });
+      await expect(toolNamed('change_task_labels').run({ id: task.id, add: ['Nope'] })).rejects.toThrow(
+        'No label called "Nope" on this board. Its labels: "Asap", "Waiting"',
+      );
+      const labels = (await gql(TASK_LABELS, { boardId: work.id }).expect(200)).body.data.tasks[0].labels;
+      expect(labels).toEqual([{ name: 'Asap', color: 'PINK' }]);
+
+      // Checklist: add two, tick the first one and rename it
+      await toolNamed('add_checklist_items').run({ id: task.id, items: ['Test it', 'Tell the team'] });
+      await toolNamed('update_checklist_item').run({ itemId: item.id, done: true, text: 'Write release notes' });
+      const items = (await gql(`query ($taskId: Int!) { checklistItems(taskId: $taskId) { text done } }`, { taskId: task.id }).expect(200))
+        .body.data.checklistItems;
+      expect(items).toEqual([
+        { text: 'Write release notes', done: true },
+        { text: 'Test it', done: false },
+        { text: 'Tell the team', done: false },
+      ]);
+
+      // The due date can be removed
+      await toolNamed('update_task').run({ id: task.id, dueDate: null });
+      expect((await tasksRepository.findOneByOrFail({ id: task.id })).dueDate).toBeNull();
+
+      // Nothing on another board
+      await expect(toolNamed('change_task_labels').run({ id: home.id, add: ['Asap'] })).rejects.toThrow(`Task ${home.id} not found on this board`);
+      await expect(toolNamed('add_checklist_items').run({ id: home.id, items: ['x'] })).rejects.toThrow(`Task ${home.id} not found on this board`);
+      const homeItem = (await gql(ADD_ITEM, { taskId: home.id, input: { text: 'Home item' } }).expect(200)).body.data.addChecklistItem;
+      await expect(toolNamed('update_checklist_item').run({ itemId: homeItem.id, done: true })).rejects.toThrow(
+        `Task ${home.id} not found on this board`,
+      );
+    });
   });
 
   describe('checklist', () => {
