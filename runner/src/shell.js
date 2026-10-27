@@ -19,7 +19,8 @@ export function stopChildren()
 }
 
 // Runs a program and collects its output. Never throws: check `code` (0 = success).
-export function run(command, args, { cwd, env = process.env, input, timeoutMs = 10 * 60 * 1000 } = {})
+// onStdout(text): called with each piece of its output as it comes (e.g. Claude Code's events)
+export function run(command, args, { cwd, env = process.env, input, timeoutMs = 10 * 60 * 1000, onStdout } = {})
 {
     return new Promise((resolve) => {
         const child = spawn(command, args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'], detached: true });
@@ -29,7 +30,8 @@ export function run(command, args, { cwd, env = process.env, input, timeoutMs = 
         let timedOut = false;
         const timer = setTimeout(() => { timedOut = true; stopGroup(child); }, timeoutMs);
 
-        child.stdout.on('data', (chunk) => { stdout += chunk; });
+        child.stdout.setEncoding('utf8'); // whole characters, even when one is split between two pieces
+        child.stdout.on('data', (chunk) => { stdout += chunk; onStdout?.(chunk); });
         child.stderr.on('data', (chunk) => { stderr += chunk; });
         child.on('error', (err) => { stderr += err.message; }); // e.g. the program doesn't exist
         child.on('close', (code) => {

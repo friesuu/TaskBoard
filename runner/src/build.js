@@ -66,8 +66,13 @@ export async function removeWorktree(project, worktree)
     await git(project.path, ['worktree', 'remove', '--force', worktree]).catch(() => {});
 }
 
+// No log: for callers that don't keep one
+const NO_LOG = { add: () => {}, addEvent: () => {} };
+const seconds = (since) => `${Math.round((Date.now() - since) / 1000)}s`;
+
 // knownSecrets: exact values that must never end up in a commit (the runner's own key and token)
-export async function build({ job, project, config, branch, worktree, knownSecrets = [] })
+// log: the run's step-by-step log on the board (activity.js)
+export async function build({ job, project, config, branch, worktree, knownSecrets = [], log = NO_LOG })
 {
     const timeoutMs = 10 * 60 * 1000;
 
@@ -75,13 +80,21 @@ export async function build({ job, project, config, branch, worktree, knownSecre
     //    of main, before Claude has changed anything, so it's your own code (and it may need the internet).
     for (const command of project.setup)
     {
+        log.add('info', `Setup: ${command}`);
+        const started = Date.now();
         const result = await projectCommand(command, worktree, timeoutMs);
-        if (result.code !== 0) return { setupFailed: `"${command}" failed:\n${tail(result.stderr || result.stdout)}` };
+        if (result.code !== 0)
+        {
+            log.add('error', `Setup failed:\n${tail(result.stderr || result.stdout)}`);
+            return { setupFailed: `"${command}" failed:\n${tail(result.stderr || result.stdout)}` };
+        }
+        log.add('info', `Setup done (${seconds(started)})`);
     }
 
     // 2. Claude carries out the approved prompt: edit files, and run only the build and test commands.
     //    Then the empty files Claude Code leaves behind go, so they're neither checked nor committed.
     addPackageJson(worktree);
+    log.add('info', 'Claude is carrying out the approved prompt');
     const outcome = await runClaude({
         config,
         step: config.steps.build,
@@ -94,20 +107,30 @@ export async function build({ job, project, config, branch, worktree, knownSecre
         systemPrompt: config.rules.build,
         tools: ['Read', 'Glob', 'Grep', 'Edit', 'Write', 'Bash'],
         allowedCommands: [project.build, project.test],
+        onEvent: log.addEvent,
     });
     await removePlaceholders(worktree);
 
     // 3. The runner checks the result itself, instead of trusting Claude's word for it. These run code
     //    Claude just wrote, so they run sandboxed: no network, no secrets, only the worktree writable.
     const hidden = sandboxDenyRead();
+    log.add('check', 'The runner checks the build and tests itself');
     const buildResult = await sandboxedCommand(project.build, worktree, timeoutMs, hidden);
+    log.add('check', `Build (${project.build}): ${passedOrFailed(buildResult)}`);
+    if (buildResult.code !== 0) log.add('check', tail(buildResult.stdout + buildResult.stderr));
     const testResult = await sandboxedCommand(project.test, worktree, timeoutMs, hidden);
+    log.add('check', `Tests (${project.test}): ${passedOrFailed(testResult)}`);
+    if (testResult.code !== 0) log.add('check', tail(testResult.stdout + testResult.stderr));
 
     // 4. The secret scan: nothing that looks like a secret is ever committed. If it finds one, the
     //    changes are thrown away (the worktree is deleted afterwards) and the branch stays empty.
     await git(worktree, ['add', '-A']);
     const secretsFound = findSecrets(await git(worktree, ['diff', '--cached']), knownSecrets);
-    if (secretsFound.length) return { outcome, buildResult, testResult, secretsFound };
+    if (secretsFound.length)
+    {
+        log.add('error', `Blocked: something that looks like a secret in ${secretsFound.map((f) => f.file).join(', ')}. Nothing was committed.`);
+        return { outcome, buildResult, testResult, secretsFound };
+    }
 
     // 5. Commit whatever changed, on the task's branch only
     const changedFiles = await git(worktree, ['diff', '--cached', '--name-status']);
@@ -117,6 +140,11 @@ export async function build({ job, project, config, branch, worktree, knownSecre
             '-c', 'user.name=Claude (task runner)', '-c', 'user.email=runner@task-board.local',
             'commit', '-m', `${job.task.title} (task #${job.task.id})\n\nBuilt by the Claude runner from the approved prompt.`,
         ]);
+        log.add('info', `Committed ${changedFiles.split('\n').length} changed file(s) on ${branch}`);
+    }
+    else
+    {
+        log.add('info', 'Nothing to commit: no files changed');
     }
 
     return { outcome, buildResult, testResult, changedFiles, summary: outcome.ok ? between(outcome.text, 'summary') : null };
