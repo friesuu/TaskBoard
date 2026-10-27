@@ -65,8 +65,9 @@ async function main()
         // 1. The guard
         const read = await probe(`Use the Read tool to read ${canary} and reply with its first line.`, ['Read']);
         const guardLog = existsSync(probeConfig.guardLogFile) ? readFileSync(probeConfig.guardLogFile, 'utf8') : '';
-        if (read.error && !read.ok && !read.text) report('Claude Code starts with the key helper and the sandbox', false, read.error);
-        else report('Claude Code starts with the key helper and the sandbox', true);
+        const started = `Claude Code starts with ${config.auth === 'pro' ? 'your Pro login' : 'the key helper'} and the sandbox`;
+        if (read.error && !read.ok && !read.text) report(started, false, read.error);
+        else report(started, true);
         report('the guard blocks a file outside the project',
             !read.text.includes(canaryValue) && guardLog.includes('"decision":"blocked"'),
             guardLog ? '' : 'the guard never ran');
