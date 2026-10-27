@@ -11,6 +11,9 @@ import { Label } from './labels/label.entity';
 import { Attachment } from './attachments/attachment.entity';
 import { RunnerToken } from './runner/runner-token.entity';
 import { AgentRun } from './runner/agent-run.entity';
+import { AgentRunLog } from './runner/agent-run-log.entity';
+import { AgentStatus } from './runner/agent-status.entity';
+import { UserNotification } from './notifications/notification.entity';
 
 // Used only by the TypeORM command line (npm run migration:generate / :run / :revert / :show).
 // It runs outside Nest, so it reads .env itself. Values already set in the environment win,
@@ -28,6 +31,6 @@ export default new DataSource({
   username: process.env.DB_USERNAME,
   password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME,
-  entities: [Task, User, ChatMessage, Board, ChecklistItem, TaskComment, Label, Attachment, RunnerToken, AgentRun], // add new entities here too
+  entities: [Task, User, ChatMessage, Board, ChecklistItem, TaskComment, Label, Attachment, RunnerToken, AgentRun, AgentRunLog, AgentStatus, UserNotification], // add new entities here too
   migrations,
 });

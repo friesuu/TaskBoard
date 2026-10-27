@@ -12,11 +12,12 @@ export class CommentsService {
     private readonly tasksService: TasksService, // answers "is this task yours?"
   ) {}
 
-  // A task's comments, oldest first (the newest is at the bottom, like a chat), each with its author
+  // A task's comments, oldest first (the newest is at the bottom, like a chat), each with its author.
+  // Only real comments: Claude's notes and your prompt feedback are in the AI tab.
   async findAll(taskId: number, userId: number): Promise<TaskComment[]> {
     await this.tasksService.findOwned(taskId, userId);
     return this.commentsRepository.find({
-      where: { taskId },
+      where: { taskId, kind: 'comment' },
       relations: { author: true },
       order: { createdAt: 'ASC', id: 'ASC' },
     });
@@ -32,13 +33,14 @@ export class CommentsService {
 
   async update(id: number, userId: number, body: string): Promise<TaskComment> {
     const comment = await this.findYours(id, userId);
-    if (comment.fromRunner) throw new BadRequestException("Claude's comments can't be edited");
+    if (comment.kind === 'claude') throw new BadRequestException("Claude's comments can't be edited");
+    if (comment.kind !== 'comment') throw new BadRequestException("Prompt feedback can't be edited");
     comment.body = body;
     return this.commentsRepository.save(comment);
   }
 
   async remove(id: number, userId: number): Promise<void> {
-    const result = await this.commentsRepository.delete({ id, authorId: userId });
+    const result = await this.commentsRepository.delete({ id, authorId: userId, kind: 'comment' });
     if (result.affected === 0) throw new NotFoundException(`Comment ${id} not found`);
   }
 

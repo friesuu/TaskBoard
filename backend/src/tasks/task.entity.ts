@@ -90,6 +90,12 @@ export class Task {
   @Column({ name: 'ai_built_at', type: 'timestamptz', nullable: true })
   aiBuiltAt: Date | null;
 
+  // Did the last build go fine (Claude finished, the checks passed)? false shows the task as Failed.
+  // Empty until it's been built, and while a build runs.
+  @Field(() => Boolean, { nullable: true })
+  @Column({ name: 'ai_checks_passed', type: 'boolean', nullable: true })
+  aiChecksPassed: boolean | null;
+
   // Why the runner stopped on this task (e.g. "spend cap reached"). While set, the runner skips the task
   // until you click "Try again".
   @Field(() => String, { nullable: true })

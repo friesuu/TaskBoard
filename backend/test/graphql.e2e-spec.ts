@@ -1936,7 +1936,7 @@ describe('Tasks GraphQL API (e2e)', () => {
       mutation ($taskId: Int!, $input: RunnerBuildStartInput!) { runnerStartBuild(taskId: $taskId, input: $input) { id aiBranch } }
     `;
     const FINISH_BUILD = `
-      mutation ($taskId: Int!, $input: RunnerBuildResultInput!) { runnerFinishBuild(taskId: $taskId, input: $input) { id status } }
+      mutation ($taskId: Int!, $input: RunnerBuildResultInput!) { runnerFinishBuild(taskId: $taskId, input: $input) { id status aiChecksPassed } }
     `;
     const REPORT_ERROR = `
       mutation ($taskId: Int!, $input: RunnerErrorInput!) { runnerReportError(taskId: $taskId, input: $input) { id aiError } }
@@ -1950,6 +1950,14 @@ describe('Tasks GraphQL API (e2e)', () => {
     `;
     const RETRY = `mutation ($taskId: Int!) { retryAiTask(taskId: $taskId) { id aiError } }`;
     const RUNNER_COMMENTS = `query ($taskId: Int!) { comments(taskId: $taskId) { id body fromRunner } }`;
+    const AI_NOTES = `query ($taskId: Int!) { aiNotes(taskId: $taskId) { id body kind fromRunner } }`;
+    const NOTIFICATIONS = `
+      query { notifications { id kind message readAt task { id title boardId } } unreadNotificationCount }
+    `;
+    type Bell = {
+      notifications: { id: number; kind: string; message: string; readAt: string | null; task: { id: number } | null }[];
+      unreadNotificationCount: number;
+    };
 
     let token: string;
 
@@ -2051,16 +2059,19 @@ describe('Tasks GraphQL API (e2e)', () => {
       await ok(asRunner(START_BUILD, { taskId: task.id, input: { branch: `ai/task-${task.id}-search` } }));
       expect(await nextJob()).toBeNull();
 
-      // 5. Finished: AI Review, with the summary as Claude's comment
-      const finished = (await ok(asRunner(FINISH_BUILD, { taskId: task.id, input: { summary: 'Done: build and tests passed.' } })))
-        .runnerFinishBuild as { status: string };
-      expect(finished.status).toBe('AI_REVIEW');
-      const comments = (await ok(gql(RUNNER_COMMENTS, { taskId: task.id }))).comments as { body: string; fromRunner: boolean }[];
-      expect(comments.filter((c) => c.fromRunner).map((c) => c.body)).toEqual([
-        expect.stringContaining('I wrote a prompt for this task'),
-        `Started building on branch ai/task-${task.id}-search.`,
-        'Done: build and tests passed.',
+      // 5. Finished: AI Review
+      const finished = (await ok(asRunner(FINISH_BUILD, { taskId: task.id, input: { checksPassed: true } })))
+        .runnerFinishBuild as { status: string; aiChecksPassed: boolean };
+      expect(finished).toMatchObject({ status: 'AI_REVIEW', aiChecksPassed: true });
+
+      // 6. Claude doesn't write comments: the bell tells you what needs you (newest first)
+      expect((await ok(gql(RUNNER_COMMENTS, { taskId: task.id }))).comments).toEqual([]);
+      const bell = (await ok(gql(NOTIFICATIONS))) as Bell;
+      expect(bell.notifications.map((n) => [n.kind, n.message, n.task?.id])).toEqual([
+        ['review_ready', 'Ready for review', task.id],
+        ['prompt_ready', 'Prompt ready for approval', task.id],
       ]);
+      expect(bell.unreadNotificationCount).toBe(2);
     });
 
     it('a built task moved back to In progress is built again, from scratch on a new branch', async () => {
@@ -2072,7 +2083,7 @@ describe('Tasks GraphQL API (e2e)', () => {
       // While it's being built, moving it within In progress doesn't hand it out again
       await gql(MOVE_TASK, { id: task.id, input: { status: 'IN_PROGRESS', position: 0 } }).expect(200);
       expect(await nextJob()).toBeNull();
-      await ok(asRunner(FINISH_BUILD, { taskId: task.id, input: { summary: 'Done.' } }));
+      await ok(asRunner(FINISH_BUILD, { taskId: task.id, input: { checksPassed: true } }));
 
       // Into In progress and straight back out before the runner looks: nothing happens
       await gql(MOVE_TASK, { id: task.id, input: { status: 'IN_PROGRESS', position: 0 } }).expect(200);
@@ -2082,14 +2093,14 @@ describe('Tasks GraphQL API (e2e)', () => {
       // Moved back to In progress: built again from the same approved prompt, on a new branch
       await gql(MOVE_TASK, { id: task.id, input: { status: 'IN_PROGRESS', position: 0 } }).expect(200);
       expect(await nextJob()).toMatchObject({ kind: 'BUILD', approvedPrompt: 'Goal: search.', task: { id: task.id } });
-      const notStarted = await asRunner(FINISH_BUILD, { taskId: task.id, input: { summary: 'Done.' } }).expect(200);
+      const notStarted = await asRunner(FINISH_BUILD, { taskId: task.id, input: { checksPassed: true } }).expect(200);
       expect(notStarted.body.errors[0].message).toContain("isn't being built");
 
       const restarted = (await ok(asRunner(START_BUILD, { taskId: task.id, input: { branch: `ai/task-${task.id}-search-2` } })))
         .runnerStartBuild as { aiBranch: string };
       expect(restarted.aiBranch).toBe(`ai/task-${task.id}-search-2`);
       expect(await nextJob()).toBeNull();
-      const finished = (await ok(asRunner(FINISH_BUILD, { taskId: task.id, input: { summary: 'Done again.' } })))
+      const finished = (await ok(asRunner(FINISH_BUILD, { taskId: task.id, input: { checksPassed: true } })))
         .runnerFinishBuild as { status: string };
       expect(finished.status).toBe('AI_REVIEW');
     });
@@ -2105,6 +2116,7 @@ describe('Tasks GraphQL API (e2e)', () => {
       const job = await nextJob();
       expect(job?.kind).toBe('REFINE');
       expect(job?.comments.map((c) => c.body)).toContain('Use the existing search helper');
+      expect((await ok(gql(RUNNER_COMMENTS, { taskId: task.id }))).comments).toEqual([]);
 
       const revised = (await ok(asRunner(SAVE_PROMPT, { taskId: task.id, input: { prompt: 'Second try' } }))).runnerSavePrompt;
       expect(revised).toMatchObject({ status: 'PROMPT_REVIEW', refinedPrompt: 'Second try', changesRequested: false });
@@ -2119,36 +2131,133 @@ describe('Tasks GraphQL API (e2e)', () => {
       expect((await nextJob())?.task.id).toBe(task.id);
     });
 
-    it("Claude's comments can't be edited", async () => {
+    it("your prompt feedback and Claude's old notes are in the AI tab, not under Comments, and can't be edited", async () => {
       const { task } = await aiTask();
       await ok(asRunner(SAVE_PROMPT, { taskId: task.id, input: { prompt: 'A prompt' } }));
-      const [comment] = (await ok(gql(RUNNER_COMMENTS, { taskId: task.id }))).comments as { id: number }[];
+      await ok(gql(REQUEST_CHANGES, { taskId: task.id, input: { comment: 'Shorter please' } }));
+      // A note from before the runner had its own log (it doesn't write comments any more)
+      await tasksRepository.query(
+        `INSERT INTO comments (task_id, author_id, body, kind) SELECT id, owner_id, 'I wrote a prompt', 'claude' FROM tasks WHERE id = $1`,
+        [task.id],
+      );
 
-      const res = await gql(UPDATE_COMMENT, { id: comment.id, input: { body: 'Rewritten' } }).expect(200);
-      expect(res.body.errors[0].message).toBe("Claude's comments can't be edited");
+      expect((await ok(gql(RUNNER_COMMENTS, { taskId: task.id }))).comments).toEqual([]);
+      const notes = (await ok(gql(AI_NOTES, { taskId: task.id }))).aiNotes as { id: number; body: string; kind: string; fromRunner: boolean }[];
+      expect(notes.map((n) => [n.kind, n.body, n.fromRunner])).toEqual([
+        ['feedback', 'Shorter please', false],
+        ['claude', 'I wrote a prompt', true],
+      ]);
+      for (const note of notes) {
+        const res = await gql(UPDATE_COMMENT, { id: note.id, input: { body: 'Rewritten' } }).expect(200);
+        expect(res.body.errors[0].message).toBe(note.kind === 'claude' ? "Claude's comments can't be edited" : "Prompt feedback can't be edited");
+      }
+      const asOther = await gqlAsOther(AI_NOTES, { taskId: task.id }).expect(200);
+      expect(asOther.body.errors[0].message).toBe(`Task ${task.id} not found`);
     });
 
-    it("logs each step in the task's run log, which only you can read", async () => {
+    it('opens a run when a step starts, logs it step by step with secrets hidden, and closes it', async () => {
       const { task } = await aiTask();
-      const LOG_RUN = `mutation ($taskId: Int!, $input: RunnerRunLogInput!) { runnerLogRun(taskId: $taskId, input: $input) }`;
-      const RUNS = `query ($taskId: Int!) { agentRuns(taskId: $taskId) { step result costUsd checksPassed error } }`;
+      const START_RUN = `mutation ($taskId: Int!, $input: RunnerRunStartInput!) { runnerStartRun(taskId: $taskId, input: $input) }`;
+      const APPEND = `mutation ($runId: Int!, $input: RunnerLogInput!) { runnerAppendLog(runId: $runId, input: $input) }`;
+      const FINISH_RUN = `mutation ($runId: Int!, $input: RunnerRunFinishInput!) { runnerFinishRun(runId: $runId, input: $input) }`;
+      const RUNS = `query ($taskId: Int!) { agentRuns(taskId: $taskId) { id step status result project costUsd summary finishedAt } }`;
+      const ACTIVITY = `query ($status: String) { aiRuns(status: $status) { id status result task { id title boardId } } }`;
+      const LOG = `query ($runId: Int!) { agentRunLog(runId: $runId) { kind text } }`;
+      const at = new Date().toISOString();
 
-      await ok(asRunner(LOG_RUN, { taskId: task.id, input: { step: 'refine', result: 'prompt saved', costUsd: 0.03, startedAt: new Date().toISOString() } }));
-      await ok(asRunner(LOG_RUN, {
-        taskId: task.id,
-        input: { step: 'build', result: 'built', checksPassed: true, costUsd: 0.07, startedAt: new Date().toISOString() },
-      }));
-
-      const runs = (await ok(gql(RUNS, { taskId: task.id }))).agentRuns;
-      expect(runs).toEqual([ // newest first
-        { step: 'build', result: 'built', costUsd: 0.07, checksPassed: true, error: null },
-        { step: 'refine', result: 'prompt saved', costUsd: 0.03, checksPassed: null, error: null },
+      const runId = (await ok(asRunner(START_RUN, { taskId: task.id, input: { step: 'build', branch: `ai/task-${task.id}-search` } })))
+        .runnerStartRun as number;
+      expect((await ok(gql(ACTIVITY, { status: 'running' }))).aiRuns).toEqual([
+        { id: runId, status: 'running', result: 'running', task: { id: task.id, title: 'Add a search box', boardId: expect.any(Number) } },
       ]);
 
-      const asOther = await gqlAsOther(RUNS, { taskId: task.id }).expect(200);
-      expect(asOther.body.errors[0].message).toBe(`Task ${task.id} not found`);
-      const badStep = await asRunner(LOG_RUN, { taskId: task.id, input: { step: 'deploy', result: 'x', startedAt: new Date().toISOString() } }).expect(200);
+      await ok(asRunner(APPEND, { runId, input: { lines: [
+        { at, kind: 'claude', text: "I'll add the search box." },
+        { at, kind: 'tool', text: `Ran cat .env → ANTHROPIC_API_KEY=sk-ant-api03-${'x'.repeat(30)}` },
+        { at, kind: 'tool', text: 'DATABASE_URL=postgres://app:hunter2secret@localhost/db' },
+      ] } }));
+      await ok(asRunner(FINISH_RUN, {
+        runId, input: { status: 'succeeded', result: 'built', checksPassed: true, costUsd: 0.07, summary: 'Added it. JWT_SECRET=abc123' },
+      }));
+
+      expect((await ok(gql(LOG, { runId }))).agentRunLog).toEqual([
+        { kind: 'claude', text: "I'll add the search box." },
+        { kind: 'tool', text: 'Ran cat .env → ANTHROPIC_API_KEY=[hidden]' },
+        { kind: 'tool', text: 'DATABASE_URL=postgres://app:[hidden]@localhost/db' },
+      ]);
+      const [run] = (await ok(gql(RUNS, { taskId: task.id }))).agentRuns as { finishedAt: string | null }[];
+      expect(run).toMatchObject({
+        id: runId, step: 'build', status: 'succeeded', result: 'built', project: 'notes-app', costUsd: 0.07,
+        summary: 'Added it. JWT_SECRET=[hidden]',
+      });
+      expect(run.finishedAt).not.toBeNull();
+      expect((await ok(gql(ACTIVITY, { status: 'failed' }))).aiRuns).toEqual([]);
+
+      // A finished run takes no more lines, nobody else can read it, and nonsense is refused
+      const late = await asRunner(APPEND, { runId, input: { lines: [{ at, kind: 'info', text: 'late' }] } }).expect(200);
+      expect(late.body.errors[0].message).toBe(`Run ${runId} has already finished`);
+      const asOther = await gqlAsOther(LOG, { runId }).expect(200);
+      expect(asOther.body.errors[0].message).toBe(`Run ${runId} not found`);
+      const badStep = await asRunner(START_RUN, { taskId: task.id, input: { step: 'deploy' } }).expect(200);
       expect(badStep.body.errors[0].extensions.originalError.message[0]).toContain('step must be one of');
+      const badStatus = await gql(ACTIVITY, { status: 'weird' }).expect(200);
+      expect(badStatus.body.errors[0].message).toContain('status must be one of');
+    });
+
+    it('the bell: failed builds and stops, read one at a time or all at once, only ever yours', async () => {
+      const { task } = await aiTask();
+      const MARK = `mutation ($id: Int!) { markNotificationRead(id: $id) { id readAt } }`;
+      await ok(asRunner(SAVE_PROMPT, { taskId: task.id, input: { prompt: 'Goal' } }));
+      await ok(gql(APPROVE, { taskId: task.id }));
+      await ok(asRunner(START_BUILD, { taskId: task.id, input: { branch: `ai/task-${task.id}-x` } }));
+      const finished = (await ok(asRunner(FINISH_BUILD, { taskId: task.id, input: { checksPassed: false } }))).runnerFinishBuild;
+      expect(finished).toMatchObject({ status: 'AI_REVIEW', aiChecksPassed: false }); // the card shows Failed
+      await ok(asRunner(REPORT_ERROR, { taskId: task.id, input: { message: 'The spend cap for this step was reached' } }));
+
+      const bell = (await ok(gql(NOTIFICATIONS))) as Bell;
+      expect(bell.notifications.map((n) => [n.kind, n.message])).toEqual([
+        ['run_failed', 'Claude stopped: The spend cap for this step was reached'],
+        ['run_failed', 'Built, but it needs a look: the checks failed or Claude stopped early'],
+        ['prompt_ready', 'Prompt ready for approval'],
+      ]);
+      expect(bell.unreadNotificationCount).toBe(3);
+
+      const newest = bell.notifications[0].id;
+      const asOther = await gqlAsOther(MARK, { id: newest }).expect(200);
+      expect(asOther.body.errors[0].message).toBe(`Notification ${newest} not found`);
+      expect(((await ok(gqlAsOther(NOTIFICATIONS))) as Bell).notifications).toEqual([]);
+
+      const marked = (await ok(gql(MARK, { id: newest }))).markNotificationRead as { readAt: string | null };
+      expect(marked.readAt).not.toBeNull();
+      expect(((await ok(gql(NOTIFICATIONS))) as Bell).unreadNotificationCount).toBe(2);
+      expect((await ok(gql(`mutation { markAllNotificationsRead }`))).markAllNotificationsRead).toBe(2);
+      expect(((await ok(gql(NOTIFICATIONS))) as Bell).unreadNotificationCount).toBe(0);
+    });
+
+    it("shows what your runner is doing, and calls it offline when it hasn't checked in for a while", async () => {
+      const STATUS = `query { agentStatus { state step pausedUntil task { id title } } }`;
+      const REPORT = `mutation ($input: RunnerStatusInput!) { runnerReportStatus(input: $input) }`;
+      expect((await ok(gql(STATUS))).agentStatus).toEqual({ state: 'never', step: null, pausedUntil: null, task: null });
+
+      const { task } = await aiTask();
+      await ok(asRunner(REPORT, { input: { state: 'working', taskId: task.id, step: 'build' } }));
+      expect((await ok(gql(STATUS))).agentStatus).toEqual({
+        state: 'working', step: 'build', pausedUntil: null, task: { id: task.id, title: 'Add a search box' },
+      });
+
+      // The usage limit: one notification, not one per check
+      const until = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+      await ok(asRunner(REPORT, { input: { state: 'paused', pausedUntil: until } }));
+      await ok(asRunner(REPORT, { input: { state: 'paused', pausedUntil: until } }));
+      expect(((await ok(gql(NOTIFICATIONS))) as Bell).notifications.map((n) => [n.kind, n.task])).toEqual([['usage_limit', null]]);
+      expect((await ok(gql(STATUS))).agentStatus).toMatchObject({ state: 'paused', pausedUntil: until });
+
+      // Not seen for 10 minutes: offline (normal, it runs on your laptop)
+      await tasksRepository.query(`UPDATE agent_status SET last_seen_at = now() - interval '10 minutes'`);
+      expect((await ok(gql(STATUS))).agentStatus).toMatchObject({ state: 'offline', task: null });
+
+      const bad = await asRunner(REPORT, { input: { state: 'dancing' } }).expect(200);
+      expect(bad.body.errors[0].extensions.originalError.message[0]).toContain('state must be one of');
     });
 
     it("another user's runner token can't see or touch your tasks", async () => {
@@ -2158,8 +2267,13 @@ describe('Tasks GraphQL API (e2e)', () => {
       const job = await asRunner(NEXT_JOB, undefined, otherToken).expect(200);
       const save = await asRunner(SAVE_PROMPT, { taskId: task.id, input: { prompt: 'Sneaky' } }, otherToken).expect(200);
 
+      const run = await asRunner(
+        `mutation ($taskId: Int!) { runnerStartRun(taskId: $taskId, input: { step: "refine" }) }`, { taskId: task.id }, otherToken,
+      ).expect(200);
+
       expect(job.body.data.runnerNextJob).toBeNull();
       expect(save.body.errors[0].message).toContain("isn't waiting for this step");
+      expect(run.body.errors[0].message).toBe(`Task ${task.id} not found`);
     });
   });
 });
