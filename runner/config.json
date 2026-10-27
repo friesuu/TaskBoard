@@ -10,7 +10,7 @@
   "dailyCapUsd": 2,
   "steps": {
     "refine": {
-      "model": "claude-sonnet-5-5",
+      "model": "claude-opus-5-5",
       "maxBudgetUsd": 0.5,
       "maxTurns": 30,
       "timeoutMinutes": 15
