@@ -5,6 +5,7 @@ import { between, runClaude } from './claude.js';
 import { git, projectCommand, sandboxedCommand, tail } from './shell.js';
 import { sandboxDenyRead } from './claude.js';
 import { findSecrets } from './secrets.js';
+import { addPackageJson, removePlaceholders } from './placeholders.js';
 
 // "Add a search box!" -> "add-a-search-box" (at most 5 words)
 export function slug(title)
@@ -78,7 +79,9 @@ export async function build({ job, project, config, branch, worktree, knownSecre
         if (result.code !== 0) return { setupFailed: `"${command}" failed:\n${tail(result.stderr || result.stdout)}` };
     }
 
-    // 2. Claude carries out the approved prompt: edit files, and run only the build and test commands
+    // 2. Claude carries out the approved prompt: edit files, and run only the build and test commands.
+    //    Then the empty files Claude Code leaves behind go, so they're neither checked nor committed.
+    addPackageJson(worktree);
     const outcome = await runClaude({
         config,
         step: config.steps.build,
@@ -92,6 +95,7 @@ export async function build({ job, project, config, branch, worktree, knownSecre
         tools: ['Read', 'Glob', 'Grep', 'Edit', 'Write', 'Bash'],
         allowedCommands: [project.build, project.test],
     });
+    await removePlaceholders(worktree);
 
     // 3. The runner checks the result itself, instead of trusting Claude's word for it. These run code
     //    Claude just wrote, so they run sandboxed: no network, no secrets, only the worktree writable.

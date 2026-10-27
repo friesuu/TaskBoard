@@ -1,7 +1,7 @@
 // Tests for the runner's own logic (no Claude, no task board). Run with: pnpm test
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -14,6 +14,7 @@ import { slug } from '../src/build.js';
 import { claudeSettings, sandboxDenyRead } from '../src/claude.js';
 import { run, sandboxedCommand, stopChildren } from '../src/shell.js';
 import { CHECK_EVERY_MS, nextCheckDelay, statusMessage } from '../src/watch.js';
+import { addPackageJson, removePlaceholders } from '../src/placeholders.js';
 import { homedir } from 'node:os';
 import { rmSync } from 'node:fs';
 
@@ -231,4 +232,64 @@ test('stopping a program also stops everything it started', async () => {
     const result = await pending;
     assert.ok(Date.now() - started < 5000);
     assert.ok(!result.stdout.includes('never'));
+});
+
+// ----- Claude Code's placeholder files -----
+
+// A throwaway git repository with these files committed
+function tempRepo(files)
+{
+    const dir = mkdtempSync(join(tmpdir(), 'runner-placeholders-'));
+    spawnSync('git', ['init', '-q', '-b', 'main'], { cwd: dir });
+    for (const [name, content] of Object.entries(files)) writeFileSync(join(dir, name), content);
+    spawnSync('git', ['add', '-A'], { cwd: dir });
+    spawnSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', 'commit', '-q', '-m', 'Start'], { cwd: dir });
+    return dir;
+}
+
+test("Claude Code's empty placeholder files are deleted, and real files never are", async () => {
+    const dir = tempRepo({ 'README.md': 'Hi\n', 'yarn.lock': '' }); // an empty file the project itself has
+    mkdirSync(join(dir, 'frontend'));
+    writeFileSync(join(dir, '.env.local'), '');
+    writeFileSync(join(dir, '.npmrc'), '');
+    writeFileSync(join(dir, '.env'), 'NAME=value\n'); // not empty: not a placeholder
+    writeFileSync(join(dir, 'frontend', '.env.test'), ''); // not at the top: not a placeholder
+    try
+    {
+        assert.deepEqual((await removePlaceholders(dir)).sort(), ['.env.local', '.npmrc']);
+        for (const kept of ['yarn.lock', '.env', 'frontend/.env.test']) assert.ok(existsSync(join(dir, kept)), kept);
+    }
+    finally
+    {
+        rmSync(dir, { recursive: true, force: true });
+    }
+});
+
+test('a project with no package.json at the top gets a valid one while Claude works, gone before the commit', async () => {
+    const dir = tempRepo({ 'README.md': 'Hi\n' });
+    try
+    {
+        addPackageJson(dir);
+        assert.deepEqual(JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')), {});
+        assert.deepEqual(await removePlaceholders(dir), ['package.json']);
+        assert.ok(!existsSync(join(dir, 'package.json')));
+    }
+    finally
+    {
+        rmSync(dir, { recursive: true, force: true });
+    }
+});
+
+test("a project's own package.json is left alone", async () => {
+    const dir = tempRepo({ 'package.json': '{ "name": "notes" }\n' });
+    try
+    {
+        addPackageJson(dir);
+        assert.equal(readFileSync(join(dir, 'package.json'), 'utf8'), '{ "name": "notes" }\n');
+        assert.deepEqual(await removePlaceholders(dir), []);
+    }
+    finally
+    {
+        rmSync(dir, { recursive: true, force: true });
+    }
 });

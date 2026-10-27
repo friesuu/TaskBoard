@@ -64,7 +64,7 @@ export function claudeEnv(config, { workdir, allowedCommands })
     const env = { ...process.env };
     delete env.RUNNER_TOKEN;
     delete env.ANTHROPIC_API_KEY;
-    env.CLAUDE_CODE_SUBPROCESS_ENV_SCRUB = '1'; // strip credentials from every command's environment
+    env.CLAUDE_CODE_SUBPROCESS_ENV_SCRUB = '1'; // strip credentials from every command's environment (and see placeholders.js)
     env.RUNNER_WORKDIR = workdir; // read by the guard
     env.RUNNER_ALLOWED_COMMANDS = JSON.stringify(allowedCommands);
     if (config.guardLogFile) env.RUNNER_GUARD_LOG = config.guardLogFile;
