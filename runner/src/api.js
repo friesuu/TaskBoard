@@ -54,6 +54,12 @@ export function createApi(url, token)
             { taskId, input: { summary } },
         ),
 
+        // One finished step for the task's run log: { step, result, branch, checksPassed, costUsd, error, startedAt }
+        logRun: (taskId, run) => request(
+            `mutation ($taskId: Int!, $input: RunnerRunLogInput!) { runnerLogRun(taskId: $taskId, input: $input) }`,
+            { taskId, input: run },
+        ),
+
         reportError: (taskId, message) => request(
             `mutation ($taskId: Int!, $input: RunnerErrorInput!) { runnerReportError(taskId: $taskId, input: $input) { id } }`,
             { taskId, input: { message: message.slice(0, 2000) } },

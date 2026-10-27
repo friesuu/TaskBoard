@@ -2097,6 +2097,29 @@ describe('Tasks GraphQL API (e2e)', () => {
       expect(res.body.errors[0].message).toBe("Claude's comments can't be edited");
     });
 
+    it("logs each step in the task's run log, which only you can read", async () => {
+      const { task } = await aiTask();
+      const LOG_RUN = `mutation ($taskId: Int!, $input: RunnerRunLogInput!) { runnerLogRun(taskId: $taskId, input: $input) }`;
+      const RUNS = `query ($taskId: Int!) { agentRuns(taskId: $taskId) { step result costUsd checksPassed error } }`;
+
+      await ok(asRunner(LOG_RUN, { taskId: task.id, input: { step: 'refine', result: 'prompt saved', costUsd: 0.03, startedAt: new Date().toISOString() } }));
+      await ok(asRunner(LOG_RUN, {
+        taskId: task.id,
+        input: { step: 'build', result: 'built', checksPassed: true, costUsd: 0.07, startedAt: new Date().toISOString() },
+      }));
+
+      const runs = (await ok(gql(RUNS, { taskId: task.id }))).agentRuns;
+      expect(runs).toEqual([ // newest first
+        { step: 'build', result: 'built', costUsd: 0.07, checksPassed: true, error: null },
+        { step: 'refine', result: 'prompt saved', costUsd: 0.03, checksPassed: null, error: null },
+      ]);
+
+      const asOther = await gqlAsOther(RUNS, { taskId: task.id }).expect(200);
+      expect(asOther.body.errors[0].message).toBe(`Task ${task.id} not found`);
+      const badStep = await asRunner(LOG_RUN, { taskId: task.id, input: { step: 'deploy', result: 'x', startedAt: new Date().toISOString() } }).expect(200);
+      expect(badStep.body.errors[0].extensions.originalError.message[0]).toContain('step must be one of');
+    });
+
     it("another user's runner token can't see or touch your tasks", async () => {
       const { task } = await aiTask();
       const otherToken = (await gqlAsOther(`mutation { createRunnerToken }`).expect(200)).body.data.createRunnerToken;

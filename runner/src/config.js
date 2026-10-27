@@ -20,6 +20,7 @@ export function loadConfig()
 {
     const config = readJson('config.json');
     if (config.auth !== 'api' && config.auth !== 'pro') throw new Error('config.json: "auth" must be "api" or "pro"');
+    if (typeof config.dailyCapUsd !== 'number' || config.dailyCapUsd < 0) throw new Error('config.json: "dailyCapUsd" must be a number of dollars');
 
     // Every project's folder is fixed here, never taken from a task: a task can only name a project
     const projects = readJson('projects.json');
@@ -39,7 +40,9 @@ export function loadConfig()
         claudePath: expandPath(config.claudePath),
         worktreeRoot: expandPath(config.worktreeRoot),
         lockFile: expandPath(config.lockFile),
+        pauseFile: expandPath(config.pauseFile),
         logFile: expandPath(config.logFile),
+        guardLogFile: expandPath(config.guardLogFile),
         projects,
         promptStyle: readFileSync(join(RUNNER_DIR, 'PROMPT_STYLE.md'), 'utf8'),
         rules: {

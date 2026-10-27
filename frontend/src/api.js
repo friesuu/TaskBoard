@@ -569,3 +569,15 @@ export async function revokeRunnerToken()
 {
     await graphqlRequest('mutation { revokeRunnerToken }');
 }
+
+// A task's run log: every step the runner took on it, newest first
+export async function getAgentRuns(taskId)
+{
+    const data = await graphqlRequest(
+        `query AgentRuns($taskId: Int!) {
+            agentRuns(taskId: $taskId) { id step result branch checksPassed costUsd error startedAt finishedAt }
+        }`,
+        { taskId },
+    );
+    return data.agentRuns;
+}

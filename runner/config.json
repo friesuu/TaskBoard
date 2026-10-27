@@ -4,9 +4,22 @@
   "claudePath": "~/.local/bin/claude",
   "worktreeRoot": "~/.task-runner/worktrees",
   "lockFile": "~/.task-runner/runner.lock",
+  "pauseFile": "~/.task-runner/paused.json",
   "logFile": "./logs/runs.log",
+  "guardLogFile": "./logs/guard.log",
+  "dailyCapUsd": 2,
   "steps": {
-    "refine": { "model": "claude-sonnet-5-5", "maxBudgetUsd": 0.5, "maxTurns": 30, "timeoutMinutes": 15 },
-    "build": { "model": "claude-opus-5-5", "maxBudgetUsd": 2, "maxTurns": 60, "timeoutMinutes": 30 }
+    "refine": {
+      "model": "claude-sonnet-5-5",
+      "maxBudgetUsd": 0.5,
+      "maxTurns": 30,
+      "timeoutMinutes": 15
+    },
+    "build": {
+      "model": "claude-opus-5-5",
+      "maxBudgetUsd": 2,
+      "maxTurns": 60,
+      "timeoutMinutes": 30
+    }
   }
 }

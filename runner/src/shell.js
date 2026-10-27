@@ -1,5 +1,6 @@
 // Running programs: git (with exact arguments) and the project's own build / test / setup commands.
 import { spawn } from 'node:child_process';
+import { existsSync, statSync } from 'node:fs';
 
 // Runs a program and collects its output. Never throws: check `code` (0 = success).
 export function run(command, args, { cwd, env = process.env, input, timeoutMs = 10 * 60 * 1000 } = {})
@@ -18,6 +19,9 @@ export function run(command, args, { cwd, env = process.env, input, timeoutMs = 
             clearTimeout(timer);
             resolve({ code: timedOut ? null : code, stdout, stderr, timedOut });
         });
+        // A program that exits before reading its input (e.g. it refused its options) closes the pipe:
+        // that's reported through its exit code and output above, not a reason to crash the runner
+        child.stdin.on('error', () => {});
         child.stdin.end(input ?? '');
     });
 }
@@ -38,6 +42,33 @@ export function projectCommand(command, cwd, timeoutMs)
     const env = { ...process.env };
     delete env.RUNNER_TOKEN;
     return run('sh', ['-c', command], { cwd, env, timeoutMs });
+}
+
+// One of the project's checks (build, test) on code Claude just wrote, so it gets the same locks as Claude:
+// run inside bwrap (the tool Claude Code's own sandbox uses) with no network, every secret file or folder
+// masked, the whole system read-only except the task's own folder, and no keys in its environment.
+// If bwrap is missing, the check doesn't run at all (it never runs unprotected).
+export function sandboxedCommand(command, cwd, timeoutMs, hiddenPaths)
+{
+    const env = { ...process.env };
+    delete env.RUNNER_TOKEN;
+    delete env.ANTHROPIC_API_KEY;
+
+    const args = ['--ro-bind', '/', '/', '--dev', '/dev', '--proc', '/proc', '--tmpfs', '/tmp'];
+    for (const path of hiddenPaths)
+    {
+        if (!existsSync(path)) continue;
+        if (statSync(path).isDirectory()) args.push('--tmpfs', path); // an empty folder in its place
+        else args.push('--ro-bind', '/dev/null', path); // an empty file in its place
+    }
+    args.push(
+        '--bind', cwd, cwd, // the task's folder: the only place it can write
+        '--unshare-net', // no network at all
+        '--unshare-pid', '--die-with-parent', '--new-session',
+        '--chdir', cwd,
+        'sh', '-c', command,
+    );
+    return run('bwrap', args, { cwd, env, timeoutMs });
 }
 
 // The last lines of a long output (for a task comment)

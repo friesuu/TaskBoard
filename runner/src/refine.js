@@ -34,7 +34,7 @@ export async function refine({ job, project, config })
         prompt,
         systemPrompt: `${config.rules.refine}\n\n${config.promptStyle}`,
         tools: ['Read', 'Glob', 'Grep'], // read and search only: no editing, no commands
-        allowedTools: ['Read', 'Glob', 'Grep'],
+        allowedCommands: [],
     });
 
     const refined = outcome.ok ? between(outcome.text, 'refined_prompt') : null;

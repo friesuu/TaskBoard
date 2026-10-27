@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { RunnerToken } from './runner-token.entity';
+import { AgentRun } from './agent-run.entity';
 import { Task } from '../tasks/task.entity';
 import { TaskComment } from '../comments/task-comment.entity';
 import { ChecklistItem } from '../checklist/checklist-item.entity';
@@ -18,10 +19,11 @@ import { RunnerResolver } from './runner.resolver';
 // The Claude runner, as seen from the task board:
 //   - the runner token (profile page) and the guard that checks it
 //   - your review of Claude's prompts (task panel)
-//   - the runner's own API: next job, save prompt, start and finish a build, report a problem
+//   - the runner's own API: next job, save prompt, start and finish a build, report a problem, log a run
+//   - each task's run log (agent_runs), shown in the task panel
 @Module({
   imports: [
-    TypeOrmModule.forFeature([RunnerToken, Task, TaskComment, ChecklistItem]),
+    TypeOrmModule.forFeature([RunnerToken, AgentRun, Task, TaskComment, ChecklistItem]),
     AuthModule, // GqlAuthGuard, for your side
     TasksModule, // findOwned / move
     BoardsModule, // the board's project

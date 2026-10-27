@@ -114,6 +114,19 @@ type Attachment {
   taskId: Int!
 }
 
+type AgentRun {
+  id: Int!
+  taskId: Int!
+  step: String!
+  result: String!
+  branch: String
+  checksPassed: Boolean
+  costUsd: Float
+  error: String
+  startedAt: DateTime!
+  finishedAt: DateTime!
+}
+
 type RunnerTokenInfo {
   createdAt: DateTime!
   lastUsedAt: DateTime
@@ -144,6 +157,7 @@ type Query {
   labels(boardId: Int!): [Label!]!
   attachments(taskId: Int!): [Attachment!]!
   runnerToken: RunnerTokenInfo
+  agentRuns(taskId: Int!): [AgentRun!]!
   runnerPing: Boolean!
   runnerNextJob: RunnerJob
 }
@@ -201,6 +215,7 @@ type Mutation {
   runnerSavePrompt(taskId: Int!, input: RunnerPromptInput!): Task!
   runnerStartBuild(taskId: Int!, input: RunnerBuildStartInput!): Task!
   runnerFinishBuild(taskId: Int!, input: RunnerBuildResultInput!): Task!
+  runnerLogRun(taskId: Int!, input: RunnerRunLogInput!): Boolean!
   runnerReportError(taskId: Int!, input: RunnerErrorInput!): Task!
 }
 
@@ -309,6 +324,16 @@ input RunnerBuildStartInput {
 
 input RunnerBuildResultInput {
   summary: String!
+}
+
+input RunnerRunLogInput {
+  step: String!
+  result: String!
+  branch: String
+  checksPassed: Boolean
+  costUsd: Float
+  error: String
+  startedAt: DateTime!
 }
 
 input RunnerErrorInput {

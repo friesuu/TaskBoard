@@ -7,6 +7,8 @@
     "node": ">=24"
   },
   "scripts": {
-    "once": "node --env-file=.env src/main.js once"
+    "once": "node --env-file=.env src/main.js once",
+    "test": "node --test",
+    "self-check": "node --env-file=.env src/self-check.js"
   }
 }

@@ -1352,3 +1352,55 @@
   border-radius: var(--radius-check);
   user-select: all;
 }
+
+/* "Run log" under the Claude section: folded until opened */
+.ai-run-log summary {
+  color: var(--text-2);
+  font-size: var(--fs-small);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.ai-runs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ai-run {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-4);
+  background-color: var(--sunken);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-check);
+}
+
+.ai-run-head,
+.ai-run-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+}
+
+.ai-run-step {
+  font-weight: 500;
+}
+
+.ai-run-result,
+.ai-run-meta {
+  color: var(--text-2);
+  font-size: var(--fs-small);
+  font-variant-numeric: tabular-nums;
+}
+
+.ai-run-result.bad,
+.ai-run-error {
+  color: var(--danger-text);
+  font-size: var(--fs-small);
+}

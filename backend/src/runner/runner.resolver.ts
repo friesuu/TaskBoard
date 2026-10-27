@@ -6,7 +6,7 @@ import { Task } from '../tasks/task.entity';
 import { RunnerAuthGuard } from './runner-auth.guard';
 import { RunnerService } from './runner.service';
 import { RunnerJob } from './runner-job.type';
-import { RunnerBuildResultDto, RunnerBuildStartDto, RunnerErrorDto, RunnerPromptDto } from './runner.dto';
+import { RunnerBuildResultDto, RunnerBuildStartDto, RunnerErrorDto, RunnerPromptDto, RunnerRunLogDto } from './runner.dto';
 
 // The runner's own GraphQL operations. Only its token gets in here (RunnerAuthGuard),
 // and its token gets nowhere else.
@@ -51,6 +51,16 @@ export class RunnerResolver {
     @Args('input') input: RunnerBuildResultDto,
   ): Promise<Task> {
     return this.runnerService.finishBuild(taskId, user.id, input.summary);
+  }
+
+  @Mutation(() => Boolean)
+  async runnerLogRun(
+    @CurrentUser() user: User,
+    @Args('taskId', { type: () => Int }) taskId: number,
+    @Args('input') input: RunnerRunLogDto,
+  ): Promise<boolean> {
+    await this.runnerService.logRun(taskId, user.id, input);
+    return true;
   }
 
   @Mutation(() => Task)

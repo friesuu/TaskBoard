@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { approvePrompt, requestPromptChanges, retryAiTask, updateRefinedPrompt } from '../api';
 import { formatDateTime } from '../dates';
+import AiRunLog from './AiRunLog';
 
 // Tasks with a label called "AI" (any capitals) are the ones the Claude runner works on
 const isAiTask = (task) => task.labels?.some((l) => l.name.toLowerCase() === 'ai');
@@ -186,6 +187,7 @@ function AiSection({ task, boardProject = null, onTaskChanged, onCommentsChanged
                 </p>
             )}
             {body}
+            <AiRunLog taskId={task.id} onSessionEnded={onSessionEnded} />
         </section>
     );
 }

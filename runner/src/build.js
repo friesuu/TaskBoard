@@ -2,10 +2,12 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { between, runClaude } from './claude.js';
-import { git, projectCommand, tail } from './shell.js';
+import { git, projectCommand, sandboxedCommand, tail } from './shell.js';
+import { sandboxDenyRead } from './claude.js';
+import { findSecrets } from './secrets.js';
 
 // "Add a search box!" -> "add-a-search-box" (at most 5 words)
-function slug(title)
+export function slug(title)
 {
     return title.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(' ').slice(0, 5).join('-') || 'task';
 }
@@ -47,17 +49,29 @@ export async function prepareWorktree({ job, project, projectName, config })
     return { branch, worktree };
 }
 
+// A read-only look at main for the prompt step: a temporary worktree on main (no branch), so Claude reads
+// the same code the build will start from, whatever you have checked out in the project folder right now.
+export async function prepareMainCopy({ job, project, projectName, config })
+{
+    const copy = join(config.worktreeRoot, projectName, `task-${job.task.id}-prompt`);
+    if (existsSync(copy)) await git(project.path, ['worktree', 'remove', '--force', copy]); // left from a crashed run
+    await git(project.path, ['worktree', 'add', '--detach', copy, project.baseBranch]);
+    return copy;
+}
+
 export async function removeWorktree(project, worktree)
 {
     // The branch stays (that's the work); only the extra folder goes
     await git(project.path, ['worktree', 'remove', '--force', worktree]).catch(() => {});
 }
 
-export async function build({ job, project, config, branch, worktree })
+// knownSecrets: exact values that must never end up in a commit (the runner's own key and token)
+export async function build({ job, project, config, branch, worktree, knownSecrets = [] })
 {
     const timeoutMs = 10 * 60 * 1000;
 
-    // 1. Setup the runner does itself (e.g. installing packages), never Claude
+    // 1. Setup the runner does itself (e.g. installing packages), never Claude. It runs on a fresh copy
+    //    of main, before Claude has changed anything, so it's your own code (and it may need the internet).
     for (const command of project.setup)
     {
         const result = await projectCommand(command, worktree, timeoutMs);
@@ -76,15 +90,22 @@ export async function build({ job, project, config, branch, worktree })
         ].join('\n\n'),
         systemPrompt: config.rules.build,
         tools: ['Read', 'Glob', 'Grep', 'Edit', 'Write', 'Bash'],
-        allowedTools: ['Read', 'Glob', 'Grep', 'Edit', 'Write', `Bash(${project.build})`, `Bash(${project.test})`],
+        allowedCommands: [project.build, project.test],
     });
 
-    // 3. The runner checks the result itself, instead of trusting Claude's word for it
-    const buildResult = await projectCommand(project.build, worktree, timeoutMs);
-    const testResult = await projectCommand(project.test, worktree, timeoutMs);
+    // 3. The runner checks the result itself, instead of trusting Claude's word for it. These run code
+    //    Claude just wrote, so they run sandboxed: no network, no secrets, only the worktree writable.
+    const hidden = sandboxDenyRead();
+    const buildResult = await sandboxedCommand(project.build, worktree, timeoutMs, hidden);
+    const testResult = await sandboxedCommand(project.test, worktree, timeoutMs, hidden);
 
-    // 4. Commit whatever changed, on the task's branch only
+    // 4. The secret scan: nothing that looks like a secret is ever committed. If it finds one, the
+    //    changes are thrown away (the worktree is deleted afterwards) and the branch stays empty.
     await git(worktree, ['add', '-A']);
+    const secretsFound = findSecrets(await git(worktree, ['diff', '--cached']), knownSecrets);
+    if (secretsFound.length) return { outcome, buildResult, testResult, secretsFound };
+
+    // 5. Commit whatever changed, on the task's branch only
     const changedFiles = await git(worktree, ['diff', '--cached', '--name-status']);
     if (changedFiles)
     {
@@ -102,7 +123,17 @@ const passedOrFailed = (result) => (result.code === 0 ? 'passed' : result.timedO
 // The comment posted on the task when the build finishes
 export function summaryComment({ project, branch, result })
 {
-    const { outcome, buildResult, testResult, changedFiles, summary } = result;
+    const { outcome, buildResult, testResult, changedFiles, summary, secretsFound } = result;
+    if (secretsFound?.length)
+    {
+        return [
+            'Blocked: the changes contained something that looks like a secret, so nothing was committed '
+                + 'and the changes were thrown away.',
+            ...secretsFound.map((found) => `- ${found.file}: ${found.kind}`),
+            '',
+            `The branch ${branch} is left empty. Check the prompt, then use "Try again" or create a new task.`,
+        ].join('\n');
+    }
     const checksPassed = buildResult.code === 0 && testResult.code === 0;
     const lines = [];
 

@@ -7,31 +7,61 @@ Runs your task board's "AI" tasks through Claude Code, one step at a time:
 2. You read the prompt in the task panel: fill in any `[[FILL IN: …]]` blanks, then **Approve** (→ In
    progress) or **Request changes** (Claude revises it on the next run).
 3. An approved task → Claude builds it on a new branch `ai/task-<id>-<title>` → the runner runs the
-   build and tests itself, commits on that branch, and posts a summary → **AI Review**.
-4. You check the branch and move the task to Done yourself. The runner never touches main, never
-   pushes, never deploys.
+   build and tests itself, scans the changes for secrets, commits on that branch, and posts a summary →
+   **AI Review**.
+4. You check the branch, merge it yourself if you're happy, and move the task to Done. The runner never
+   touches main, never pushes, never deploys.
+
+Every step is in the task's **Run log** (Claude section of the task panel) and in `logs/runs.log`.
 
 ## Run it
 
 ```bash
 cd ~/task-board/runner
-pnpm once
+pnpm once         # one step for one task, then stop
+pnpm self-check   # prove the safety locks work (a few cents, cheapest model)
+pnpm test         # the runner's own tests (free, no Claude)
 ```
 
-Each run does one step for one task, then stops. Run it again for the next step.
+It also runs by itself every 15 minutes through Windows Task Scheduler: see `schedule/README.md`.
+
+## The safety locks
+
+Each lock works on its own, so one mistake in any of them isn't enough to cause harm.
+
+1. **Your approval**: nothing is built until you approve the exact prompt; the server checks this, not the runner.
+2. **Only what each step needs**: writing a prompt can only read and search the project. Building can edit
+   files in its own worktree and run only the project's exact build and test commands.
+3. **The guard** (`src/guard.js`): checks every single tool call before it runs. Blocks files outside the
+   project, secret files (`.env`, keys…), any other command, any other tool. If the guard itself breaks,
+   the call is refused. Every decision goes to `logs/guard.log`.
+4. **The sandbox** around every command (Claude's, and the runner's own checks of Claude's work): no
+   internet, the runner's and the board's `.env` files hidden, only the worktree writable.
+5. **No keys in reach**: the API key reaches Claude Code only through `bin/api-key.sh`, and is stripped from
+   every command's environment. The runner token never leaves the runner.
+6. **The secret scan**: before committing, the changes are searched for anything that looks like a key or
+   token. If one is found, nothing is committed and the changes are thrown away.
+7. **Spend limits**: each step has a cap, and the whole day has one (`dailyCapUsd`). On the Pro plan, the
+   runner pauses until your usage limit resets.
 
 ## Files
 
 | File | What it is |
 | --- | --- |
 | `.env` | Your secrets: `ANTHROPIC_API_KEY` and `RUNNER_TOKEN` (from your profile page). Never commit it. |
-| `config.json` | `auth` ("api" or "pro"), the task board's address, models, spend caps per step |
-| `projects.json` | The ONLY folders the runner may work in, by name, with their build and test commands |
+| `config.json` | `auth` ("api" or "pro"), the task board's address, models, caps per step and per day |
+| `projects.json` | The ONLY folders the runner may work in, by name, with their setup, build and test commands |
 | `PROMPT_STYLE.md` | How Claude writes prompts |
 | `rules/` | The fixed rules Claude follows in each step (task text can't change them) |
-| `logs/runs.log` | One line per run: task, step, branch, result, cost |
+| `logs/` | `runs.log` (one line per step), `guard.log` (every guard decision), `scheduler.log` (scheduled runs) |
+
+## Adding a project
+
+Add it to `projects.json` (its folder must be a git repository with a `main` branch), then type its name
+under **Claude project** in that board's settings.
 
 ## Switching to the Pro plan later
 
 Set `"auth": "pro"` in `config.json`, log in once with `claude` inside Ubuntu, and remove
-`ANTHROPIC_API_KEY` from `.env`. The runner then stops cleanly when you hit your usage limit.
+`ANTHROPIC_API_KEY` from `.env`. The runner then pauses cleanly when you hit your usage limit
+(`~/.task-runner/paused.json` says until when), and the daily dollar cap no longer applies.

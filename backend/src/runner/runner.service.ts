@@ -9,6 +9,8 @@ import { TaskComment } from '../comments/task-comment.entity';
 import { ChecklistItem } from '../checklist/checklist-item.entity';
 import { RunnerJob, RunnerJobKind } from './runner-job.type';
 import { BOTTOM } from './prompt-review.service';
+import { AgentRun } from './agent-run.entity';
+import { RunnerRunLogDto } from './runner.dto';
 
 // Only tasks with a label of this name (any capitals: "AI", "ai") are ever touched by the runner
 const AI_LABEL = 'ai';
@@ -24,9 +26,32 @@ export class RunnerService {
     private readonly commentsRepository: Repository<TaskComment>,
     @InjectRepository(ChecklistItem)
     private readonly checklistRepository: Repository<ChecklistItem>,
+    @InjectRepository(AgentRun)
+    private readonly runsRepository: Repository<AgentRun>,
     private readonly tasksService: TasksService,
     private readonly boardsService: BoardsService,
   ) {}
+
+  // The runner reports a finished step for the task's run log (only on your own tasks)
+  async logRun(taskId: number, ownerId: number, run: RunnerRunLogDto): Promise<AgentRun> {
+    const task = await this.tasksService.findOwned(taskId, ownerId);
+    return this.runsRepository.save(this.runsRepository.create({
+      taskId: task.id,
+      step: run.step,
+      result: run.result,
+      branch: run.branch ?? null,
+      checksPassed: run.checksPassed ?? null,
+      costUsd: run.costUsd ?? null,
+      error: run.error ?? null,
+      startedAt: run.startedAt,
+    }));
+  }
+
+  // A task's run log for the task panel, newest first (your own tasks only)
+  async runsFor(taskId: number, ownerId: number): Promise<AgentRun[]> {
+    await this.tasksService.findOwned(taskId, ownerId);
+    return this.runsRepository.find({ where: { taskId }, order: { finishedAt: 'DESC', id: 'DESC' }, take: 50 });
+  }
 
   // The next thing to do, one task at a time: first anything approved and waiting to be built
   // (oldest approval first), then any prompt to write or revise (oldest task first). null = nothing to do.
