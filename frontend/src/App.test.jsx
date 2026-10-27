@@ -310,6 +310,90 @@ describe('App', () => {
     expect(await screen.findByRole('button', { name: 'Checklist, 1 of 1 done' })).toBeInTheDocument();
   });
 
+  describe('keyboard shortcuts', () => {
+    const renderBoard = async () => {
+      vi.mocked(getCurrentUser).mockResolvedValue(user);
+      render(<App />);
+      await screen.findByText('Write report');
+    };
+
+    it('N opens the Add task form (n or N)', async () => {
+      await renderBoard();
+
+      await userEvent.keyboard('n');
+      expect(screen.getByRole('heading', { name: 'Add New Task' })).toBeInTheDocument();
+      await userEvent.click(screen.getByRole('button', { name: 'Close' }));
+
+      await userEvent.keyboard('N'); // Caps Lock or Shift
+      expect(screen.getByRole('heading', { name: 'Add New Task' })).toBeInTheDocument();
+    });
+
+    it('/ focuses the search box without typing the / into it', async () => {
+      await renderBoard();
+
+      await userEvent.keyboard('/');
+      const search = screen.getByRole('searchbox', { name: 'Search tasks' });
+      expect(search).toHaveFocus();
+      expect(search).toHaveValue('');
+    });
+
+    it('B and C switch between the board and the calendar', async () => {
+      await renderBoard();
+
+      await userEvent.keyboard('c');
+      expect(screen.getByRole('region', { name: 'No due date' })).toBeInTheDocument();
+      expect(window.location.search).toBe('?board=10&view=calendar');
+
+      await userEvent.keyboard('B');
+      expect(screen.getByRole('heading', { name: /^To do/ })).toBeInTheDocument();
+      expect(screen.queryByRole('region', { name: 'No due date' })).not.toBeInTheDocument();
+    });
+
+    it('? shows the shortcuts help', async () => {
+      await renderBoard();
+
+      await userEvent.keyboard('?');
+      const help = screen.getByRole('dialog', { name: 'Keyboard Shortcuts' });
+      expect(within(help).getByText('Add a task')).toBeInTheDocument();
+      expect(within(help).getByText('/')).toBeInTheDocument();
+      expect(within(help).getByText('Calendar view')).toBeInTheDocument();
+    });
+
+    it('typing "n" in the search box or a task title opens nothing', async () => {
+      await renderBoard();
+
+      const search = screen.getByRole('searchbox', { name: 'Search tasks' });
+      await userEvent.type(search, 'n');
+      expect(search).toHaveValue('n');
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+      await userEvent.click(screen.getByRole('button', { name: 'Add task' }));
+      const title = screen.getByLabelText('Title *');
+      await userEvent.type(title, 'n?/bc');
+      expect(title).toHaveValue('n?/bc');
+      expect(screen.getAllByRole('dialog')).toHaveLength(1); // still just the Add task form
+      expect(screen.getByRole('heading', { name: 'Add New Task' })).toBeInTheDocument();
+    });
+
+    it('ignores the keys when Ctrl, Alt or Meta is held', async () => {
+      await renderBoard();
+
+      await userEvent.keyboard('{Control>}n{/Control}{Alt>}n{/Alt}{Meta>}c{/Meta}');
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      expect(screen.queryByRole('region', { name: 'No due date' })).not.toBeInTheDocument();
+    });
+
+    it('shows the shortcuts in the tooltips', async () => {
+      await renderBoard();
+
+      expect(screen.getByRole('button', { name: 'Add task' })).toHaveAttribute('title', 'Add task (N)');
+      expect(screen.getByRole('searchbox', { name: 'Search tasks' })).toHaveAttribute('title', 'Search tasks (/)');
+      const viewSwitch = screen.getByRole('group', { name: 'View' });
+      expect(within(viewSwitch).getByRole('button', { name: 'Board' })).toHaveAttribute('title', 'Board (B)');
+      expect(within(viewSwitch).getByRole('button', { name: 'Calendar' })).toHaveAttribute('title', 'Calendar (C)');
+    });
+  });
+
   it('shows the error instead of loading forever when the server is down', async () => {
     vi.mocked(getCurrentUser).mockRejectedValue(new Error('Failed to fetch'));
     render(<App />);

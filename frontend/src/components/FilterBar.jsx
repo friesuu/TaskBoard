@@ -12,7 +12,8 @@ const toggleIn = (list, value) => (list.includes(value) ? list.filter((v) => v !
 // The search box and filters above the board. It doesn't load anything itself:
 // every change goes to App through onChange(newFilters), and App reloads the tasks.
 //   filters: { q, labels, due, status } (see filters.js)   labels: the board's labels
-function FilterBar({ filters, labels, onChange })
+//   searchRef: optional, gets the search box (so App's / shortcut can focus it)
+function FilterBar({ filters, labels, onChange, searchRef })
 {
     // The search box shows what you type straight away; the search itself waits for a pause
     const [draft, setDraft] = useState(filters.q);
@@ -59,7 +60,10 @@ function FilterBar({ filters, labels, onChange })
                 <div className="filter-search">
                     <SearchIcon size={16} />
                     <input
+                        ref={searchRef}
                         type="search"
+                        title="Search tasks (/)"
+                        aria-keyshortcuts="/"
                         value={draft}
                         onChange={(e) => setDraft(e.target.value)}
                         maxLength={100}

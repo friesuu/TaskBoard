@@ -967,6 +967,35 @@
   font-size: var(--fs-small);
 }
 
+/* ---------- Keyboard shortcuts help ---------- */
+
+.shortcut-list {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.shortcut-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.shortcut-row dd {
+  margin: 0;
+}
+
+.shortcut-row kbd {
+  display: inline-block;
+  min-width: 2em;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-check);
+  font-family: var(--font-mono);
+  text-align: center;
+  color: var(--text);
+}
+
 /* ---------- Calendar ---------- */
 
 /* The month on the left, the "No due date" list on the right */

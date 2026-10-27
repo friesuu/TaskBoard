@@ -1,5 +1,5 @@
 import './App.css';
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   getTasks, createTask, updateTask, moveTask, deleteTask, getCurrentUser, logout, changePassword,
   getBoards, createBoard, renameBoard, deleteBoard, getLabels, setTimeZone,
@@ -25,6 +25,7 @@ import { EMPTY_FILTERS, hasActiveFilters, readFiltersFromUrl, toApiFilter, write
 import FilterBar from './components/FilterBar';
 import CalendarView from './components/CalendarView';
 import ViewSwitch from './components/ViewSwitch';
+import { SHORTCUTS, shortcutFor } from './shortcuts';
 
 const SESSION_EXPIRED = 'Your session has expired. Please log in again.';
 
@@ -41,6 +42,7 @@ const MODAL_TITLES = {
   password: 'Change Password',
   'new-board': 'New Board',
   'board-settings': 'Board Settings',
+  shortcuts: 'Keyboard Shortcuts',
 };
 
 function App()
@@ -153,6 +155,35 @@ function App()
     setFilters(next);
     writeFiltersToUrl(next);
   }, []);
+
+  // The keyboard shortcuts (see shortcuts.js). Only on the main screen: not while a modal,
+  // the task panel or the menu is open, and never while you're typing (shortcutFor checks that).
+  const searchRef = useRef(null);
+  useEffect(() => {
+    if (!user || openModal || openTaskId !== null || isSidebarOpen) return;
+    const onKeyDown = (e) => {
+      const action = shortcutFor(e);
+      if (!action) return;
+      const onBoardPage = view === 'board' || view === 'calendar';
+      if ((action === 'add' || action === 'search') && !onBoardPage) return; // those are on the board page only
+      e.preventDefault(); // e.g. so the / isn't typed into the search box it focuses
+      if (action === 'add' || action === 'help')
+      {
+        setSuccess(null);
+        setOpenModal(action === 'add' ? 'add' : 'shortcuts');
+      }
+      else if (action === 'search')
+      {
+        searchRef.current?.focus();
+      }
+      else
+      {
+        setView(action); // 'board' or 'calendar'
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [user, view, openModal, openTaskId, isSidebarOpen]);
 
   // Back to the login screen. Also empties the board, so the next person on this computer
   // never sees the previous user's tasks, not even for a moment.
@@ -496,7 +527,12 @@ function App()
                   Board settings
                 </button>
               )}
-              <button className="btn btn-primary" onClick={() => openForm('add')}>
+              <button
+                className="btn btn-primary"
+                onClick={() => openForm('add')}
+                title="Add task (N)"
+                aria-keyshortcuts="N"
+              >
                 <AddIcon size={16} />
                 Add task
               </button>
@@ -526,7 +562,7 @@ function App()
           )}
 
           {isBoardPage && (
-            <FilterBar filters={filters} labels={labels} onChange={handleFiltersChange} />
+            <FilterBar filters={filters} labels={labels} onChange={handleFiltersChange} searchRef={searchRef} />
           )}
 
           {view === 'calendar' && (
@@ -594,6 +630,16 @@ function App()
               {openModal === 'add' && <TaskForm onCreate={handleCreate} />}
               {openModal === 'password' && (
                 <ChangePasswordForm email={user.email} onChangePassword={handleChangePassword} />
+              )}
+              {openModal === 'shortcuts' && (
+                <dl className="shortcut-list">
+                  {SHORTCUTS.map((s) => (
+                    <div key={s.action} className="shortcut-row">
+                      <dt><kbd>{s.label}</kbd></dt>
+                      <dd>{s.description}</dd>
+                    </div>
+                  ))}
+                </dl>
               )}
               {openModal === 'new-board' && <BoardNameForm submitLabel="Create board" onSubmit={handleCreateBoard} />}
               {openModal === 'board-settings' && currentBoard && (
