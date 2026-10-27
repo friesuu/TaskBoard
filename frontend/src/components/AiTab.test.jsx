@@ -22,8 +22,10 @@ const buildRun = {
 
 function renderTab(task, props = {}) {
   const handlers = { onTaskChanged: vi.fn(), onAiChanged: vi.fn(), onSessionEnded: vi.fn(() => false) };
-  render(<AiTab task={{ ...base, ...task }} boardProject="notes-app" {...handlers} {...props} />);
-  return handlers;
+  const { rerender } = render(<AiTab task={{ ...base, ...task }} boardProject="notes-app" {...handlers} {...props} />);
+  // As App does after a save: the panel gets the updated task
+  const update = (changes) => rerender(<AiTab task={{ ...base, ...task, ...changes }} boardProject="notes-app" {...handlers} {...props} />);
+  return { ...handlers, update };
 }
 
 describe('AiTab', () => {
@@ -53,19 +55,49 @@ describe('AiTab', () => {
     expect(steps.querySelector('.ai-step.done')).toHaveTextContent('Refine (done)');
   });
 
-  it("won't approve while a blank is left, then saves your edits and approves exactly that text", async () => {
-    const { onTaskChanged, onAiChanged } = renderTab({ status: 'PROMPT_REVIEW', refinedPrompt: 'Goal: search. [[FILL IN: which page?]]' });
-    const box = screen.getByRole('textbox', { name: "Claude's prompt" });
+  it("won't approve while a blank is left; Edit, Save, then Approve", async () => {
+    const { onTaskChanged, onAiChanged, update } = renderTab({ status: 'PROMPT_REVIEW', refinedPrompt: 'Goal: search. [[FILL IN: which page?]]' });
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument(); // the prompt is shown formatted, to read
+    expect(screen.getByText('1 blank to fill in before you can approve.', { exact: false })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Approve prompt' })).toBeDisabled();
 
+    await userEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    const box = screen.getByRole('textbox', { name: "Claude's prompt" });
+    expect(screen.queryByRole('button', { name: 'Approve prompt' })).not.toBeInTheDocument(); // one thing at a time
     await userEvent.clear(box);
     await userEvent.type(box, 'Goal: search on the notes page.');
-    await userEvent.click(screen.getByRole('button', { name: 'Approve prompt' }));
-
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
     expect(updateRefinedPrompt).toHaveBeenCalledWith(5, 'Goal: search on the notes page.');
+    update({ refinedPrompt: 'Goal: search on the notes page.' });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Approve prompt' }));
     expect(approvePrompt).toHaveBeenCalledWith(5);
     expect(onTaskChanged).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'IN_PROGRESS' }));
     expect(onAiChanged).toHaveBeenCalled(); // the bell and the runner's status catch up
+  });
+
+  it('Cancel throws away your edits', async () => {
+    renderTab({ status: 'PROMPT_REVIEW', refinedPrompt: 'Goal: search.' });
+    await userEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    await userEvent.type(screen.getByRole('textbox', { name: "Claude's prompt" }), ' Oops');
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(screen.getByText('Goal: search.')).toBeInTheDocument();
+    expect(updateRefinedPrompt).not.toHaveBeenCalled();
+  });
+
+  it('clicking a blank opens the edit box on it, and Next blank goes to the next one', async () => {
+    renderTab({ status: 'PROMPT_REVIEW', refinedPrompt: 'Page: [[FILL IN: which page?]]\nSize: `[[FILL IN: how big?]]`' });
+
+    await userEvent.click(screen.getByRole('button', { name: '[[FILL IN: how big?]]' }));
+    const box = screen.getByRole('textbox', { name: "Claude's prompt" });
+    expect(box.value.slice(box.selectionStart, box.selectionEnd)).toBe('[[FILL IN: how big?]]');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Next blank (2 left)' })); // wraps round to the first
+    expect(box.value.slice(box.selectionStart, box.selectionEnd)).toBe('[[FILL IN: which page?]]');
+
+    await userEvent.type(box, 'notes', { skipClick: true }); // typing replaces the selected blank
+    expect(screen.getByRole('button', { name: 'Next blank (1 left)' })).toBeInTheDocument();
   });
 
   it('Reject sends your feedback to Claude, which rewrites the prompt', async () => {

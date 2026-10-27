@@ -1324,31 +1324,16 @@
   overflow-wrap: anywhere;
 }
 
-/* A read-only prompt: a sunken box that keeps line breaks and scrolls when long */
-.ai-prompt {
-  max-height: 320px;
-  margin: 0;
-  overflow: auto;
-  padding: var(--space-3) var(--space-4);
-  background-color: var(--sunken);
-  border: 1px solid var(--divider);
-  border-radius: var(--radius-check);
-  color: var(--text);
-  font-family: var(--font-mono);
-  font-size: var(--fs-small);
-  line-height: 1.6;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-/* The editable prompt in Prompt Review */
+/* The edit box for the prompt (after clicking Edit, or a blank) */
 .ai-prompt-input {
+  min-height: 22rem;
+  padding: var(--space-4);
   font-family: var(--font-mono);
   font-size: var(--fs-small);
-  line-height: 1.6;
+  line-height: 1.7;
+  resize: vertical;
 }
 
-.ai-review,
 .ai-stopped,
 .runner-token-new {
   display: flex;
@@ -1433,6 +1418,84 @@
   color: var(--danger-text);
 }
 
+/* Claude's prompt, formatted (PromptView): its headings, paragraphs, lists and code */
+.prompt-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  color: var(--text-2);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.prompt-view h4 {
+  margin: var(--space-3) 0 0;
+  color: var(--text);
+  font-size: var(--fs-body);
+  font-weight: 600;
+}
+
+.prompt-view h4:first-child {
+  margin-top: 0;
+}
+
+.prompt-view strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.prompt-view ul {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding-left: var(--space-5);
+}
+
+.prompt-view li.depth-1 { margin-left: var(--space-5); }
+.prompt-view li.depth-2 { margin-left: var(--space-10); }
+.prompt-view li.depth-3 { margin-left: calc(var(--space-10) + var(--space-5)); }
+
+.prompt-view code,
+.prompt-view pre {
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  color: var(--text-pill);
+}
+
+.prompt-view code {
+  padding: 1px var(--space-1);
+  background-color: var(--raised);
+  border-radius: var(--radius-check);
+}
+
+.prompt-view pre {
+  margin: 0;
+  padding: var(--space-3);
+  overflow-x: auto;
+  background-color: var(--raised);
+  border-radius: var(--radius-check);
+}
+
+/* A [[FILL IN: …]] blank: stands out, and (in Prompt Review) opens the edit box on it when clicked */
+.prompt-blank {
+  padding: 1px var(--space-1);
+  background-color: color-mix(in srgb, var(--warning) 14%, transparent);
+  border: 1px dashed color-mix(in srgb, var(--warning) 60%, transparent);
+  border-radius: var(--radius-check);
+  color: var(--warning);
+  font: inherit;
+  text-align: left;
+}
+
+button.prompt-blank {
+  cursor: pointer;
+}
+
+button.prompt-blank:hover {
+  background-color: color-mix(in srgb, var(--warning) 24%, transparent);
+}
+
 /* A dot that pulses while the runner is on it. Still for anyone who asked for reduced motion. */
 .dot.pulsing {
   animation: ai-pulse 1.6s ease-in-out infinite;
@@ -1504,7 +1567,7 @@
   border-bottom-color: var(--accent);
 }
 
-/* The AI tab */
+/* The AI tab: status, then sections split by a divider (prompt, last build, history) */
 .ai-tab {
   display: flex;
   flex-direction: column;
@@ -1517,6 +1580,62 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
+}
+
+.ai-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--divider);
+}
+
+/* A section's title, with its one link on the right */
+.ai-section-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-3);
+}
+
+.ai-section-title {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--fs-h3);
+  font-weight: 600;
+}
+
+/* "2 blanks to fill in before you can approve" */
+.ai-notice {
+  color: var(--warning);
+  font-size: var(--fs-small);
+}
+
+/* The section's buttons, bottom-right, the main one last */
+.ai-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-3);
+}
+
+/* Rejecting: your feedback replaces the buttons, in the same place */
+.ai-feedback {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* The formatted prompt: a calm, scrolling reading area */
+.ai-prompt-box {
+  max-height: 26rem;
+  overflow: auto;
+  padding: var(--space-4) var(--space-5);
+  background-color: var(--sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
 }
 
 /* Refine → Approve → Work → Review */
@@ -1571,22 +1690,48 @@
   border-color: var(--accent);
 }
 
-/* Folded away until opened: the prompt (outside Prompt Review), notes and logs */
+/* Folded away until opened: the prompt (outside Prompt Review), notes and logs. Quiet rows split by a
+   line, each with an arrow that turns when it opens. */
+.ai-fold + .ai-fold {
+  border-top: 1px solid var(--divider-subtle);
+}
+
 .ai-fold summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--control-height);
   color: var(--text-2);
-  font-size: var(--fs-small);
   font-weight: 500;
+  list-style: none;
   cursor: pointer;
 }
 
-.ai-fold[open] summary {
-  margin-bottom: var(--space-3);
+.ai-fold summary::-webkit-details-marker {
+  display: none;
 }
 
-.ai-last-run {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
+.ai-fold summary::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform var(--ease);
+}
+
+.ai-fold summary:hover,
+.ai-fold[open] summary {
+  color: var(--text);
+}
+
+.ai-fold[open] summary::before {
+  transform: rotate(45deg);
+}
+
+.ai-fold[open] {
+  padding-bottom: var(--space-4);
 }
 
 .ai-run-line {
