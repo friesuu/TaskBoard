@@ -14,6 +14,7 @@ import { slug } from '../src/build.js';
 import { claudeSettings, sandboxDenyRead } from '../src/claude.js';
 import { run, sandboxedCommand, stopChildren } from '../src/shell.js';
 import { CHECK_EVERY_MS, nextCheckDelay, statusMessage } from '../src/watch.js';
+import { isOnBattery } from '../src/power.js';
 import { addPackageJson, removePlaceholders } from '../src/placeholders.js';
 import { homedir } from 'node:os';
 import { rmSync } from 'node:fs';
@@ -292,4 +293,14 @@ test("a project's own package.json is left alone", async () => {
     {
         rmSync(dir, { recursive: true, force: true });
     }
+});
+
+// ----- Only while plugged in -----
+
+test('nothing starts on battery, and watch mode checks again every 2 minutes', () => {
+    assert.equal(isOnBattery('False\r\n'), true);
+    assert.equal(isOnBattery('True\r\n'), false);
+    assert.equal(isOnBattery(''), false); // no battery at all: a desktop
+    assert.equal(nextCheckDelay({ status: 'unplugged' }), 2 * 60 * 1000);
+    assert.match(statusMessage({ status: 'unplugged' }), /On battery/);
 });

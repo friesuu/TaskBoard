@@ -33,8 +33,10 @@ gets its prompt, and an approved one gets built, almost straight away. It stays 
 changes. Press Ctrl+C once to stop after the step that's running (a build is never cut off halfway), or
 twice to stop straight away. Waiting costs nothing: Claude only runs when there's a step to do.
 
-It also runs by itself every 15 minutes through Windows Task Scheduler: see `schedule/README.md`.
-The two never get in each other's way: only one runner works at a time.
+It also runs by itself: Windows Task Scheduler starts watch mode in the background when you log in
+(and restarts it within 15 minutes if it ever stops), so you don't have to. Its output goes to
+`logs/watch.log`. See `schedule/README.md`. Running `pnpm watch` or `pnpm once` yourself at the same time
+is fine: only one runner works at a time. Nothing starts while the laptop is on battery.
 
 ## The safety locks
 
