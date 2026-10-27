@@ -73,6 +73,9 @@ const toastFor = (n) => ({
 // "Put this task at the bottom of its column" (the server treats a position past the end as the bottom)
 const BOTTOM = 1_000_000;
 
+// How often the open board checks the server for changes made elsewhere (e.g. by the Claude runner)
+const BOARD_CHECK_MS = 10_000;
+
 // The heading of each modal (openModal decides which one is open)
 const MODAL_TITLES = {
   add: 'Add New Task',
@@ -104,6 +107,11 @@ function App()
   const [taskTab, setTaskTab] = useState('details');
   const [reloadKey, setReloadKey] = useState(0); // goes up when you come back to the tab: the board reloads
   const lastAiRefresh = useRef(0);
+  // For the board's check every 10 seconds (below): how many times the task list has changed, and whether
+  // you're dragging a card or a change of yours is still saving
+  const tasksVersion = useRef(0);
+  const isDragging = useRef(false);
+  const pendingSaves = useRef(0);
 
   const filtersActive = hasActiveFilters(filters);
   // The board and the calendar are two views of the same (filtered) tasks
@@ -296,6 +304,35 @@ function App()
       window.removeEventListener('focus', handleReturn);
     };
   }, [user, refreshAi]);
+
+  // Every change to the task list, from anywhere, counts: a check that started before it is out of date
+  useEffect(() => {
+    tasksVersion.current += 1;
+  }, [tasks]);
+
+  // Changes made somewhere else (mostly the Claude runner moving cards to Prompt Review or AI Review, or
+  // another tab) show up by themselves: while the tab is visible, the board and the calendar ask the server
+  // again every 10 seconds. A check waits while you drag a card or a change of yours is still saving, and
+  // its answer is dropped if the task list changed meanwhile, so a card you just moved never jumps back.
+  useEffect(() => {
+    if (!user || boardId === null || !isBoardPage) return;
+    let isStale = false; // a late answer for a board (or filters) you've left
+    const timer = setInterval(() => {
+      if (document.visibilityState !== 'visible' || isDragging.current || pendingSaves.current > 0) return;
+      const version = tasksVersion.current;
+      getTasks(boardId, apiFilter)
+        .then((list) => {
+          if (isStale || isDragging.current || pendingSaves.current > 0 || tasksVersion.current !== version) return;
+          // Only when something changed, so an open task panel isn't redrawn every 10 seconds for nothing
+          setTasks((prev) => (JSON.stringify(prev) === JSON.stringify(list) ? prev : list));
+        })
+        .catch(endedSession); // anything else: the board stays as it is, and the next check tries again
+    }, BOARD_CHECK_MS);
+    return () => {
+      isStale = true;
+      clearInterval(timer);
+    };
+  }, [user, boardId, isBoardPage, apiFilter, endedSession]);
 
   // Opening the AI Activity page: the runner's status as it is now
   useEffect(() => {
@@ -504,6 +541,7 @@ function App()
 
     setError(null);
     setTasks((prev) => moveInList(prev, id, status, index));
+    pendingSaves.current += 1;
 
     try{
       const moved = await moveTask(id, status, index);
@@ -527,6 +565,9 @@ function App()
         setTasks(previous); // server unreachable: put the board back as it was
       }
     }
+    finally{
+      pendingSaves.current -= 1;
+    }
   };
 
   // The calendar moved a task to another day (dueDate 'YYYY-MM-DD', or null = no due date).
@@ -535,6 +576,7 @@ function App()
     const previous = tasks;
     setError(null);
     setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, dueDate } : t)));
+    pendingSaves.current += 1;
     try{
       const updated = await updateTask(id, { dueDate });
       if (filtersActive)
@@ -551,6 +593,9 @@ function App()
       if (endedSession(err)) return;
       setError(err.message);
       setTasks(previous);
+    }
+    finally{
+      pendingSaves.current -= 1;
     }
   };
 
@@ -608,6 +653,7 @@ function App()
   };
 
   const handleDragEnd = ({ source, destination, draggableId }) => {
+    isDragging.current = false;
     if (!destination) return; // dropped outside a column, or Esc pressed
     if (destination.droppableId === source.droppableId && destination.index === source.index) return; // dropped where it was
 
@@ -732,7 +778,7 @@ function App()
           )}
 
           {view === 'board' && (
-            <DragDropContext onDragEnd={handleDragEnd}>
+            <DragDropContext onDragStart={() => { isDragging.current = true; }} onDragEnd={handleDragEnd}>
               {/* A column filter shows only the chosen columns; --columns tells the grid how many */}
               <div className="board" style={{ '--columns': visibleStatuses.length }}>
               {visibleStatuses.map((s) => (
