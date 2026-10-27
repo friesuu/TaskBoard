@@ -125,7 +125,7 @@ export async function build({ job, project, config, branch, worktree, knownSecre
 const passedOrFailed = (result) => (result.code === 0 ? 'passed' : result.timedOut ? 'timed out' : 'FAILED');
 
 // The comment posted on the task when the build finishes
-export function summaryComment({ project, branch, result })
+export function summaryComment({ project, branch, result, auth = 'api' })
 {
     const { outcome, buildResult, testResult, changedFiles, summary, secretsFound } = result;
     if (secretsFound?.length)
@@ -146,7 +146,12 @@ export function summaryComment({ project, branch, result })
     else lines.push('Done: the build and tests passed.');
 
     lines.push('', `Branch: ${branch}`, `Build (${project.build}): ${passedOrFailed(buildResult)}`, `Tests (${project.test}): ${passedOrFailed(testResult)}`);
-    if (outcome.costUsd !== null) lines.push(`Cost of this run: $${outcome.costUsd.toFixed(2)}`);
+    if (outcome.costUsd !== null)
+    {
+        lines.push(auth === 'pro'
+            ? `Usage of this run: about $${outcome.costUsd.toFixed(2)} worth, counted toward your Pro plan's limit`
+            : `Cost of this run: $${outcome.costUsd.toFixed(2)}`);
+    }
 
     lines.push('', 'What changed:', summary ?? '(Claude gave no summary.)');
     lines.push('', 'Files:', changedFiles || '(no files changed)');

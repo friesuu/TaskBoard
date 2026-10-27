@@ -71,8 +71,25 @@ Each lock works on its own, so one mistake in any of them isn't enough to cause 
 Add it to `projects.json` (its folder must be a git repository with a `main` branch), then type its name
 under **Claude project** in that board's settings.
 
-## Switching to the Pro plan later
+## The Pro plan (branch `runner-pro`)
 
-Set `"auth": "pro"` in `config.json`, log in once with `claude` inside Ubuntu, and remove
-`ANTHROPIC_API_KEY` from `.env`. The runner then pauses cleanly when you hit your usage limit
-(`~/.task-runner/paused.json` says until when), and the daily dollar cap no longer applies.
+On the `runner-pro` branch, `config.json` says `"auth": "pro"`: Claude Code runs on your Claude Pro plan
+instead of the API key. To use it:
+
+1. Log in once inside Ubuntu: `claude auth login` (choose your Claude subscription, not the Console).
+   `claude auth status` shows whether you're logged in.
+2. Switch the project folder to the branch: `cd ~/task-board && git switch runner-pro`.
+3. Run `pnpm self-check`: on the Pro plan it also proves commands can't read your login.
+
+What changes on the Pro plan:
+- The runner refuses to start unless Claude Code is logged in to your subscription.
+- The API key in `.env` isn't used (you can leave it there, for switching back).
+- Runs count toward your plan's usage limit. When you hit it, the runner pauses until the limit resets
+  (`~/.task-runner/paused.json` says until when). The daily dollar cap doesn't apply; each step's cap
+  still stops a runaway run.
+- Task comments show what a run used, counted toward your plan's limit, instead of a cost.
+
+Anthropic's consumer terms don't allow scripted use of a subscription except where they explicitly
+permit it, and their rules for `claude -p` on a subscription changed several times in 2026. Using
+Claude Code itself on your own computer is the least contested case, but it's still a risk to your
+account. To go back to the API: `git switch main`.

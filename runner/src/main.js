@@ -9,6 +9,7 @@ import { dirname } from 'node:path';
 import { loadConfig } from './config.js';
 import { createApi } from './api.js';
 import { run, stopChildren } from './shell.js';
+import { checkProLogin } from './claude.js';
 import { watch } from './watch.js';
 import { releaseLock, takeLock } from './lock.js';
 import { refine } from './refine.js';
@@ -61,6 +62,11 @@ async function preflight(config)
     }
     const version = await run(config.claudePath, ['--version']);
     if (version.code !== 0) throw new Error(`Claude Code isn't working at ${config.claudePath}`);
+    if (config.auth === 'pro')
+    {
+        const problem = await checkProLogin(config);
+        if (problem) throw new Error(problem);
+    }
 
     // The sandbox needs these. Without them nothing runs (and no task is touched): it never runs unprotected.
     for (const tool of ['bwrap', 'socat'])
@@ -150,7 +156,7 @@ async function doBuild({ job, project, config, api, startedAt })
 
         const summary = result.setupFailed
             ? `I couldn't set up the project on branch ${branch}: ${result.setupFailed}`
-            : summaryComment({ project, branch, result });
+            : summaryComment({ project, branch, result, auth: config.auth });
         await api.finishBuild(job.task.id, summary);
 
         const checksPassed = result.setupFailed || result.secretsFound?.length

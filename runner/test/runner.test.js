@@ -10,8 +10,8 @@ import { between, outcomeOf } from '../src/claude.js';
 import { parseReset, pause, pausedUntil } from '../src/pause.js';
 import { spentToday, stepBudget } from '../src/budget.js';
 import { findSecrets } from '../src/secrets.js';
-import { slug } from '../src/build.js';
-import { claudeSettings, sandboxDenyRead } from '../src/claude.js';
+import { slug, summaryComment } from '../src/build.js';
+import { claudeSettings, proLoginProblem, sandboxDenyRead } from '../src/claude.js';
 import { run, sandboxedCommand, stopChildren } from '../src/shell.js';
 import { CHECK_EVERY_MS, nextCheckDelay, statusMessage } from '../src/watch.js';
 import { addPackageJson, removePlaceholders } from '../src/placeholders.js';
@@ -292,4 +292,26 @@ test("a project's own package.json is left alone", async () => {
     {
         rmSync(dir, { recursive: true, force: true });
     }
+});
+
+// ----- The Pro plan -----
+
+test('on the Pro plan, the runner only starts when Claude Code is logged in to your subscription', () => {
+    assert.match(proLoginProblem('{"loggedIn": false, "authMethod": "none"}'), /claude auth login/);
+    assert.match(proLoginProblem('{"loggedIn": true, "authMethod": "console"}'), /API account, not your Pro plan/);
+    assert.match(proLoginProblem('not json'), /Couldn't read/);
+    assert.equal(proLoginProblem('{"loggedIn": true, "authMethod": "claude.ai"}'), null);
+});
+
+test("the task's comment says what a run used: dollars on the API, the plan's limit on Pro", () => {
+    const result = {
+        outcome: { ok: true, costUsd: 0.53, text: '<summary>Added shortcuts</summary>' },
+        buildResult: { code: 0, stdout: '', stderr: '' },
+        testResult: { code: 0, stdout: '', stderr: '' },
+        changedFiles: 'M\tsrc/App.jsx',
+        summary: 'Added shortcuts',
+    };
+    const project = { path: '/p', build: 'npm run build', test: 'npm test' };
+    assert.match(summaryComment({ project, branch: 'ai/task-1-x', result }), /Cost of this run: \$0\.53/);
+    assert.match(summaryComment({ project, branch: 'ai/task-1-x', result, auth: 'pro' }), /about \$0\.53 worth, counted toward your Pro plan's limit/);
 });

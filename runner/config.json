@@ -1,5 +1,5 @@
 {
-  "auth": "api",
+  "auth": "pro",
   "taskBoardUrl": "http://localhost:3000/graphql",
   "claudePath": "~/.local/bin/claude",
   "worktreeRoot": "~/.task-runner/worktrees",

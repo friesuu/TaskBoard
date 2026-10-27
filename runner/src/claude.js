@@ -71,6 +71,34 @@ export function claudeEnv(config, { workdir, allowedCommands })
     return env;
 }
 
+// Pro mode: what's wrong with Claude Code's login, from `claude auth status` (JSON), or null when it's fine
+export function proLoginProblem(statusOutput)
+{
+    let status;
+    try
+    {
+        status = JSON.parse(statusOutput);
+    }
+    catch
+    {
+        return "Couldn't read Claude Code's login status (claude auth status)";
+    }
+    if (!status.loggedIn) return 'Claude Code isn\'t logged in to your Pro plan: run "claude auth login" in Ubuntu once';
+    if (/api|console/i.test(status.authMethod ?? '')) {
+        return 'Claude Code is logged in with an API account, not your Pro plan: run "claude auth login" and choose your Claude subscription';
+    }
+    return null;
+}
+
+// Asks Claude Code itself, without the API key in its environment (like every run in Pro mode)
+export async function checkProLogin(config)
+{
+    const env = { ...process.env };
+    delete env.ANTHROPIC_API_KEY;
+    const status = await run(config.claudePath, ['auth', 'status', '--json'], { env });
+    return proLoginProblem(status.stdout);
+}
+
 // step: config.steps.refine or config.steps.build. tools: the only tools that exist for this run.
 // allowedCommands: the exact Bash commands it may run (none for the refine step).
 export async function runClaude({ config, step, cwd, prompt, systemPrompt, tools, allowedCommands = [], denyReadExtra = [] })

@@ -5,12 +5,13 @@
 //   2. the sandbox stops a command reading a secret file
 //   3. the sandbox stops a command reaching the internet
 //   4. the API key isn't visible to commands (it reaches Claude Code only through the key helper)
+//   5. on the Pro plan: commands can't read your Claude login either
 import { mkdirSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { loadConfig } from './config.js';
-import { runClaude } from './claude.js';
+import { checkProLogin, runClaude } from './claude.js';
 import { run } from './shell.js';
 
 const PROBE_MODEL = 'claude-haiku-5-5';
@@ -21,6 +22,11 @@ async function main()
     for (const tool of ['bwrap', 'socat'])
     {
         if ((await run('sh', ['-c', `command -v ${tool}`])).code !== 0) throw new Error(`${tool} isn't installed: the sandbox needs it`);
+    }
+    if (config.auth === 'pro')
+    {
+        const problem = await checkProLogin(config);
+        if (problem) throw new Error(problem);
     }
 
     // A throwaway project to work in, and a "canary": a file with a random value outside it
@@ -87,9 +93,22 @@ async function main()
             ['Bash'], ['printenv ANTHROPIC_API_KEY']);
         report('commands can\'t see the API key', !key || !env.text.includes(key), stoppedBy('printenv ANTHROPIC_API_KEY'));
 
-        const cost = [read, echo, cat, net, env].reduce((sum, r) => sum + (r.costUsd ?? 0), 0);
+        // 5. Your Pro login: Claude Code keeps it in ~/.claude/.credentials.json, which the sandbox hides
+        const runs = [read, echo, cat, net, env];
+        if (config.auth === 'pro')
+        {
+            const credentials = join(homedir(), '.claude', '.credentials.json');
+            const login = await probe(`Run this exact command with the Bash tool: cat ${credentials}\nThen reply with exactly what it printed.`,
+                ['Bash'], [`cat ${credentials}`]);
+            report('commands can\'t read your Pro login', !/accessToken|refreshToken/i.test(login.text), stoppedBy(`cat ${credentials}`));
+            runs.push(login);
+        }
+
+        const cost = runs.reduce((sum, r) => sum + (r.costUsd ?? 0), 0);
         console.log(`\n${results.every(Boolean) ? 'All locks held.' : 'SOME LOCKS FAILED: don\'t use the runner on real projects until this is fixed.'} `
-            + `Cost of the self-check: about $${cost.toFixed(3)}.`);
+            + (config.auth === 'pro'
+                ? `Usage of the self-check: about $${cost.toFixed(3)} worth, counted toward your Pro plan's limit.`
+                : `Cost of the self-check: about $${cost.toFixed(3)}.`));
         if (!results.every(Boolean)) process.exitCode = 1;
     }
     finally
