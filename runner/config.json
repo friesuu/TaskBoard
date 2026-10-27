@@ -1,0 +1,12 @@
+{
+  "auth": "api",
+  "taskBoardUrl": "http://localhost:3000/graphql",
+  "claudePath": "~/.local/bin/claude",
+  "worktreeRoot": "~/.task-runner/worktrees",
+  "lockFile": "~/.task-runner/runner.lock",
+  "logFile": "./logs/runs.log",
+  "steps": {
+    "refine": { "model": "claude-sonnet-5-5", "maxBudgetUsd": 0.5, "maxTurns": 30, "timeoutMinutes": 15 },
+    "build": { "model": "claude-opus-5-5", "maxBudgetUsd": 2, "maxTurns": 60, "timeoutMinutes": 30 }
+  }
+}

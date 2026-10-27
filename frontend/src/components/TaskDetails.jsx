@@ -8,6 +8,7 @@ import { formatDueDate, isOverdue } from '../dates';
 import { CalendarIcon, CloseIcon } from './Icons';
 import Attachments from './Attachments';
 import TrashIcon from './TrashIcon';
+import AiSection from './AiSection';
 
 // The panel that opens when you click a task: details + notes (editable), checklist, comments.
 // App decides WHICH task is open and passes it in; everything here works on that one task.
@@ -20,13 +21,16 @@ import TrashIcon from './TrashIcon';
 //   onAttachmentCount(taskId, count)         -> App updates the 📎 count on the card
 //   onStatusChange(taskId, status)           -> App moves it to the bottom of another column
 //   onDelete(taskId)                         -> App deletes it (the panel then closes)
+//   boardProject                             -> the board's Claude project (null = Claude skips this board)
 function TaskDetails({
     task, currentUserId, onSave, onChecklistProgress, onSessionEnded, onClose,
     boardLabels = [], onTaskChanged, onAttachmentCount = () => {},
-    onStatusChange = () => {}, onDelete = () => {},
+    onStatusChange = () => {}, onDelete = () => {}, boardProject = null,
 })
 {
     const [isEditing, setIsEditing] = useState(false);
+    // Goes up after a Claude action that adds a comment: a new key makes React rebuild Comments, which reloads them
+    const [commentsVersion, setCommentsVersion] = useState(0);
 
     // Escape closes the panel (unless you're typing in the edit form, where Escape shouldn't lose your changes)
     useEffect(() => {
@@ -96,6 +100,14 @@ function TaskDetails({
                         </section>
                     )}
 
+                    <AiSection
+                        task={task}
+                        boardProject={boardProject}
+                        onTaskChanged={onTaskChanged}
+                        onCommentsChanged={() => setCommentsVersion((v) => v + 1)}
+                        onSessionEnded={onSessionEnded}
+                    />
+
                     <TaskLabels
                         task={task}
                         boardLabels={boardLabels}
@@ -115,7 +127,7 @@ function TaskDetails({
                         onCountChange={(count) => onAttachmentCount(task.id, count)}
                     />
                    
-                    <Comments taskId={task.id} currentUserId={currentUserId} onSessionEnded={onSessionEnded} />
+                    <Comments key={commentsVersion} taskId={task.id} currentUserId={currentUserId} onSessionEnded={onSessionEnded} />
 
                     {/* At the very bottom, away from everything else: deleting the whole task */}
                     <section className="details-section details-delete">

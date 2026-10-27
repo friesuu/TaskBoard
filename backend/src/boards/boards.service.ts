@@ -34,6 +34,13 @@ export class BoardsService {
     return this.boardsRepository.save(board);
   }
 
+  // The DTO has already checked it's a plain project name. Empty = no project.
+  async setProject(id: number, ownerId: number, project: string): Promise<Board> {
+    const board = await this.findOwned(id, ownerId);
+    board.project = project === '' ? null : project;
+    return this.boardsRepository.save(board);
+  }
+
   // Deletes the board and (ON DELETE CASCADE) its tasks. You always keep at least one board.
   async remove(id: number, ownerId: number): Promise<void> {
     await this.findOwned(id, ownerId);

@@ -1,0 +1,12 @@
+{
+  "name": "task-board-runner",
+  "private": true,
+  "description": "Turns AI-labelled tasks into prompts and builds approved ones with Claude Code. See README.md.",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "once": "node --env-file=.env src/main.js once"
+  }
+}

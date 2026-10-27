@@ -1,7 +1,9 @@
 import { STATUSES } from '../statuses';
 
 // Which number in the stats goes with each column
-const COUNT_OF = { TODO: 'todo', IN_PROGRESS: 'inProgress', DONE: 'done' };
+const COUNT_OF = {
+    TODO: 'todo', PROMPT_REVIEW: 'promptReview', IN_PROGRESS: 'inProgress', AI_REVIEW: 'aiReview', DONE: 'done',
+};
 
 // "Your tasks" on the profile: how much is done, the numbers per column, and this week.
 // stats: from getTaskStats (all your boards), null while loading. error: why loading failed.

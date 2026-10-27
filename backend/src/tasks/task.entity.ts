@@ -58,6 +58,38 @@ export class Task {
   @Column({ name: 'completed_at', type: 'timestamptz', nullable: true })
   completedAt: Date | null;
 
+  // ----- The Claude runner (only used on tasks with the "AI" label) -----
+
+  // The prompt Claude wrote for this task. You can edit it (e.g. fill in its blanks) while it's in Prompt Review.
+  @Field(() => String, { nullable: true })
+  @Column({ name: 'refined_prompt', type: 'text', nullable: true })
+  refinedPrompt: string | null;
+
+  // You clicked "Request changes": Claude revises the prompt on its next run ("Revising…" on the card)
+  @Field()
+  @Column({ name: 'changes_requested', default: false })
+  changesRequested: boolean;
+
+  // The exact prompt you approved. The runner only ever builds this text. Editing the prompt clears it.
+  // No @Field: only the runner needs it, and it gets it through its own API.
+  @Column({ name: 'approved_prompt', type: 'text', nullable: true })
+  approvedPrompt: string | null;
+
+  @Field(() => Date, { nullable: true })
+  @Column({ name: 'prompt_approved_at', type: 'timestamptz', nullable: true })
+  promptApprovedAt: Date | null;
+
+  // The git branch Claude built this task on, e.g. "ai/task-42-add-search". Set when the build starts.
+  @Field(() => String, { nullable: true })
+  @Column({ name: 'ai_branch', type: 'varchar', length: 100, nullable: true })
+  aiBranch: string | null;
+
+  // Why the runner stopped on this task (e.g. "spend cap reached"). While set, the runner skips the task
+  // until you click "Try again".
+  @Field(() => String, { nullable: true })
+  @Column({ name: 'ai_error', type: 'text', nullable: true })
+  aiError: string | null;
+
   @ManyToOne(() => User, { nullable: false, onDelete: 'CASCADE' }) // Many tasks belong to one user
   @JoinColumn({ name: 'owner_id' })
   owner: User;

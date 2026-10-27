@@ -295,6 +295,11 @@ function App()
     }
   };
 
+  // The board's Claude project was saved in Board settings: keep the new value
+  const handleBoardProjectChange = (updated) => {
+    setBoards((prev) => prev.map((b) => (b.id === updated.id ? updated : b)));
+  };
+
   // The server deletes the board's tasks too. Afterwards you land on your first remaining board.
   const handleDeleteBoard = async () => {
     try{
@@ -599,6 +604,7 @@ function App()
                   onDelete={handleDeleteBoard}
                   labels={labels}
                   onLabelsChanged={handleLabelsChanged}
+                  onProjectChanged={handleBoardProjectChange}
                   onSessionEnded={endedSession}
                 />
               )}
@@ -620,6 +626,7 @@ function App()
           onAttachmentCount={handleAttachmentCount}
           onStatusChange={handleStatusChange}
           onDelete={handleDelete}
+          boardProject={currentBoard?.project ?? null}
         />
       )}
     </div>

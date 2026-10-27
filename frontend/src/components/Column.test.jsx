@@ -61,6 +61,15 @@ describe('Column and TaskCard', () => {
     expect(card).toHaveClass('tone-warning'); // peach, like the In progress column
   });
 
+  it('says on the card what Claude is doing with the task', () => {
+    renderColumn([
+      { id: 1, title: 'Being revised', description: null, status: 'TODO', dueDate: null, changesRequested: true },
+      { id: 2, title: 'Stuck', description: null, status: 'TODO', dueDate: null, aiError: 'The spend cap was reached' },
+    ]);
+    expect(screen.getByText('Revising…')).toBeInTheDocument();
+    expect(screen.getByText('Claude stopped')).toBeInTheDocument();
+  });
+
   it('keeps the card itself simple: no column dropdown, Open button or bin', () => {
     renderColumn([{ id: 3, title: 'Card', description: null, status: 'TODO', dueDate: null }]);
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument();

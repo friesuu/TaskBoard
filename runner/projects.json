@@ -1,0 +1,9 @@
+{
+  "notes-app": {
+    "path": "~/runner-sandbox/notes-app",
+    "baseBranch": "main",
+    "setup": [],
+    "build": "npm run build",
+    "test": "npm test"
+  }
+}

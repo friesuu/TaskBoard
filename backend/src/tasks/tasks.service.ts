@@ -104,7 +104,9 @@ export class TasksService {
       .createQueryBuilder('task')
       .select('(COUNT(*))::int', 'total')
       .addSelect(count('"task"."status" = :todo'), 'todo')
+      .addSelect(count('"task"."status" = :promptReview'), 'promptReview')
       .addSelect(count('"task"."status" = :inProgress'), 'inProgress')
+      .addSelect(count('"task"."status" = :aiReview'), 'aiReview')
       .addSelect(count('"task"."status" = :done'), 'done')
       .addSelect(count('"task"."due_date" < :today AND "task"."status" != :done'), 'overdue')
       .addSelect(count('"task"."due_date" BETWEEN :monday AND :sunday AND "task"."status" != :done'), 'dueThisWeek')
@@ -116,7 +118,9 @@ export class TasksService {
       .where('"task"."owner_id" = :ownerId', { ownerId })
       .setParameters({
         todo: TaskStatus.TODO,
+        promptReview: TaskStatus.PROMPT_REVIEW,
         inProgress: TaskStatus.IN_PROGRESS,
+        aiReview: TaskStatus.AI_REVIEW,
         done: TaskStatus.DONE,
         today: todayIn(timeZone),
         monday,

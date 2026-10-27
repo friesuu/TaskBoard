@@ -284,6 +284,8 @@ input[type="checkbox"]:checked::before {
 .dot-info { background-color: var(--info); }
 .dot-success { background-color: var(--success); }
 .dot-warning { background-color: var(--warning); }
+.dot-prompt { background-color: var(--label-purple); }
+.dot-ai { background-color: var(--label-teal); }
 .dot-danger { background-color: var(--danger); }
 .dot-neutral { background-color: var(--neutral-dot); }
 

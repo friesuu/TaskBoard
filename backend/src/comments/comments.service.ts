@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { TaskComment } from './task-comment.entity';
@@ -32,6 +32,7 @@ export class CommentsService {
 
   async update(id: number, userId: number, body: string): Promise<TaskComment> {
     const comment = await this.findYours(id, userId);
+    if (comment.fromRunner) throw new BadRequestException("Claude's comments can't be edited");
     comment.body = body;
     return this.commentsRepository.save(comment);
   }

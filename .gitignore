@@ -5,3 +5,4 @@ dist/
 coverage/
 backups/
 backend/uploads/
+runner/logs/

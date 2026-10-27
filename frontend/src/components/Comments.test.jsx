@@ -48,6 +48,15 @@ describe('Comments', () => {
     expect(screen.queryByText('sam@test.com')).not.toBeInTheDocument();
   });
 
+  it("shows Claude's comments as Claude's, and they can't be edited", async () => {
+    vi.mocked(getComments).mockResolvedValue([{ ...mine, id: 12, body: 'I wrote a prompt for this task.', fromRunner: true }]);
+    renderComments();
+
+    expect(await screen.findByText('Claude')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Edit comment' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Delete comment' })).toBeInTheDocument();
+  });
+
   it('marks an edited comment', async () => {
     renderComments();
 

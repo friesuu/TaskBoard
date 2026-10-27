@@ -3,12 +3,14 @@ const GRAPHQL_URL = 'http://localhost:3000/graphql';
 const API_ORIGIN = GRAPHQL_URL.replace(/\/graphql$/, '');
 // checklistDone / checklistTotal = the "2/5" on the card
 const TASK_FIELDS =
-    'id title description status dueDate checklistDone checklistTotal attachmentCount labels { id name color }';
+    'id title description status dueDate checklistDone checklistTotal attachmentCount labels { id name color } '
+    // the Claude runner's part of the task (see AiSection)
+    + 'refinedPrompt changesRequested promptApprovedAt aiBranch aiError';
 const CHAT_FIELDS = 'id role content createdAt responseMs';
-const BOARD_FIELDS = 'id name';
+const BOARD_FIELDS = 'id name project';
 const ITEM_FIELDS = 'id text done position';
 const LABEL_FIELDS = 'id name color';
-const COMMENT_FIELDS = 'id body createdAt updatedAt author { id email displayName }';
+const COMMENT_FIELDS = 'id body createdAt updatedAt author { id email displayName } fromRunner';
 
 // Validation errors keep their real messages in originalError (as an array);
 // other errors have a readable message directly.
@@ -406,7 +408,7 @@ export async function setTimeZone(timeZone)
 export async function getTaskStats()
 {
     const data = await graphqlRequest(
-        'query { taskStats { total todo inProgress done overdue dueThisWeek doneThisWeek } }',
+        'query { taskStats { total todo promptReview inProgress aiReview done overdue dueThisWeek doneThisWeek } }',
     );
     return data.taskStats;
 }
@@ -489,4 +491,81 @@ export async function deleteAttachment(id)
         }`,
         { id },
     );
+}
+
+// ----- The Claude runner -----
+
+// Which project folder the runner works in for this board ('' = none). Returns the board.
+export async function setBoardProject(id, project)
+{
+    const data = await graphqlRequest(
+        `mutation SetBoardProject($id: Int!, $input: BoardProjectInput!) {
+            setBoardProject(id: $id, input: $input) { ${BOARD_FIELDS} }
+        }`,
+        { id, input: { project } },
+    );
+    return data.setBoardProject;
+}
+
+// Your edits to Claude's prompt (e.g. blanks filled in). Returns the task.
+export async function updateRefinedPrompt(taskId, prompt)
+{
+    const data = await graphqlRequest(
+        `mutation UpdateRefinedPrompt($taskId: Int!, $input: RefinedPromptInput!) {
+            updateRefinedPrompt(taskId: $taskId, input: $input) { ${TASK_FIELDS} }
+        }`,
+        { taskId, input: { prompt } },
+    );
+    return data.updateRefinedPrompt;
+}
+
+// Approve the prompt: the task moves to In progress and Claude builds it on its next run
+export async function approvePrompt(taskId)
+{
+    const data = await graphqlRequest(
+        `mutation ApprovePrompt($taskId: Int!) { approvePrompt(taskId: $taskId) { ${TASK_FIELDS} } }`,
+        { taskId },
+    );
+    return data.approvePrompt;
+}
+
+// Ask Claude to change the prompt: your comment goes on the task
+export async function requestPromptChanges(taskId, comment)
+{
+    const data = await graphqlRequest(
+        `mutation RequestPromptChanges($taskId: Int!, $input: PromptChangesInput!) {
+            requestPromptChanges(taskId: $taskId, input: $input) { ${TASK_FIELDS} }
+        }`,
+        { taskId, input: { comment } },
+    );
+    return data.requestPromptChanges;
+}
+
+// "Try again" after the runner stopped on a task
+export async function retryAiTask(taskId)
+{
+    const data = await graphqlRequest(
+        `mutation RetryAiTask($taskId: Int!) { retryAiTask(taskId: $taskId) { ${TASK_FIELDS} } }`,
+        { taskId },
+    );
+    return data.retryAiTask;
+}
+
+// Your runner token's details ({ createdAt, lastUsedAt }), or null if you haven't made one
+export async function getRunnerToken()
+{
+    const data = await graphqlRequest('query { runnerToken { createdAt lastUsedAt } }');
+    return data.runnerToken;
+}
+
+// A new runner token (replacing any old one). This is the only time it's ever shown.
+export async function createRunnerToken()
+{
+    const data = await graphqlRequest('mutation { createRunnerToken }');
+    return data.createRunnerToken;
+}
+
+export async function revokeRunnerToken()
+{
+    await graphqlRequest('mutation { revokeRunnerToken }');
 }

@@ -6,6 +6,7 @@ import TaskStatsPanel from "./TaskStatsPanel";
 import DisplayNameForm from "./DisplayNameForm";
 import TimeZoneForm from "./TimeZoneForm";
 import DeleteAccountForm from "./DeleteAccountForm";
+import RunnerTokenPanel from "./RunnerTokenPanel";
 
 // "1 task", "12 tasks"
 const plural = (count, word) => `${count} ${word}${count === 1 ? '' : 's'}`;
@@ -74,6 +75,10 @@ function Profile({ user, onBack, onChangePassword, onUserChange, onAccountDelete
                             <button className="btn btn-secondary" onClick={onChangePassword}>Change password</button>
                         </div>
                     </div>
+                </ProfileRow>
+
+                <ProfileRow {...rowProps('runner')} label="Runner token" preview="Lets the Claude runner reach your AI tasks">
+                    <RunnerTokenPanel onSessionEnded={onSessionEnded} />
                 </ProfileRow>
 
                 <ProfileRow {...rowProps('delete')} label="Delete account" preview="Remove your account and everything in it" danger>

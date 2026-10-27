@@ -6,6 +6,7 @@ import { User } from '../users/user.entity';
 import { Board } from './board.entity';
 import { BoardsService } from './boards.service';
 import { BoardNameDto } from './board-name.dto';
+import { BoardProjectDto } from './board-project.dto';
 
 @UseGuards(GqlAuthGuard)
 @Resolver(() => Board)
@@ -29,6 +30,16 @@ export class BoardsResolver {
     @Args('input') input: BoardNameDto,
   ): Promise<Board> {
     return this.boardsService.rename(id, user.id, input.name);
+  }
+
+  // Which project the Claude runner works in for this board ("" = none)
+  @Mutation(() => Board)
+  setBoardProject(
+    @CurrentUser() user: User,
+    @Args('id', { type: () => Int }) id: number,
+    @Args('input') input: BoardProjectDto,
+  ): Promise<Board> {
+    return this.boardsService.setProject(id, user.id, input.project);
   }
 
   @Mutation(() => Boolean)

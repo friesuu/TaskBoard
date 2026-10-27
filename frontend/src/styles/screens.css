@@ -29,6 +29,8 @@
 .column-info { --tone: var(--info); }
 .column-warning { --tone: var(--warning); }
 .column-success { --tone: var(--success); }
+.column-prompt { --tone: var(--label-purple); } /* Prompt Review */
+.column-ai { --tone: var(--label-teal); }       /* AI Review */
 
 /* While a card is dragged over it */
 .column.drag-over {
@@ -80,6 +82,21 @@
 .task-card.tone-info { --edge: var(--info); }       /* To do: periwinkle */
 .task-card.tone-warning { --edge: var(--warning); } /* In progress: peach */
 .task-card.tone-success { --edge: var(--success); } /* Done: mint */
+.task-card.tone-prompt { --edge: var(--label-purple); } /* Prompt Review: purple */
+.task-card.tone-ai { --edge: var(--label-teal); }       /* AI Review: teal */
+
+/* What Claude is doing with a task ("Revising…", "Claude stopped"), in the card's meta row */
+.task-ai-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--text-2);
+  font-size: var(--fs-small);
+}
+
+.task-ai-status.danger {
+  color: var(--danger-text);
+}
 
 /* Hover: the card rises a little. `translate` (not `transform`) so it adds to the drag library's own
    movement instead of fighting it, and not while dragging, where the card already floats. */
@@ -552,7 +569,7 @@
 
 .stat-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--space-3);
 }
 
@@ -1275,4 +1292,63 @@
 .checklist-compact .error-message,
 .attachments-compact .error-message {
   font-size: var(--fs-small);
+}
+
+/* ---------- The Claude runner (task panel, board settings, profile) ---------- */
+
+/* Where the task is in Claude's workflow ("Claude will write a prompt…") */
+.ai-state {
+  color: var(--text-2);
+}
+
+/* A prompt, a branch name or a token: monospace, so it reads as exact text */
+.ai-code {
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  overflow-wrap: anywhere;
+}
+
+/* A read-only prompt: a sunken box that keeps line breaks and scrolls when long */
+.ai-prompt {
+  max-height: 320px;
+  margin: 0;
+  overflow: auto;
+  padding: var(--space-3) var(--space-4);
+  background-color: var(--sunken);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-check);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* The editable prompt in Prompt Review */
+.ai-prompt-input {
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  line-height: 1.6;
+}
+
+.ai-review,
+.ai-stopped,
+.runner-token-new {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.ai-stopped {
+  align-items: flex-start;
+}
+
+/* A brand-new runner token: shown once, easy to select and copy */
+.runner-token-value {
+  padding: var(--space-3) var(--space-4);
+  background-color: var(--sunken);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-check);
+  user-select: all;
 }

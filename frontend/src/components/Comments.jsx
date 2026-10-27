@@ -86,7 +86,9 @@ function Comments({ taskId, currentUserId, onSessionEnded })
                     {comments.map((c) => (
                         <li key={c.id} className="comment">
                             <div className="comment-meta">
-                                <span className="comment-author" title={c.author.email}>{c.author.displayName || c.author.email}</span>
+                                {c.fromRunner
+                                    ? <span className="comment-author">Claude</span>
+                                    : <span className="comment-author" title={c.author.email}>{c.author.displayName || c.author.email}</span>}
                                 <time dateTime={c.createdAt}>{formatDateTime(c.createdAt)}</time>
                                 {c.updatedAt !== c.createdAt && <span className="comment-edited">(edited)</span>}
                             </div>
@@ -115,9 +117,12 @@ function Comments({ taskId, currentUserId, onSessionEnded })
 
                             {c.author.id === currentUserId && editingId !== c.id && (
                                 <div className="comment-actions">
-                                    <button className="btn btn-ghost" onClick={() => startEditing(c)} aria-label="Edit comment">
-                                        Edit
-                                    </button>
+                                    {/* Claude's comments are a record of what it did: they can be deleted, not edited */}
+                                    {!c.fromRunner && (
+                                        <button className="btn btn-ghost" onClick={() => startEditing(c)} aria-label="Edit comment">
+                                            Edit
+                                        </button>
+                                    )}
                                     <button className="btn btn-ghost danger-text" onClick={() => handleDelete(c)} aria-label="Delete comment">
                                         Delete
                                     </button>

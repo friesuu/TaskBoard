@@ -18,6 +18,13 @@ export class Board {
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 
+  // Which project folder the Claude runner works in for this board's "AI" tasks, e.g. "notes-app".
+  // Only a NAME: the runner looks it up in its own projects.json, so no folder path is ever stored here.
+  // null = no project: the runner leaves this board alone.
+  @Field(() => String, { nullable: true })
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  project: string | null;
+
   // Same ownership pattern as tasks. No @Field: the API never shows it.
   @ManyToOne(() => User, { nullable: false, onDelete: 'CASCADE' })
   @JoinColumn({ name: 'owner_id' })

@@ -87,6 +87,7 @@
 :root {
   /* ---- Type (Outfit 400/500/600, never 700) ---- */
   --font: 'Outfit', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; /* prompts, branch names, tokens */
   --fs-h1: 22px;            /* page title */
   --fs-h2: 18px;            /* section title, modal title */
   --fs-h3: 16px;            /* card / group title */

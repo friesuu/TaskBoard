@@ -1,11 +1,15 @@
 import { useState } from 'react';
 import BoardNameForm from './BoardNameForm';
 import LabelManager from './LabelManager';
+import BoardProjectForm from './BoardProjectForm';
 
 // Settings for the board on screen: rename it, or delete it (with all its tasks).
 // canDelete is false for your last board: the server refuses that anyway, this just explains it up front.
 // labels / onLabelsChanged / onSessionEnded are for the Labels section (LabelManager).
-function BoardSettings({ board, canDelete, onRename, onDelete, labels = [], onLabelsChanged, onSessionEnded })
+// onProjectChanged(updatedBoard): App updates the board after its Claude project changes.
+function BoardSettings({
+    board, canDelete, onRename, onDelete, labels = [], onLabelsChanged, onProjectChanged = () => {}, onSessionEnded,
+})
 {
     const [error, setError] = useState(null);
 
@@ -32,6 +36,8 @@ function BoardSettings({ board, canDelete, onRename, onDelete, labels = [], onLa
                 onLabelsChanged={onLabelsChanged}
                 onSessionEnded={onSessionEnded}
             />
+
+            <BoardProjectForm board={board} onSaved={onProjectChanged} onSessionEnded={onSessionEnded} />
 
             <div className="card danger-zone">
                 <h3>Delete board</h3>

@@ -1921,4 +1921,191 @@ describe('Tasks GraphQL API (e2e)', () => {
       expect(after.body.errors[0].extensions.code).toBe('UNAUTHENTICATED');
     });
   });
+
+  describe('Claude runner', () => {
+    const SET_PROJECT = `
+      mutation SetBoardProject($id: Int!, $input: BoardProjectInput!) { setBoardProject(id: $id, input: $input) { id project } }
+    `;
+    const NEXT_JOB = `
+      query { runnerNextJob { kind project approvedPrompt task { id status } comments { body fromRunner } checklist { text } } }
+    `;
+    const SAVE_PROMPT = `
+      mutation ($taskId: Int!, $input: RunnerPromptInput!) { runnerSavePrompt(taskId: $taskId, input: $input) { id status refinedPrompt changesRequested } }
+    `;
+    const START_BUILD = `
+      mutation ($taskId: Int!, $input: RunnerBuildStartInput!) { runnerStartBuild(taskId: $taskId, input: $input) { id aiBranch } }
+    `;
+    const FINISH_BUILD = `
+      mutation ($taskId: Int!, $input: RunnerBuildResultInput!) { runnerFinishBuild(taskId: $taskId, input: $input) { id status } }
+    `;
+    const REPORT_ERROR = `
+      mutation ($taskId: Int!, $input: RunnerErrorInput!) { runnerReportError(taskId: $taskId, input: $input) { id aiError } }
+    `;
+    const EDIT_PROMPT = `
+      mutation ($taskId: Int!, $input: RefinedPromptInput!) { updateRefinedPrompt(taskId: $taskId, input: $input) { id refinedPrompt } }
+    `;
+    const APPROVE = `mutation ($taskId: Int!) { approvePrompt(taskId: $taskId) { id status promptApprovedAt } }`;
+    const REQUEST_CHANGES = `
+      mutation ($taskId: Int!, $input: PromptChangesInput!) { requestPromptChanges(taskId: $taskId, input: $input) { id status changesRequested } }
+    `;
+    const RETRY = `mutation ($taskId: Int!) { retryAiTask(taskId: $taskId) { id aiError } }`;
+    const RUNNER_COMMENTS = `query ($taskId: Int!) { comments(taskId: $taskId) { id body fromRunner } }`;
+
+    let token: string;
+
+    // As the runner: its token in the Authorization header, no cookie
+    const asRunner = (query: string, variables?: Record<string, unknown>, bearer = token) =>
+      request(app.getHttpServer()).post('/graphql').set('Authorization', `Bearer ${bearer}`).send({ query, variables });
+
+    const ok = async (pending: Promise<{ body: { data: Record<string, unknown>; errors?: { message: string }[] } }>) => {
+      const res = await pending;
+      expect(res.body.errors).toBeUndefined();
+      return res.body.data;
+    };
+    const nextJob = async () => (await ok(asRunner(NEXT_JOB))).runnerNextJob as {
+      kind: string; project: string; approvedPrompt: string | null; task: { id: number; status: string };
+      comments: { body: string; fromRunner: boolean }[]; checklist: { text: string }[];
+    } | null;
+
+    // A board with a project, and a task on it with the "AI" label
+    const aiTask = async (title = 'Add a search box', { project = 'notes-app', label = 'AI' } = {}) => {
+      const board = (await gql(CREATE_BOARD, { input: { name: 'Runner board' } }).expect(200)).body.data.createBoard;
+      await gql(SET_PROJECT, { id: board.id, input: { project } }).expect(200);
+      const created = (await gql(CREATE_LABEL, { boardId: board.id, input: { name: label, color: 'TEAL' } }).expect(200)).body.data.createLabel;
+      const task = await createTask({ title, boardId: board.id });
+      await gql(SET_TASK_LABELS, { taskId: task.id, input: { labelIds: [created.id] } }).expect(200);
+      return { task, board };
+    };
+
+    beforeAll(async () => {
+      token = (await gql(`mutation { createRunnerToken }`).expect(200)).body.data.createRunnerToken;
+    });
+
+    it('a board project must be a plain name, never a path', async () => {
+      const board = (await gql(CREATE_BOARD, { input: { name: 'Projects' } }).expect(200)).body.data.createBoard;
+
+      const named = await gql(SET_PROJECT, { id: board.id, input: { project: '  Notes-App ' } }).expect(200);
+      const path = await gql(SET_PROJECT, { id: board.id, input: { project: '../../etc' } }).expect(200);
+      const cleared = await gql(SET_PROJECT, { id: board.id, input: { project: '' } }).expect(200);
+
+      expect(named.body.data.setBoardProject.project).toBe('notes-app');
+      expect(path.body.errors[0].extensions.originalError.message[0]).toContain('Use a project name from the runner');
+      expect(cleared.body.data.setBoardProject.project).toBeNull();
+    });
+
+    it('the runner token only works for the runner, and a revoked token stops working', async () => {
+      expect((await ok(asRunner(`query { runnerPing }`))).runnerPing).toBe(true);
+
+      const asTasks = await asRunner(TASKS, { boardId }).expect(200); // a normal operation with the runner token
+      expect(asTasks.body.errors[0].extensions.code).toBe('UNAUTHENTICATED');
+      const withCookie = await gql(`query { runnerPing }`).expect(200); // and the runner's operations need the token
+      expect(withCookie.body.errors[0].extensions.code).toBe('UNAUTHENTICATED');
+      const madeUp = await asRunner(`query { runnerPing }`, undefined, 'tbr_made-up').expect(200);
+      expect(madeUp.body.errors[0].extensions.code).toBe('UNAUTHENTICATED');
+
+      const info = (await ok(gql(`query { runnerToken { createdAt lastUsedAt } }`))).runnerToken as { lastUsedAt: string };
+      expect(info.lastUsedAt).not.toBeNull();
+
+      await ok(gql(`mutation { revokeRunnerToken }`));
+      const revoked = await asRunner(`query { runnerPing }`).expect(200);
+      expect(revoked.body.errors[0].extensions.code).toBe('UNAUTHENTICATED');
+      token = (await gql(`mutation { createRunnerToken }`).expect(200)).body.data.createRunnerToken; // for the next tests
+    });
+
+    it('only picks up "AI" tasks on boards with a project', async () => {
+      await createTask({ title: 'Not for Claude' }); // no label
+      await aiTask('No project', { project: '' });
+      expect(await nextJob()).toBeNull();
+
+      const { task } = await aiTask('For Claude', { label: 'ai' }); // any capitals
+      const job = await nextJob();
+      expect(job).toMatchObject({ kind: 'REFINE', project: 'notes-app', task: { id: task.id, status: 'TODO' } });
+    });
+
+    it('runs the whole flow: prompt, review, approve, build, AI Review', async () => {
+      const { task } = await aiTask();
+
+      // 1. The runner writes the prompt: the task goes to Prompt Review, with a comment from Claude
+      const saved = (await ok(asRunner(SAVE_PROMPT, { taskId: task.id, input: { prompt: 'Goal: search. [[FILL IN: which page?]]' } })))
+        .runnerSavePrompt as { status: string };
+      expect(saved.status).toBe('PROMPT_REVIEW');
+      expect(await nextJob()).toBeNull(); // nothing to do until you've reviewed it
+
+      // 2. You can't approve it with a blank left, and approving is the only way to a build
+      const blank = await gql(APPROVE, { taskId: task.id }).expect(200);
+      expect(blank.body.errors[0].message).toContain('Fill in the [[FILL IN: …]] blanks');
+      const early = await asRunner(START_BUILD, { taskId: task.id, input: { branch: `ai/task-${task.id}-search` } }).expect(200);
+      expect(early.body.errors[0].message).toContain("isn't waiting for this step");
+
+      // 3. You fill in the blank and approve: the task moves to In progress, and THIS text gets built
+      await ok(gql(EDIT_PROMPT, { taskId: task.id, input: { prompt: 'Goal: search on the notes page.' } }));
+      const approved = (await ok(gql(APPROVE, { taskId: task.id }))).approvePrompt as { status: string; promptApprovedAt: string };
+      expect(approved).toMatchObject({ status: 'IN_PROGRESS' });
+      expect(approved.promptApprovedAt).not.toBeNull();
+      const job = await nextJob();
+      expect(job).toMatchObject({ kind: 'BUILD', approvedPrompt: 'Goal: search on the notes page.' });
+
+      // 4. The branch name is checked, and once started the task isn't handed out again
+      const badBranch = await asRunner(START_BUILD, { taskId: task.id, input: { branch: 'main' } }).expect(200);
+      expect(badBranch.body.errors[0].extensions.originalError.message[0]).toContain('ai/task-12-short-title');
+      await ok(asRunner(START_BUILD, { taskId: task.id, input: { branch: `ai/task-${task.id}-search` } }));
+      expect(await nextJob()).toBeNull();
+
+      // 5. Finished: AI Review, with the summary as Claude's comment
+      const finished = (await ok(asRunner(FINISH_BUILD, { taskId: task.id, input: { summary: 'Done: build and tests passed.' } })))
+        .runnerFinishBuild as { status: string };
+      expect(finished.status).toBe('AI_REVIEW');
+      const comments = (await ok(gql(RUNNER_COMMENTS, { taskId: task.id }))).comments as { body: string; fromRunner: boolean }[];
+      expect(comments.filter((c) => c.fromRunner).map((c) => c.body)).toEqual([
+        expect.stringContaining('I wrote a prompt for this task'),
+        `Started building on branch ai/task-${task.id}-search.`,
+        'Done: build and tests passed.',
+      ]);
+    });
+
+    it('"Request changes" keeps the task in Prompt Review and Claude revises it', async () => {
+      const { task } = await aiTask();
+      await ok(asRunner(SAVE_PROMPT, { taskId: task.id, input: { prompt: 'First try' } }));
+
+      const asked = (await ok(gql(REQUEST_CHANGES, { taskId: task.id, input: { comment: 'Use the existing search helper' } })))
+        .requestPromptChanges as { status: string; changesRequested: boolean };
+      expect(asked).toEqual({ id: task.id, status: 'PROMPT_REVIEW', changesRequested: true });
+
+      const job = await nextJob();
+      expect(job?.kind).toBe('REFINE');
+      expect(job?.comments.map((c) => c.body)).toContain('Use the existing search helper');
+
+      const revised = (await ok(asRunner(SAVE_PROMPT, { taskId: task.id, input: { prompt: 'Second try' } }))).runnerSavePrompt;
+      expect(revised).toMatchObject({ status: 'PROMPT_REVIEW', refinedPrompt: 'Second try', changesRequested: false });
+    });
+
+    it('a task the runner stopped on is skipped until you click "Try again"', async () => {
+      const { task } = await aiTask();
+      await ok(asRunner(REPORT_ERROR, { taskId: task.id, input: { message: 'The spend cap for this step was reached' } }));
+      expect(await nextJob()).toBeNull();
+
+      await ok(gql(RETRY, { taskId: task.id }));
+      expect((await nextJob())?.task.id).toBe(task.id);
+    });
+
+    it("Claude's comments can't be edited", async () => {
+      const { task } = await aiTask();
+      await ok(asRunner(SAVE_PROMPT, { taskId: task.id, input: { prompt: 'A prompt' } }));
+      const [comment] = (await ok(gql(RUNNER_COMMENTS, { taskId: task.id }))).comments as { id: number }[];
+
+      const res = await gql(UPDATE_COMMENT, { id: comment.id, input: { body: 'Rewritten' } }).expect(200);
+      expect(res.body.errors[0].message).toBe("Claude's comments can't be edited");
+    });
+
+    it("another user's runner token can't see or touch your tasks", async () => {
+      const { task } = await aiTask();
+      const otherToken = (await gqlAsOther(`mutation { createRunnerToken }`).expect(200)).body.data.createRunnerToken;
+
+      const job = await asRunner(NEXT_JOB, undefined, otherToken).expect(200);
+      const save = await asRunner(SAVE_PROMPT, { taskId: task.id, input: { prompt: 'Sneaky' } }, otherToken).expect(200);
+
+      expect(job.body.data.runnerNextJob).toBeNull();
+      expect(save.body.errors[0].message).toContain("isn't waiting for this step");
+    });
+  });
 });

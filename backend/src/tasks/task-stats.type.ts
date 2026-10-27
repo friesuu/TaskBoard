@@ -11,7 +11,13 @@ export class TaskStats {
   todo: number;
 
   @Field(() => Int)
+  promptReview: number;
+
+  @Field(() => Int)
   inProgress: number;
+
+  @Field(() => Int)
+  aiReview: number;
 
   @Field(() => Int)
   done: number;

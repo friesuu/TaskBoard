@@ -6,7 +6,9 @@ import { getTaskStats, setDisplayName, setTimeZone, deleteAccount } from '../api
 
 vi.mock('../api');
 
-const STATS = { total: 8, todo: 3, inProgress: 2, done: 3, overdue: 1, dueThisWeek: 2, doneThisWeek: 1 };
+const STATS = {
+  total: 8, todo: 3, promptReview: 0, inProgress: 2, aiReview: 0, done: 3, overdue: 1, dueThisWeek: 2, doneThisWeek: 1,
+};
 const user = { id: 1, email: 'sam@test.com', timeZone: 'Asia/Kuala_Lumpur', displayName: null };
 
 function renderProfile(props = {}) {
