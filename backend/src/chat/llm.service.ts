@@ -3,7 +3,7 @@ import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config';
 import type { BetaRunnableTool } from '@anthropic-ai/sdk/lib/tools/BetaRunnableTool';
 
-const CHAT_MODEL = 'claude-sonnet-5-5';
+const CHAT_MODEL = 'claude-opus-5-5';
 
 const SYSTEM_PROMPT = `You are the assistant inside a personal task board app.
 Help the user plan, prioritise and manage their own tasks.
