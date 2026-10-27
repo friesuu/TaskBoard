@@ -2,6 +2,7 @@ import { betaZodTool } from '@anthropic-ai/sdk/helpers/beta/zod';
 import { z } from 'zod';
 import { TasksService } from '../tasks/tasks.service';
 import { TaskStatus } from '../tasks/tasks-status.enum';
+import { UpdateTaskDto } from '../tasks/update-task.dto';
 import { NotFoundException } from '@nestjs/common';
 
 const STATUS = z.enum(['todo', 'in_progress', 'done']); // the same names Claude sees in <my_tasks>
@@ -38,16 +39,17 @@ export function taskTools(tasksService: TasksService, ownerId: number, boardId: 
       name: 'update_task',
       description:
         "Change a task's title, description or due date, using its id from <my_tasks>. " +
-        'To change its column, use move_task instead.',
+        'To change its column, use move_task instead; for labels and checklists, their own tools.',
       inputSchema: z.object({
         id: z.number().int(),
         title: z.string().trim().min(1).max(100).optional(),
         description: z.string().max(10000).optional(),
-        dueDate: DATE.optional().describe('YYYY-MM-DD'),
+        dueDate: DATE.nullable().optional().describe('YYYY-MM-DD, or null to remove the due date'),
       }),
       run: async ({ id, ...changes }) => {
         await checkOnThisBoard(id);
-        const task = await tasksService.update(id, changes, ownerId);
+        // dueDate null removes it, as the app's own "No due date" does (the DTO's type only says string)
+        const task = await tasksService.update(id, changes as UpdateTaskDto, ownerId);
         return `Updated task #${task.id} "${task.title}".`;
       },
     }),

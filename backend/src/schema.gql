@@ -197,8 +197,8 @@ type Query {
   agentRunLog(runId: Int!): [AgentRunLog!]!
   notifications: [Notification!]!
   unreadNotificationCount: Int!
-  checklistItems(taskId: Int!): [ChecklistItem!]!
   labels(boardId: Int!): [Label!]!
+  checklistItems(taskId: Int!): [ChecklistItem!]!
   attachments(taskId: Int!): [Attachment!]!
 }
 
@@ -251,14 +251,14 @@ type Mutation {
   runnerReportStatus(input: RunnerStatusInput!): Boolean!
   markNotificationRead(id: Int!): Notification!
   markAllNotificationsRead: Int!
-  addChecklistItem(taskId: Int!, input: ChecklistItemInput!): ChecklistItem!
-  updateChecklistItem(id: Int!, input: UpdateChecklistItemInput!): ChecklistItem!
-  moveChecklistItem(id: Int!, position: Int!): [ChecklistItem!]!
-  deleteChecklistItem(id: Int!): Boolean!
   createLabel(boardId: Int!, input: LabelInput!): Label!
   updateLabel(id: Int!, input: UpdateLabelInput!): Label!
   deleteLabel(id: Int!): Boolean!
   setTaskLabels(taskId: Int!, input: SetTaskLabelsInput!): Task!
+  addChecklistItem(taskId: Int!, input: ChecklistItemInput!): ChecklistItem!
+  updateChecklistItem(id: Int!, input: UpdateChecklistItemInput!): ChecklistItem!
+  moveChecklistItem(id: Int!, position: Int!): [ChecklistItem!]!
+  deleteChecklistItem(id: Int!): Boolean!
   deleteAttachment(id: Int!): Boolean!
   setDisplayName(input: DisplayNameInput!): User!
   deleteAccount(input: DeleteAccountInput!): Boolean!
@@ -375,15 +375,6 @@ input RunnerStatusInput {
   pausedUntil: DateTime
 }
 
-input ChecklistItemInput {
-  text: String!
-}
-
-input UpdateChecklistItemInput {
-  text: String
-  done: Boolean
-}
-
 input LabelInput {
   name: String!
   color: LabelColor!
@@ -396,6 +387,15 @@ input UpdateLabelInput {
 
 input SetTaskLabelsInput {
   labelIds: [Int!]!
+}
+
+input ChecklistItemInput {
+  text: String!
+}
+
+input UpdateChecklistItemInput {
+  text: String
+  done: Boolean
 }
 
 input DisplayNameInput {

@@ -16,6 +16,7 @@ import { TasksModule } from '../tasks/tasks.module';
     TasksModule, // for TasksService.findOwned ("is this task yours?")
   ],
   providers: [LabelsService, LabelsResolver],
+  exports: [LabelsService], // the chat assistant edits labels
 })
 export class LabelsModule {}
 

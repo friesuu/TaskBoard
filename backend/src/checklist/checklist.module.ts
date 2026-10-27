@@ -13,5 +13,6 @@ import { TasksModule } from '../tasks/tasks.module';
     TasksModule, // for TasksService.findOwned ("is this task yours?")
   ],
   providers: [ChecklistService, ChecklistResolver],
+  exports: [ChecklistService], // the chat assistant reads and edits checklists
 })
 export class ChecklistModule {}

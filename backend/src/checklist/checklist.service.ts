@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { ChecklistItem } from './checklist-item.entity';
 import { UpdateChecklistItemDto } from './checklist-item.dto';
 import { TasksService } from '../tasks/tasks.service';
@@ -57,6 +57,18 @@ export class ChecklistService {
       list.forEach((i, index) => { i.position = index; });
       return repo.save(list);
     });
+  }
+
+  // One of your items (the chat assistant checks which board its task is on before changing it)
+  findOne(id: number, ownerId: number): Promise<ChecklistItem> {
+    return this.findOwned(this.itemsRepository, id, ownerId);
+  }
+
+  // The checklists of several tasks at once, each top to bottom (for the chat assistant's view of a board).
+  // The caller passes tasks it already loaded as yours.
+  forTasks(taskIds: number[]): Promise<ChecklistItem[]> {
+    if (taskIds.length === 0) return Promise.resolve([]);
+    return this.itemsRepository.find({ where: { taskId: In(taskIds) }, order: { taskId: 'ASC', position: 'ASC', id: 'ASC' } });
   }
 
   async remove(id: number, ownerId: number): Promise<void> {
