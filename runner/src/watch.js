@@ -6,6 +6,7 @@
 export const CHECK_EVERY_MS = 30 * 1000;
 const CAPPED_RECHECK_MS = 10 * 60 * 1000;
 const PAUSED_RECHECK_MAX_MS = 5 * 60 * 1000;
+const UNPLUGGED_RECHECK_MS = 2 * 60 * 1000;
 
 // How long to wait before the next check, after a step that ended with `result.status`
 export function nextCheckDelay(result, now = new Date())
@@ -15,6 +16,7 @@ export function nextCheckDelay(result, now = new Date())
         case 'done': return 0; // something else may be waiting: check again straight away
         case 'paused': return Math.max(1000, Math.min(result.until - now, PAUSED_RECHECK_MAX_MS));
         case 'capped': return CAPPED_RECHECK_MS;
+        case 'unplugged': return UNPLUGGED_RECHECK_MS;
         default: return CHECK_EVERY_MS; // nothing waiting, another runner busy, or an error
     }
 }
@@ -28,6 +30,7 @@ export function statusMessage(result)
         case 'capped': return "Today's spend cap is used up: checking again every 10 minutes.";
         case 'paused': return `Paused until ${result.until.toLocaleString()} (usage limit).`;
         case 'busy': return 'Another runner is working (the schedule?): waiting for it.';
+        case 'unplugged': return 'On battery: waiting until the laptop is plugged in (checking every 2 minutes).';
         case 'error': return `Problem: ${result.error}. Trying again in 30 seconds.`;
         default: return null;
     }

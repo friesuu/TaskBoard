@@ -16,6 +16,7 @@ import { refine } from './refine.js';
 import { build, checkProject, prepareMainCopy, prepareWorktree, removeWorktree, summaryComment } from './build.js';
 import { parseReset, pause, pausedUntil } from './pause.js';
 import { MIN_STEP_BUDGET_USD, spentToday, stepBudget } from './budget.js';
+import { onBattery } from './power.js';
 
 const say = (message) => console.log(`[runner] ${message}`);
 const dollars = (amount) => `$${amount.toFixed(2)}`;
@@ -201,7 +202,7 @@ function todaysBudgets(config)
 // At most one step for one task. Returns what happened, for watch mode:
 //   { status: 'done' }  a step ran          { status: 'idle' }    nothing waiting
 //   { status: 'paused', until }  Pro limit  { status: 'capped' }  today's spend cap used up
-//   { status: 'busy' }  another runner holds the lock
+//   { status: 'busy' }  another runner holds the lock     { status: 'unplugged' } on battery
 // quiet: say nothing about idle / paused / capped / busy (watch mode reports only changes)
 async function runOneStep({ quiet = false } = {})
 {
@@ -245,6 +246,11 @@ async function runOneStep({ quiet = false } = {})
         {
             note('Nothing to do.');
             return { status: 'idle' };
+        }
+        if (await onBattery())
+        {
+            note('The laptop is on battery: nothing starts until it\'s plugged in.');
+            return { status: 'unplugged' };
         }
         const startedAt = new Date();
         const stepName = job.kind === 'BUILD' ? 'build' : 'refine';

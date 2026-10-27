@@ -14,6 +14,7 @@ import { slug, summaryComment } from '../src/build.js';
 import { claudeSettings, proLoginProblem, sandboxDenyRead } from '../src/claude.js';
 import { run, sandboxedCommand, stopChildren } from '../src/shell.js';
 import { CHECK_EVERY_MS, nextCheckDelay, statusMessage } from '../src/watch.js';
+import { isOnBattery } from '../src/power.js';
 import { addPackageJson, removePlaceholders } from '../src/placeholders.js';
 import { homedir } from 'node:os';
 import { rmSync } from 'node:fs';
@@ -314,4 +315,14 @@ test("the task's comment says what a run used: dollars on the API, the plan's li
     const project = { path: '/p', build: 'npm run build', test: 'npm test' };
     assert.match(summaryComment({ project, branch: 'ai/task-1-x', result }), /Cost of this run: \$0\.53/);
     assert.match(summaryComment({ project, branch: 'ai/task-1-x', result, auth: 'pro' }), /about \$0\.53 worth, counted toward your Pro plan's limit/);
+});
+
+// ----- Only while plugged in -----
+
+test('nothing starts on battery, and watch mode checks again every 2 minutes', () => {
+    assert.equal(isOnBattery('False\r\n'), true);
+    assert.equal(isOnBattery('True\r\n'), false);
+    assert.equal(isOnBattery(''), false); // no battery at all: a desktop
+    assert.equal(nextCheckDelay({ status: 'unplugged' }), 2 * 60 * 1000);
+    assert.match(statusMessage({ status: 'unplugged' }), /On battery/);
 });

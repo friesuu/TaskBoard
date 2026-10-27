@@ -1,6 +1,6 @@
 #!/bin/bash
-# Started by Windows Task Scheduler every 15 minutes (see schedule/install-windows-task.ps1).
-# Runs one step of the runner, and adds its output, with the time, to logs/scheduler.log.
+# One step of the runner, with its output and the time added to logs/scheduler.log. Windows Task Scheduler
+# used to start this every 15 minutes; it now keeps watch mode running instead (bin/scheduled-watch.sh).
 cd "$(dirname "$0")/.." || exit 1
 mkdir -p logs
 export NVM_DIR="$HOME/.nvm"
