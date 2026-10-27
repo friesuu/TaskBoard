@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from './App';
@@ -111,6 +111,40 @@ describe('App', () => {
 
     expect(await screen.findByText('Write report (moved)')).toBeInTheDocument();
     expect(vi.mocked(getTasks).mock.calls.length).toBeGreaterThan(loadsBefore);
+  });
+
+  describe('checks the server every 10 seconds', () => {
+    beforeEach(() => {
+      vi.useFakeTimers({ shouldAdvanceTime: true }); // the clock still runs, so findBy… keeps working
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+      Reflect.deleteProperty(document, 'visibilityState'); // back to jsdom's own "visible"
+    });
+
+    it('shows a change made elsewhere (e.g. by the runner) without a refresh', async () => {
+      vi.mocked(getCurrentUser).mockResolvedValue(user);
+      render(<App />);
+      await screen.findByText('Write report');
+
+      const fromRunner = { id: 4, title: 'Built by Claude', description: null, status: 'AI_REVIEW', dueDate: null };
+      vi.mocked(getTasks).mockResolvedValue([...tasks, fromRunner]);
+      await vi.advanceTimersByTimeAsync(9_000);
+      expect(screen.queryByText('Built by Claude')).not.toBeInTheDocument();
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(await screen.findByText('Built by Claude')).toBeInTheDocument();
+    });
+
+    it("doesn't check while the tab is hidden", async () => {
+      vi.mocked(getCurrentUser).mockResolvedValue(user);
+      render(<App />);
+      await screen.findByText('Write report');
+      const calls = vi.mocked(getTasks).mock.calls.length;
+
+      Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(getTasks).toHaveBeenCalledTimes(calls);
+    });
   });
 
   it('opens your first board and puts it in the address bar', async () => {
