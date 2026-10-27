@@ -9,7 +9,7 @@ before each step, so pulling the plug never cuts a build off halfway. The output
 The task board itself (its backend) must be running for the runner to do anything. When it isn't, watch
 mode notes "Can't use the task board" in the log and tries again every 30 seconds.
 
-Run these in **PowerShell** (Windows, not Ubuntu):
+Run these in **PowerShell** (Windows), except where it says Ubuntu:
 
 | What | Command |
 | --- | --- |
@@ -17,7 +17,7 @@ Run these in **PowerShell** (Windows, not Ubuntu):
 | Switch it off | `Disable-ScheduledTask -TaskName "Task Board Claude Runner"` |
 | Switch it back on | `Enable-ScheduledTask -TaskName "Task Board Claude Runner"` |
 | Start it now | `Start-ScheduledTask -TaskName "Task Board Claude Runner"` |
-| Stop it now (until the next start) | `Stop-ScheduledTask -TaskName "Task Board Claude Runner"` |
+| Stop the runner that is running now | In **Ubuntu**: `pkill -INT -f "src/main.js watch"` (a step that is running finishes first). Unless the task is switched off, it starts again within 15 minutes. |
 | See whether it's running | `(Get-ScheduledTask -TaskName "Task Board Claude Runner").State` |
 | Remove it | `Unregister-ScheduledTask -TaskName "Task Board Claude Runner" -Confirm:$false` |
 
