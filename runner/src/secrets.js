@@ -32,3 +32,19 @@ export function findSecrets(diff, knownSecrets = [])
     // One entry per file and kind
     return found.filter((f, i) => found.findIndex((g) => g.file === f.file && g.kind === f.kind) === i);
 }
+
+// .env-style lines whose name says they're secret (API_KEY=..., DB_PASSWORD: ...), and passwords inside
+// addresses (postgres://user:password@host)
+const ASSIGNMENT = /\b([A-Z][A-Z0-9_]*(?:KEY|SECRET|TOKEN|PASSWORD|PASS))(\s*[=:]\s*)\S+/g;
+const URL_PASSWORD = /\b([a-z][a-z0-9+.-]*:\/\/[^\s:@/]+:)[^\s@/]+@/gi;
+const PRIVATE_KEY_BLOCK = /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/g;
+
+// For the step-by-step log on the board: the text with anything that looks like a secret, and the
+// runner's own secrets exactly, replaced by [hidden]. (The board scrubs it again before saving it.)
+export function redact(text, knownSecrets = [])
+{
+    let out = text.replace(PRIVATE_KEY_BLOCK, '[hidden]');
+    for (const secret of knownSecrets.filter((s) => typeof s === 'string' && s.length >= 12)) out = out.split(secret).join('[hidden]');
+    for (const { pattern } of PATTERNS) out = out.replace(new RegExp(pattern.source, 'g'), '[hidden]');
+    return out.replace(ASSIGNMENT, '$1$2[hidden]').replace(URL_PASSWORD, '$1[hidden]@');
+}

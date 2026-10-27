@@ -45,9 +45,17 @@ export class TaskComment {
   @Column({ name: 'author_id', type: 'int' })
   authorId: number;
 
-  // Written by the Claude runner (shown as "Claude"). It's still stored under your account, since the
-  // runner acts for you, but it can't be edited: it's a record of what Claude did.
+  // comment: yours, under Comments. The task's AI tab has the other two, which can't be edited:
+  //   feedback: what you told Claude when you rejected its prompt
+  //   claude:   a note from the Claude runner, from before it had its own log (stored under your account,
+  //             since the runner acts for you)
   @Field()
-  @Column({ name: 'from_runner', default: false })
-  fromRunner: boolean;
+  @Column({ type: 'varchar', length: 10, default: 'comment' })
+  kind: string;
+
+  // Written by the Claude runner (shown as "Claude")
+  @Field()
+  get fromRunner(): boolean {
+    return this.kind === 'claude';
+  }
 }

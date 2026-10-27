@@ -7,10 +7,9 @@ import { TasksService } from '../tasks/tasks.service';
 import { BoardsService } from '../boards/boards.service';
 import { TaskComment } from '../comments/task-comment.entity';
 import { ChecklistItem } from '../checklist/checklist-item.entity';
+import { NotificationsService } from '../notifications/notifications.service';
 import { RunnerJob, RunnerJobKind } from './runner-job.type';
 import { BOTTOM } from './prompt-review.service';
-import { AgentRun } from './agent-run.entity';
-import { RunnerRunLogDto } from './runner.dto';
 
 // Only tasks with a label of this name (any capitals: "AI", "ai") are ever touched by the runner
 const AI_LABEL = 'ai';
@@ -26,32 +25,10 @@ export class RunnerService {
     private readonly commentsRepository: Repository<TaskComment>,
     @InjectRepository(ChecklistItem)
     private readonly checklistRepository: Repository<ChecklistItem>,
-    @InjectRepository(AgentRun)
-    private readonly runsRepository: Repository<AgentRun>,
     private readonly tasksService: TasksService,
     private readonly boardsService: BoardsService,
+    private readonly notificationsService: NotificationsService,
   ) {}
-
-  // The runner reports a finished step for the task's run log (only on your own tasks)
-  async logRun(taskId: number, ownerId: number, run: RunnerRunLogDto): Promise<AgentRun> {
-    const task = await this.tasksService.findOwned(taskId, ownerId);
-    return this.runsRepository.save(this.runsRepository.create({
-      taskId: task.id,
-      step: run.step,
-      result: run.result,
-      branch: run.branch ?? null,
-      checksPassed: run.checksPassed ?? null,
-      costUsd: run.costUsd ?? null,
-      error: run.error ?? null,
-      startedAt: run.startedAt,
-    }));
-  }
-
-  // A task's run log for the task panel, newest first (your own tasks only)
-  async runsFor(taskId: number, ownerId: number): Promise<AgentRun[]> {
-    await this.tasksService.findOwned(taskId, ownerId);
-    return this.runsRepository.find({ where: { taskId }, order: { finishedAt: 'DESC', id: 'DESC' }, take: 50 });
-  }
 
   // The next thing to do, one task at a time: first anything approved and waiting to be built
   // (oldest approval first), then any prompt to write or revise (oldest task first). null = nothing to do.
@@ -76,30 +53,33 @@ export class RunnerService {
     if (!isRevision) {
       await this.tasksService.move(task.id, { status: TaskStatus.PROMPT_REVIEW, position: BOTTOM }, ownerId);
     }
-    await this.comment(task.id, ownerId, isRevision
-      ? 'I revised the prompt using your comments. Have another look in the Claude section.'
-      : 'I wrote a prompt for this task. Read it in the Claude section, fill in any [[FILL IN: …]] blanks, '
-        + 'then approve it or request changes.');
+    await this.notificationsService.notify(
+      ownerId, 'prompt_ready', isRevision ? 'Revised prompt ready for approval' : 'Prompt ready for approval', task.id,
+    );
     return this.tasksService.findOwned(task.id, ownerId);
   }
 
   // The runner made the task's branch and is about to start. Marking it stops it being picked twice.
   async startBuild(taskId: number, ownerId: number, branch: string): Promise<Task> {
     const task = await this.claim(taskId, ownerId, RunnerJobKind.BUILD);
-    await this.tasksRepository.update(task.id, { aiBranch: branch, aiBuiltAt: null });
-    await this.comment(task.id, ownerId, `Started building on branch ${branch}.`);
+    await this.tasksRepository.update(task.id, { aiBranch: branch, aiBuiltAt: null, aiChecksPassed: null });
     return this.tasksService.findOwned(task.id, ownerId);
   }
 
   // Done (whether or not the build and tests passed: the summary says which). Moves the task to AI Review.
   // Only for a build that's running: started, and not finished yet.
-  async finishBuild(taskId: number, ownerId: number, summary: string): Promise<Task> {
+  // checksPassed: false when Claude stopped early or the runner's checks failed; the task then shows as
+  // Failed (it's still in AI Review, for you to look at). The summary is on the run (AiActivityService).
+  async finishBuild(taskId: number, ownerId: number, checksPassed: boolean): Promise<Task> {
     const task = await this.tasksService.findOwned(taskId, ownerId);
     if (task.status !== TaskStatus.IN_PROGRESS || !task.aiBranch || task.aiBuiltAt) {
       throw new BadRequestException(`Task ${taskId} isn't being built`);
     }
-    await this.tasksRepository.update(task.id, { aiBuiltAt: new Date() });
-    await this.comment(task.id, ownerId, summary);
+    await this.tasksRepository.update(task.id, { aiBuiltAt: new Date(), aiChecksPassed: checksPassed });
+    await this.notificationsService.notify(
+      ownerId, checksPassed ? 'review_ready' : 'run_failed',
+      checksPassed ? 'Ready for review' : 'Built, but it needs a look: the checks failed or Claude stopped early', task.id,
+    );
     return this.tasksService.move(task.id, { status: TaskStatus.AI_REVIEW, position: BOTTOM }, ownerId);
   }
 
@@ -108,7 +88,7 @@ export class RunnerService {
   async reportError(taskId: number, ownerId: number, message: string): Promise<Task> {
     const task = await this.tasksService.findOwned(taskId, ownerId);
     await this.tasksRepository.update(task.id, { aiError: message });
-    await this.comment(task.id, ownerId, `I stopped: ${message}`);
+    await this.notificationsService.notify(ownerId, 'run_failed', `Claude stopped: ${message}`, task.id);
     return this.tasksService.findOwned(task.id, ownerId);
   }
 
@@ -167,8 +147,4 @@ export class RunnerService {
     };
   }
 
-  // A comment from Claude: stored under your account (the runner acts for you), marked as the runner's
-  private async comment(taskId: number, ownerId: number, body: string): Promise<void> {
-    await this.commentsRepository.save(this.commentsRepository.create({ taskId, authorId: ownerId, body, fromRunner: true }));
-  }
 }

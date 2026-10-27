@@ -8,9 +8,11 @@ import { formatDueDate, isOverdue } from '../dates';
 import { CalendarIcon, CloseIcon } from './Icons';
 import Attachments from './Attachments';
 import TrashIcon from './TrashIcon';
-import AiSection from './AiSection';
+import AiTab from './AiTab';
+import { AI_STATES, aiStateOf, hasAiWork } from '../aiState';
 
 // The panel that opens when you click a task: details + notes (editable), checklist, comments.
+// Tasks Claude works on also get an AI tab (AiTab), so everything about Claude stays apart from the rest.
 // App decides WHICH task is open and passes it in; everything here works on that one task.
 //   onSave(taskId, changes)                 -> App's handleEdit (saves title / notes / due date)
 //   onChecklistProgress(taskId, done, total) -> App updates the "2/5" on the card
@@ -22,15 +24,19 @@ import AiSection from './AiSection';
 //   onStatusChange(taskId, status)           -> App moves it to the bottom of another column
 //   onDelete(taskId)                         -> App deletes it (the panel then closes)
 //   boardProject                             -> the board's Claude project (null = Claude skips this board)
+//   agentTaskId                              -> the task the runner is working on right now
+//   initialTab                               -> 'details' or 'ai' (e.g. when opened from a notification)
+//   onAiChanged()                            -> App refreshes the bell and the runner's status
 function TaskDetails({
     task, currentUserId, onSave, onChecklistProgress, onSessionEnded, onClose,
     boardLabels = [], onTaskChanged, onAttachmentCount = () => {},
     onStatusChange = () => {}, onDelete = () => {}, boardProject = null,
+    agentTaskId = null, initialTab = 'details', onAiChanged = () => {},
 })
 {
     const [isEditing, setIsEditing] = useState(false);
-    // Goes up after a Claude action that adds a comment: a new key makes React rebuild Comments, which reloads them
-    const [commentsVersion, setCommentsVersion] = useState(0);
+    const showAi = hasAiWork(task);
+    const [tab, setTab] = useState(showAi ? initialTab : 'details');
 
     // Escape closes the panel (unless you're typing in the edit form, where Escape shouldn't lose your changes)
     useEffect(() => {
@@ -54,6 +60,36 @@ function TaskDetails({
 
     const overdue = isOverdue(task);
 
+    // The AI tab gets a dot when the task needs you: a prompt to approve, a build to review, or a failure
+    const aiState = aiStateOf(task);
+    const needsYou = ['approval', 'review', 'failed'].includes(aiState);
+
+    // Tabs, the usual way: Left and Right move between them
+    const handleTabKeys = (e) => {
+        if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+        const next = tab === 'details' ? 'ai' : 'details';
+        setTab(next);
+        document.getElementById(`task-tab-${next}-${task.id}`)?.focus();
+    };
+    const tabButton = (value, label) => (
+        <button
+            type="button"
+            role="tab"
+            id={`task-tab-${value}-${task.id}`}
+            className={tab === value ? 'details-tab active' : 'details-tab'}
+            aria-selected={tab === value}
+            aria-label={value === 'ai' && needsYou ? `AI (${AI_STATES[aiState].label})` : undefined}
+            aria-controls={`task-panel-${task.id}`}
+            tabIndex={tab === value ? 0 : -1}
+            onClick={() => setTab(value)}
+        >
+            {label}
+            {value === 'ai' && needsYou && (
+                <span className={`dot dot-${AI_STATES[aiState].tone}`} aria-hidden="true" />
+            )}
+        </button>
+    );
+
     return(
         <div className="modal-backdrop" onClick={onClose}>
             <div
@@ -68,74 +104,89 @@ function TaskDetails({
                     <button className="icon-btn" onClick={onClose} aria-label="Close task"><CloseIcon /></button>
                 </header>
 
-                <div className="modal-body task-details-body">
-                    {isEditing ? (
-                        <TaskEditForm task={task} onSave={handleSave} onCancel={() => setIsEditing(false)} />
-                    ) : (
-                        <section className="details-section">
-                            <div className="details-meta">
-                                {/* Which column it's in, and moving it to another one (it lands at the bottom) */}
-                                <select
-                                    className="details-column"
-                                    value={task.status}
-                                    onChange={(e) => onStatusChange(task.id, e.target.value)}
-                                    aria-label="Column"
-                                >
-                                    {STATUSES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-                                </select>
-                                {task.dueDate && (
-                                    <span className={overdue ? 'details-due overdue' : 'details-due'}>
-                                        <CalendarIcon size={14} />
-                                        Due {formatDueDate(task.dueDate)}
-                                        {overdue && ' · Overdue'}
-                                    </span>
-                                )}
-                                <button className="btn btn-secondary details-edit" onClick={() => setIsEditing(true)}>Edit</button>
-                            </div>
+                {showAi && (
+                    <div className="details-tabs" role="tablist" aria-label="Task" onKeyDown={handleTabKeys}>
+                        {tabButton('details', 'Details')}
+                        {tabButton('ai', 'AI')}
+                    </div>
+                )}
 
-                            <h3 className="details-heading">Notes</h3>
-                            {task.description
-                                ? <p className="details-notes">{task.description}</p>
-                                : <p className="details-empty">No notes yet. Use Edit to add some.</p>}
-                        </section>
-                    )}
+                <div
+                    className="modal-body task-details-body"
+                    id={`task-panel-${task.id}`}
+                    role={showAi ? 'tabpanel' : undefined}
+                    aria-labelledby={showAi ? `task-tab-${tab}-${task.id}` : undefined}
+                >
+                    {tab === 'ai' ? (
+                        <AiTab
+                            task={task}
+                            boardProject={boardProject}
+                            agentTaskId={agentTaskId}
+                            onTaskChanged={onTaskChanged}
+                            onAiChanged={onAiChanged}
+                            onSessionEnded={onSessionEnded}
+                        />
+                    ) : (<>
+                        {isEditing ? (
+                            <TaskEditForm task={task} onSave={handleSave} onCancel={() => setIsEditing(false)} />
+                        ) : (
+                            <section className="details-section">
+                                <div className="details-meta">
+                                    {/* Which column it's in, and moving it to another one (it lands at the bottom) */}
+                                    <select
+                                        className="details-column"
+                                        value={task.status}
+                                        onChange={(e) => onStatusChange(task.id, e.target.value)}
+                                        aria-label="Column"
+                                    >
+                                        {STATUSES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+                                    </select>
+                                    {task.dueDate && (
+                                        <span className={overdue ? 'details-due overdue' : 'details-due'}>
+                                            <CalendarIcon size={14} />
+                                            Due {formatDueDate(task.dueDate)}
+                                            {overdue && ' · Overdue'}
+                                        </span>
+                                    )}
+                                    <button className="btn btn-secondary details-edit" onClick={() => setIsEditing(true)}>Edit</button>
+                                </div>
 
-                    <AiSection
-                        task={task}
-                        boardProject={boardProject}
-                        onTaskChanged={onTaskChanged}
-                        onCommentsChanged={() => setCommentsVersion((v) => v + 1)}
-                        onSessionEnded={onSessionEnded}
-                    />
+                                <h3 className="details-heading">Notes</h3>
+                                {task.description
+                                    ? <p className="details-notes">{task.description}</p>
+                                    : <p className="details-empty">No notes yet. Use Edit to add some.</p>}
+                            </section>
+                        )}
 
-                    <TaskLabels
-                        task={task}
-                        boardLabels={boardLabels}
-                        onTaskChanged={onTaskChanged}
-                        onSessionEnded={onSessionEnded}
-                    />
+                        <TaskLabels
+                            task={task}
+                            boardLabels={boardLabels}
+                            onTaskChanged={onTaskChanged}
+                            onSessionEnded={onSessionEnded}
+                        />
 
-                    <Checklist
-                        taskId={task.id}
-                        onProgress={(done, total) => onChecklistProgress(task.id, done, total)}
-                        onSessionEnded={onSessionEnded}
-                    />
+                        <Checklist
+                            taskId={task.id}
+                            onProgress={(done, total) => onChecklistProgress(task.id, done, total)}
+                            onSessionEnded={onSessionEnded}
+                        />
 
-                    <Attachments
-                        taskId={task.id}
-                        onSessionEnded={onSessionEnded}
-                        onCountChange={(count) => onAttachmentCount(task.id, count)}
-                    />
+                        <Attachments
+                            taskId={task.id}
+                            onSessionEnded={onSessionEnded}
+                            onCountChange={(count) => onAttachmentCount(task.id, count)}
+                        />
                    
-                    <Comments key={commentsVersion} taskId={task.id} currentUserId={currentUserId} onSessionEnded={onSessionEnded} />
+                        <Comments taskId={task.id} currentUserId={currentUserId} onSessionEnded={onSessionEnded} />
 
-                    {/* At the very bottom, away from everything else: deleting the whole task */}
-                    <section className="details-section details-delete">
-                        <button className="btn btn-danger" onClick={handleDelete}>
-                            <TrashIcon />
-                            Delete task
-                        </button>
-                    </section>
+                        {/* At the very bottom, away from everything else: deleting the whole task */}
+                        <section className="details-section details-delete">
+                            <button className="btn btn-danger" onClick={handleDelete}>
+                                <TrashIcon />
+                                Delete task
+                            </button>
+                        </section>
+                    </>)}
                 </div>
             </div>
         </div>

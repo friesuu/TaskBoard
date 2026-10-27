@@ -101,12 +101,15 @@ export async function checkProLogin(config)
 
 // step: config.steps.refine or config.steps.build. tools: the only tools that exist for this run.
 // allowedCommands: the exact Bash commands it may run (none for the refine step).
-export async function runClaude({ config, step, cwd, prompt, systemPrompt, tools, allowedCommands = [], denyReadExtra = [] })
+// onEvent(event): each of Claude Code's events as it happens (what it says, each tool it uses), for the log
+export async function runClaude({
+    config, step, cwd, prompt, systemPrompt, tools, allowedCommands = [], denyReadExtra = [], onEvent = () => {},
+})
 {
     const fileTools = tools.filter((tool) => tool !== 'Bash');
     const args = [
         '-p',
-        '--output-format', 'json',
+        '--output-format', 'stream-json', '--verbose', // one line of JSON per event; the last one is the result
         '--model', step.model,
         '--max-budget-usd', String(step.maxBudgetUsd),
         '--max-turns', String(step.maxTurns),
@@ -120,7 +123,20 @@ export async function runClaude({ config, step, cwd, prompt, systemPrompt, tools
         '--allowedTools', ...fileTools, ...allowedCommands.map((command) => `Bash(${command})`), // last: takes all after it
     ];
 
+    let partial = ''; // the start of a line whose end hasn't arrived yet
+    const onStdout = (text) => {
+        const lines = (partial + text).split('\n');
+        partial = lines.pop();
+        for (const line of lines)
+        {
+            const event = parseJson(line);
+            if (!event) continue;
+            try { onEvent(event); } catch { /* the log is never a reason to stop a run */ }
+        }
+    };
+
     const result = await run(config.claudePath, args, {
+        onStdout,
         cwd,
         env: claudeEnv(config, { workdir: cwd, allowedCommands }),
         input: prompt, // the prompt goes in on stdin, so it never has to fit on a command line
@@ -129,11 +145,29 @@ export async function runClaude({ config, step, cwd, prompt, systemPrompt, tools
     return outcomeOf(result);
 }
 
+const parseJson = (text) => {
+    try { return JSON.parse(text); } catch { return null; }
+};
+
+// Claude Code's final answer: the whole output (--output-format json), or its last "result" line
+// (stream-json). null: no answer (an error before the run started).
+function resultOf(stdout)
+{
+    const whole = parseJson(stdout);
+    if (whole && typeof whole === 'object' && !Array.isArray(whole)) return whole;
+    const lines = (stdout ?? '').trim().split('\n');
+    for (let i = lines.length - 1; i >= 0; i--)
+    {
+        const event = parseJson(lines[i]);
+        if (event?.type === 'result') return event;
+    }
+    return null;
+}
+
 // What happened, as { ok, text, costUsd, error, usageLimit }
 export function outcomeOf(result)
 {
-    let json = null;
-    try { json = JSON.parse(result.stdout); } catch { /* not JSON: an error before the run started */ }
+    const json = resultOf(result.stdout);
 
     const text = (json?.result ?? result.stdout ?? '').trim();
     const allText = `${text}\n${result.stderr}`;

@@ -9,7 +9,8 @@ import { fileURLToPath } from 'node:url';
 import { between, outcomeOf } from '../src/claude.js';
 import { parseReset, pause, pausedUntil } from '../src/pause.js';
 import { spentToday, stepBudget } from '../src/budget.js';
-import { findSecrets } from '../src/secrets.js';
+import { findSecrets, redact } from '../src/secrets.js';
+import { createActivityParser, createRunLog, describeTool } from '../src/activity.js';
 import { slug, summaryComment } from '../src/build.js';
 import { claudeSettings, proLoginProblem, sandboxDenyRead } from '../src/claude.js';
 import { run, sandboxedCommand, stopChildren } from '../src/shell.js';
@@ -325,4 +326,85 @@ test('nothing starts on battery, and watch mode checks again every 2 minutes', (
     assert.equal(isOnBattery(''), false); // no battery at all: a desktop
     assert.equal(nextCheckDelay({ status: 'unplugged' }), 2 * 60 * 1000);
     assert.match(statusMessage({ status: 'unplugged' }), /On battery/);
+});
+
+// ----- The step-by-step log on the board -----
+
+test("Claude Code's streamed answer is read from its last line", () => {
+    const stdout = [
+        JSON.stringify({ type: 'system', subtype: 'init', model: 'claude-opus-5-5' }),
+        JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'Working on it' }] } }),
+        JSON.stringify({ type: 'result', subtype: 'success', result: 'Done', total_cost_usd: 0.12 }),
+    ].join('\n');
+    const outcome = outcomeOf({ code: 0, stdout, stderr: '' });
+    assert.deepEqual([outcome.ok, outcome.text, outcome.costUsd], [true, 'Done', 0.12]);
+});
+
+test('the log says what Claude said and did, shows command output, and never a file\'s contents', () => {
+    const parse = createActivityParser(() => '/work/task-7');
+    const said = parse({ type: 'assistant', message: { content: [
+        { type: 'thinking', thinking: 'The search box goes in the header.' },
+        { type: 'text', text: "I'll add the search box." },
+        { type: 'tool_use', id: 't1', name: 'Read', input: { file_path: '/work/task-7/src/App.jsx' } },
+        { type: 'tool_use', id: 't2', name: 'Bash', input: { command: 'npm test' } },
+    ] } });
+    assert.deepEqual(said, [
+        { kind: 'thinking', text: 'The search box goes in the header.' },
+        { kind: 'claude', text: "I'll add the search box." },
+        { kind: 'tool', text: 'Read src/App.jsx' },
+        { kind: 'tool', text: 'Ran npm test' },
+    ]);
+    const results = parse({ type: 'user', message: { content: [
+        { type: 'tool_result', tool_use_id: 't1', content: 'const SECRET_FILE_CONTENTS = 1;' },
+        { type: 'tool_result', tool_use_id: 't2', content: [{ type: 'text', text: 'line 1\n# pass 8\n# fail 0' }] },
+        { type: 'tool_result', tool_use_id: 't3', is_error: true, content: 'Blocked by the guard: outside the project' },
+    ] } });
+    assert.deepEqual(results, [
+        { kind: 'tool', text: '→ line 1\n# pass 8\n# fail 0' },
+        { kind: 'error', text: 'Error: Blocked by the guard: outside the project' },
+    ]);
+    assert.equal(describeTool('Grep', { pattern: 'search', path: '/work/task-7/src' }, '/work/task-7'), 'Grep "search" in src');
+});
+
+test('secrets are hidden in the log: known ones exactly, and anything that looks like one', () => {
+    const token = 'tbr_' + 'a'.repeat(40);
+    const text = [
+        `token ${token}`,
+        `ANTHROPIC_API_KEY=sk-ant-api03-${'x'.repeat(30)}`,
+        'DB_PASSWORD: hunter2',
+        'postgres://app:hunter2@localhost/db',
+        'my-own-secret-value-123 is fine to say',
+    ].join('\n');
+    assert.equal(redact(text, ['my-own-secret-value-123']), [
+        'token [hidden]',
+        'ANTHROPIC_API_KEY=[hidden]',
+        'DB_PASSWORD: [hidden]',
+        'postgres://app:[hidden]@localhost/db',
+        '[hidden] is fine to say',
+    ].join('\n'));
+});
+
+test('the log goes to the board a few lines at a time, in order, with secrets hidden', async () => {
+    const sent = [];
+    const api = { appendLog: async (runId, lines) => { sent.push([runId, lines.map((l) => `${l.kind}: ${l.text}`)]); } };
+    const log = createRunLog({ api, runId: 7, knownSecrets: ['the-runner-token-123'], flushEveryMs: 60_000 });
+    log.add('info', 'Setup: npm ci');
+    log.addEvent({ type: 'assistant', message: { content: [{ type: 'text', text: 'Using the-runner-token-123' }] } });
+    log.add('info', '   '); // nothing to say: left out
+    await log.close();
+    assert.deepEqual(sent, [[7, ['info: Setup: npm ci', 'claude: Using [hidden]']]]);
+
+    // No run on the board, or the board unreachable: nothing breaks
+    const quiet = createRunLog({ api, runId: null, flushEveryMs: 60_000 });
+    quiet.add('info', 'not sent');
+    await quiet.close();
+    const warnings = [];
+    const failing = createRunLog({
+        api: { appendLog: async () => { throw new Error('board down'); } }, runId: 8, flushEveryMs: 60_000,
+        say: (message) => warnings.push(message),
+    });
+    failing.add('info', 'one');
+    await failing.close();
+    assert.equal(sent.length, 1);
+    assert.match(warnings[0], /board down/);
 });

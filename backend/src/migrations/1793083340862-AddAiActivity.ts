@@ -1,0 +1,59 @@
+import { MigrationInterface, QueryRunner } from "typeorm";
+
+export class AddAiActivity1793083340862 implements MigrationInterface {
+    name = 'AddAiActivity1793083340862'
+
+    public async up(queryRunner: QueryRunner): Promise<void> {
+        // Comments: "kind" replaces from_runner. Claude's old notes become kind "claude".
+        await queryRunner.query(`ALTER TABLE "comments" ADD "kind" character varying(10) NOT NULL DEFAULT 'comment'`);
+        await queryRunner.query(`UPDATE "comments" SET "kind" = 'claude' WHERE "from_runner" = true`);
+        await queryRunner.query(`ALTER TABLE "comments" DROP COLUMN "from_runner"`);
+        await queryRunner.query(`CREATE TABLE "agent_run_logs" ("id" SERIAL NOT NULL, "run_id" integer NOT NULL, "at" TIMESTAMP WITH TIME ZONE NOT NULL, "kind" character varying(10) NOT NULL, "text" text NOT NULL, CONSTRAINT "PK_bd171a3492117af096d85f74d02" PRIMARY KEY ("id"))`);
+        await queryRunner.query(`CREATE INDEX "IDX_9bd3bce16e1a05e3cf27163733" ON "agent_run_logs"  ("run_id", "id") `);
+        await queryRunner.query(`CREATE TABLE "agent_status" ("user_id" integer NOT NULL, "state" character varying(12) NOT NULL, "task_id" integer, "step" character varying(10), "paused_until" TIMESTAMP WITH TIME ZONE, "state_since" TIMESTAMP WITH TIME ZONE NOT NULL, "last_seen_at" TIMESTAMP WITH TIME ZONE NOT NULL, CONSTRAINT "PK_a82657227caf4cd840308fd61ea" PRIMARY KEY ("user_id"))`);
+        await queryRunner.query(`CREATE TABLE "notifications" ("id" SERIAL NOT NULL, "user_id" integer NOT NULL, "task_id" integer, "kind" character varying(20) NOT NULL, "message" character varying(200) NOT NULL, "created_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), "read_at" TIMESTAMP WITH TIME ZONE, CONSTRAINT "PK_6a72c3c0f683f6462415e653c3a" PRIMARY KEY ("id"))`);
+        await queryRunner.query(`CREATE INDEX "IDX_310667f935698fcd8cb319113a" ON "notifications"  ("user_id", "created_at") `);
+        await queryRunner.query(`ALTER TABLE "tasks" ADD "ai_checks_passed" boolean`);
+        // Tasks Claude already built: did their last build go fine?
+        await queryRunner.query(`UPDATE "tasks" SET "ai_checks_passed" = (SELECT r."checks_passed" FROM "agent_runs" r WHERE r."task_id" = "tasks"."id" AND r."step" = 'build' ORDER BY r."started_at" DESC LIMIT 1) WHERE "ai_built_at" IS NOT NULL`);
+        await queryRunner.query(`ALTER TABLE "agent_runs" ADD "status" character varying(10) NOT NULL DEFAULT 'running'`);
+        // Runs from before this were all finished: failed when they had an error or failed checks
+        await queryRunner.query(`UPDATE "agent_runs" SET "status" = CASE WHEN "error" IS NOT NULL OR "checks_passed" = false THEN 'failed' ELSE 'succeeded' END`);
+        await queryRunner.query(`ALTER TABLE "agent_runs" ADD "project" character varying(50)`);
+        await queryRunner.query(`ALTER TABLE "agent_runs" ADD "summary" text`);
+        await queryRunner.query(`DROP INDEX "public"."IDX_88acc7e051cc1d638f6bc3dad2"`);
+        await queryRunner.query(`ALTER TABLE "agent_runs" ALTER COLUMN "finished_at" DROP NOT NULL`);
+        await queryRunner.query(`ALTER TABLE "agent_runs" ALTER COLUMN "finished_at" DROP DEFAULT`);
+        await queryRunner.query(`CREATE INDEX "IDX_88acc7e051cc1d638f6bc3dad2" ON "agent_runs"  ("task_id", "finished_at") `);
+        await queryRunner.query(`ALTER TABLE "agent_run_logs" ADD CONSTRAINT "FK_e7d8fbdbd2e5981a9e29c08edba" FOREIGN KEY ("run_id") REFERENCES "agent_runs"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "agent_status" ADD CONSTRAINT "FK_a82657227caf4cd840308fd61ea" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "agent_status" ADD CONSTRAINT "FK_b0583d8704c608ad6974f5f3f05" FOREIGN KEY ("task_id") REFERENCES "tasks"("id") ON DELETE SET NULL ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "notifications" ADD CONSTRAINT "FK_9a8a82462cab47c73d25f49261f" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "notifications" ADD CONSTRAINT "FK_b4a7cd30c9f4ca1b23ef0eb6dd8" FOREIGN KEY ("task_id") REFERENCES "tasks"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+    }
+
+    public async down(queryRunner: QueryRunner): Promise<void> {
+        await queryRunner.query(`ALTER TABLE "notifications" DROP CONSTRAINT "FK_b4a7cd30c9f4ca1b23ef0eb6dd8"`);
+        await queryRunner.query(`ALTER TABLE "notifications" DROP CONSTRAINT "FK_9a8a82462cab47c73d25f49261f"`);
+        await queryRunner.query(`ALTER TABLE "agent_status" DROP CONSTRAINT "FK_b0583d8704c608ad6974f5f3f05"`);
+        await queryRunner.query(`ALTER TABLE "agent_status" DROP CONSTRAINT "FK_a82657227caf4cd840308fd61ea"`);
+        await queryRunner.query(`ALTER TABLE "agent_run_logs" DROP CONSTRAINT "FK_e7d8fbdbd2e5981a9e29c08edba"`);
+        await queryRunner.query(`DROP INDEX "public"."IDX_88acc7e051cc1d638f6bc3dad2"`);
+        await queryRunner.query(`ALTER TABLE "agent_runs" ALTER COLUMN "finished_at" SET DEFAULT now()`);
+        await queryRunner.query(`ALTER TABLE "agent_runs" ALTER COLUMN "finished_at" SET NOT NULL`);
+        await queryRunner.query(`CREATE INDEX "IDX_88acc7e051cc1d638f6bc3dad2" ON "agent_runs" ("task_id", "finished_at") `);
+        await queryRunner.query(`ALTER TABLE "comments" ADD "from_runner" boolean NOT NULL DEFAULT false`);
+        await queryRunner.query(`UPDATE "comments" SET "from_runner" = true WHERE "kind" = 'claude'`);
+        await queryRunner.query(`ALTER TABLE "comments" DROP COLUMN "kind"`);
+        await queryRunner.query(`ALTER TABLE "agent_runs" DROP COLUMN "summary"`);
+        await queryRunner.query(`ALTER TABLE "agent_runs" DROP COLUMN "project"`);
+        await queryRunner.query(`ALTER TABLE "agent_runs" DROP COLUMN "status"`);
+        await queryRunner.query(`ALTER TABLE "tasks" DROP COLUMN "ai_checks_passed"`);
+        await queryRunner.query(`DROP INDEX "public"."IDX_310667f935698fcd8cb319113a"`);
+        await queryRunner.query(`DROP TABLE "notifications"`);
+        await queryRunner.query(`DROP TABLE "agent_status"`);
+        await queryRunner.query(`DROP INDEX "public"."IDX_9bd3bce16e1a05e3cf27163733"`);
+        await queryRunner.query(`DROP TABLE "agent_run_logs"`);
+    }
+
+}

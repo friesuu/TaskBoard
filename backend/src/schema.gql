@@ -52,6 +52,7 @@ type Task {
   promptApprovedAt: DateTime
   aiBranch: String
   aiBuiltAt: DateTime
+  aiChecksPassed: Boolean
   aiError: String
   boardId: Int!
   checklistTotal: Int!
@@ -103,6 +104,7 @@ type Comment {
   updatedAt: DateTime!
   taskId: Int!
   author: User!
+  kind: String!
   fromRunner: Boolean!
 }
 
@@ -117,15 +119,46 @@ type Attachment {
 
 type AgentRun {
   id: Int!
+  task: Task!
   taskId: Int!
   step: String!
+  status: String!
   result: String!
+  project: String
   branch: String
   checksPassed: Boolean
   costUsd: Float
   error: String
+  summary: String
   startedAt: DateTime!
-  finishedAt: DateTime!
+  finishedAt: DateTime
+}
+
+type AgentRunLog {
+  id: Int!
+  runId: Int!
+  at: DateTime!
+  kind: String!
+  text: String!
+}
+
+type AgentStatusInfo {
+  state: String!
+  task: Task
+  step: String
+  pausedUntil: DateTime
+  stateSince: DateTime
+  lastSeenAt: DateTime
+}
+
+type Notification {
+  id: Int!
+  task: Task
+  taskId: Int
+  kind: String!
+  message: String!
+  createdAt: DateTime!
+  readAt: DateTime
 }
 
 type RunnerTokenInfo {
@@ -159,8 +192,14 @@ type Query {
   attachments(taskId: Int!): [Attachment!]!
   runnerToken: RunnerTokenInfo
   agentRuns(taskId: Int!): [AgentRun!]!
+  aiNotes(taskId: Int!): [Comment!]!
   runnerPing: Boolean!
   runnerNextJob: RunnerJob
+  agentStatus: AgentStatusInfo!
+  aiRuns(status: String): [AgentRun!]!
+  agentRunLog(runId: Int!): [AgentRunLog!]!
+  notifications: [Notification!]!
+  unreadNotificationCount: Int!
 }
 
 input TaskFilterInput {
@@ -216,8 +255,13 @@ type Mutation {
   runnerSavePrompt(taskId: Int!, input: RunnerPromptInput!): Task!
   runnerStartBuild(taskId: Int!, input: RunnerBuildStartInput!): Task!
   runnerFinishBuild(taskId: Int!, input: RunnerBuildResultInput!): Task!
-  runnerLogRun(taskId: Int!, input: RunnerRunLogInput!): Boolean!
   runnerReportError(taskId: Int!, input: RunnerErrorInput!): Task!
+  runnerStartRun(taskId: Int!, input: RunnerRunStartInput!): Int!
+  runnerAppendLog(runId: Int!, input: RunnerLogInput!): Boolean!
+  runnerFinishRun(runId: Int!, input: RunnerRunFinishInput!): Boolean!
+  runnerReportStatus(input: RunnerStatusInput!): Boolean!
+  markNotificationRead(id: Int!): Notification!
+  markAllNotificationsRead: Int!
 }
 
 input CreateTaskInput {
@@ -324,19 +368,40 @@ input RunnerBuildStartInput {
 }
 
 input RunnerBuildResultInput {
-  summary: String!
-}
-
-input RunnerRunLogInput {
-  step: String!
-  result: String!
-  branch: String
-  checksPassed: Boolean
-  costUsd: Float
-  error: String
-  startedAt: DateTime!
+  checksPassed: Boolean!
 }
 
 input RunnerErrorInput {
   message: String!
+}
+
+input RunnerRunStartInput {
+  step: String!
+  branch: String
+}
+
+input RunnerLogInput {
+  lines: [RunnerLogLineInput!]!
+}
+
+input RunnerLogLineInput {
+  at: DateTime!
+  kind: String!
+  text: String!
+}
+
+input RunnerRunFinishInput {
+  status: String!
+  result: String!
+  checksPassed: Boolean
+  costUsd: Float
+  error: String
+  summary: String
+}
+
+input RunnerStatusInput {
+  state: String!
+  taskId: Int
+  step: String
+  pausedUntil: DateTime
 }

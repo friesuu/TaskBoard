@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { BoardIcon, ProfileIcon, PasswordIcon, LogoutIcon, ChatIcon, PlusIcon } from "./SidebarIcons";
+import { BoardIcon, ProfileIcon, PasswordIcon, LogoutIcon, ChatIcon, PlusIcon, ActivityIcon } from "./SidebarIcons";
 import { CloseIcon } from "./Icons";
 
 // The menu that slides in from the LEFT.
@@ -8,7 +8,7 @@ import { CloseIcon } from "./Icons";
 // boards + currentBoardId: the list of your boards, and which one is open.
 function Sidebar({
     isOpen, email, name, currentView, boards = [], currentBoardId,
-    onClose, onBoard, onProfile, onChangePassword, onLogout, onChat, onSelectBoard, onNewBoard,
+    onClose, onBoard, onProfile, onChangePassword, onLogout, onChat, onSelectBoard, onNewBoard, onAiActivity = () => {},
 })
 {
     const closeButtonRef = useRef(null);
@@ -73,6 +73,7 @@ function Sidebar({
                 <nav className="sidebar-group" aria-label="Pages">
                     <div className="sidebar-group-title">Pages</div>
                     {pageItem('board', 'Board', <BoardIcon />, onBoard)}
+                    {pageItem('ai', 'AI Activity', <ActivityIcon />, onAiActivity)}
                     {pageItem('profile', 'Profile', <ProfileIcon />, onProfile)}
                     {pageItem('chat', 'Assistant', <ChatIcon />, onChat)}
                 </nav>

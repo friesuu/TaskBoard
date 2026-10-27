@@ -17,28 +17,61 @@ import { build, checkProject, prepareMainCopy, prepareWorktree, removeWorktree, 
 import { parseReset, pause, pausedUntil } from './pause.js';
 import { MIN_STEP_BUDGET_USD, spentToday, stepBudget } from './budget.js';
 import { onBattery } from './power.js';
+import { createRunLog } from './activity.js';
 
 const say = (message) => console.log(`[runner] ${message}`);
 const dollars = (amount) => `$${amount.toFixed(2)}`;
+const HEARTBEAT_MS = 30 * 1000; // while a step runs, the board hears from the runner this often
+// The runner's own secrets: never in a commit, never in the board's log
+const knownSecrets = () => [process.env.ANTHROPIC_API_KEY, process.env.RUNNER_TOKEN];
 
-// Records a finished step in two places: a line in logs/runs.log (which the daily cap adds up), and the
-// task's run log on the board. A failure to reach the board's log never stops the runner.
-async function record({ config, api, job, startedAt, entry })
+// Records a finished step in logs/runs.log, which the daily cap adds up. (The board has its own record of
+// each run: openRun and closeRun below.)
+function record({ config, job, startedAt, entry })
 {
-    const step = job.kind.toLowerCase();
     mkdirSync(dirname(config.logFile), { recursive: true });
     appendFileSync(config.logFile, `${JSON.stringify({
-        time: new Date().toISOString(), taskId: job.task.id, step, project: job.project, ...entry,
+        time: new Date().toISOString(), taskId: job.task.id, step: job.kind.toLowerCase(), project: job.project,
+        startedAt: startedAt.toISOString(), ...entry,
     })}\n`);
-    await api.logRun(job.task.id, {
-        step,
-        result: entry.result,
-        branch: entry.branch ?? null,
-        checksPassed: entry.checksPassed ?? null,
-        costUsd: entry.costUsd ?? null,
-        error: entry.error ?? null,
-        startedAt: startedAt.toISOString(),
-    }).catch((err) => say(`(Couldn't add this run to the task's log: ${err.message})`));
+}
+
+// Tells the board what the runner is doing (the AI Activity page and the cards). Never stops the runner.
+async function tellBoard(api, status)
+{
+    if (!api) return;
+    await api.reportStatus({ taskId: null, step: null, pausedUntil: null, ...status }).catch(() => {});
+}
+
+// The run on the board: opened when a step starts, so the AI Activity page shows it as running. null if the
+// board couldn't open it (the step still goes ahead; it just has no log there).
+async function openRun(api, job, branch = null)
+{
+    try
+    {
+        return await api.startRun(job.task.id, job.kind === 'BUILD' ? 'build' : 'refine', branch);
+    }
+    catch (err)
+    {
+        say(`(Couldn't open the run on the board: ${err.message})`);
+        return null;
+    }
+}
+
+// Sends the rest of the run's log, then closes the run with how it went:
+// { status: 'succeeded' | 'failed', result, checksPassed, costUsd, error, summary }
+async function closeRun(api, runId, log, run)
+{
+    await log.close();
+    if (runId === null) return;
+    await api.finishRun(runId, {
+        status: run.status,
+        result: run.result,
+        checksPassed: run.checksPassed ?? null,
+        costUsd: run.costUsd ?? null,
+        error: run.error ? run.error.slice(0, 2000) : null,
+        summary: run.summary ? run.summary.slice(0, 20000) : null,
+    }).catch((err) => say(`(Couldn't close the run on the board: ${err.message})`));
 }
 
 // Pro plan: stop until the limit resets, instead of pushing against it
@@ -81,45 +114,69 @@ async function preflight(config)
 
 async function doRefine({ job, project, config, api, startedAt })
 {
-    const problem = await checkProject(project);
-    if (problem)
-    {
-        await api.reportError(job.task.id, problem);
-        say(`Stopped: ${problem}`);
-        await record({ config, api, job, startedAt, entry: { result: 'stopped', error: problem } });
-        return;
-    }
+    const runId = await openRun(api, job);
+    const log = createRunLog({ api, runId, knownSecrets: knownSecrets() });
+    // Every way out of this step closes the run (on the board) and records it (logs/runs.log)
+    const finish = async (status, entry) => {
+        await closeRun(api, runId, log, { status, ...entry });
+        record({ config, job, startedAt, entry });
+    };
 
-    // Claude reads a fresh copy of main (the code the build will start from), not whatever is checked out
-    const copy = await prepareMainCopy({ job, project, projectName: job.project, config });
-    let result;
     try
     {
-        result = await refine({ job, project: { ...project, path: copy }, config });
-    }
-    finally
-    {
-        await removeWorktree(project, copy);
-    }
-    const entry = { costUsd: result.costUsd };
+        const problem = await checkProject(project);
+        if (problem)
+        {
+            log.add('error', problem);
+            await api.reportError(job.task.id, problem);
+            say(`Stopped: ${problem}`);
+            await finish('failed', { result: 'stopped', error: problem });
+            return;
+        }
 
-    if (result.usageLimit) // leave the task alone; it's picked up again after the reset
-    {
-        const until = pauseForUsageLimit(config, result.usageLimit);
-        await record({ config, api, job, startedAt, entry: { ...entry, result: 'usage limit', error: `Paused until ${until.toLocaleString()}` } });
-        return;
+        // Claude reads a fresh copy of main (the code the build will start from), not whatever is checked out
+        log.add('info', `Reading the project on a fresh copy of ${project.baseBranch}`);
+        const copy = await prepareMainCopy({ job, project, projectName: job.project, config });
+        log.inFolder(copy);
+        let result;
+        try
+        {
+            result = await refine({ job, project: { ...project, path: copy }, config, onEvent: log.addEvent });
+        }
+        finally
+        {
+            await removeWorktree(project, copy);
+        }
+        const entry = { costUsd: result.costUsd };
+
+        if (result.usageLimit) // leave the task alone; it's picked up again after the reset
+        {
+            const until = pauseForUsageLimit(config, result.usageLimit);
+            log.add('error', `Usage limit reached: paused until ${until.toLocaleString()}`);
+            await finish('failed', { ...entry, result: 'usage limit', error: `Paused until ${until.toLocaleString()}` });
+            return;
+        }
+        if (result.refined)
+        {
+            await api.savePrompt(job.task.id, result.refined);
+            log.add('info', 'Prompt saved: it is waiting for your approval');
+            say('Prompt saved: the task is in Prompt Review.');
+            await finish('succeeded', { ...entry, result: 'prompt saved' });
+        }
+        else
+        {
+            log.add('error', result.error);
+            await api.reportError(job.task.id, result.error);
+            say(`Stopped: ${result.error}`);
+            await finish('failed', { ...entry, result: 'stopped', error: result.error });
+        }
     }
-    if (result.refined)
+    catch (err)
     {
-        await api.savePrompt(job.task.id, result.refined);
-        say('Prompt saved: the task is in Prompt Review.');
-        await record({ config, api, job, startedAt, entry: { ...entry, result: 'prompt saved' } });
-    }
-    else
-    {
-        await api.reportError(job.task.id, result.error);
-        say(`Stopped: ${result.error}`);
-        await record({ config, api, job, startedAt, entry: { ...entry, result: 'stopped', error: result.error } });
+        // The runner itself failed part-way (e.g. git): the run doesn't stay "running" on the board
+        log.add('error', `The runner hit a problem and stopped: ${err.message}`);
+        await finish('failed', { result: 'runner error', error: err.message });
+        throw err;
     }
 }
 
@@ -139,45 +196,62 @@ async function doBuild({ job, project, config, api, startedAt })
     {
         await api.reportError(job.task.id, problem);
         say(`Stopped: ${problem}`);
-        await record({ config, api, job, startedAt, entry: { result: 'stopped', error: problem } });
+        const runId = await openRun(api, job);
+        const log = createRunLog({ api, runId, knownSecrets: knownSecrets() });
+        log.add('error', problem);
+        await closeRun(api, runId, log, { status: 'failed', result: 'stopped', error: problem });
+        record({ config, job, startedAt, entry: { result: 'stopped', error: problem } });
         return;
     }
 
     const { branch, worktree } = await prepareWorktree({ job, project, projectName: job.project, config });
+    let runId = null;
+    let log = null;
     try
     {
         await api.startBuild(job.task.id, branch); // marks the task, so it's never built twice
         say(`Working on branch ${branch}`);
+        runId = await openRun(api, job, branch);
+        log = createRunLog({ api, runId, knownSecrets: knownSecrets() });
+        log.inFolder(worktree);
+        log.add('info', `Working on branch ${branch}, a fresh copy of ${project.baseBranch}`);
 
-        const result = await build({
-            job, project, config, branch, worktree,
-            knownSecrets: [process.env.ANTHROPIC_API_KEY, process.env.RUNNER_TOKEN],
-        });
+        const result = await build({ job, project, config, branch, worktree, knownSecrets: knownSecrets(), log });
         if (result.outcome?.usageLimit) pauseForUsageLimit(config, result.outcome.usageLimit);
 
         const summary = result.setupFailed
             ? `I couldn't set up the project on branch ${branch}: ${result.setupFailed}`
             : summaryComment({ project, branch, result, auth: config.auth });
-        await api.finishBuild(job.task.id, summary);
-
         const checksPassed = result.setupFailed || result.secretsFound?.length
             ? null
             : result.buildResult.code === 0 && result.testResult.code === 0;
+        // It went fine: Claude finished, the checks passed and nothing was blocked. Otherwise it needs a look.
+        const wentFine = checksPassed === true && result.outcome.ok;
         const resultName = buildResultName(result);
-        say(`Done (${resultName}): the task is in AI Review.${checksPassed === false ? ' The checks failed: see the task.' : ''}`);
-        await record({
-            config, api, job, startedAt,
-            entry: {
-                result: resultName, branch, checksPassed, costUsd: result.outcome?.costUsd ?? null,
-                error: result.setupFailed ?? (result.secretsFound?.length ? 'Possible secret in the changes' : result.outcome?.error ?? null),
-            },
+        const error = result.setupFailed
+            ?? (result.secretsFound?.length ? 'Possible secret in the changes' : result.outcome?.error ?? null);
+
+        await closeRun(api, runId, log, {
+            status: wentFine ? 'succeeded' : 'failed', result: resultName, checksPassed,
+            costUsd: result.outcome?.costUsd ?? null, error, summary,
+        });
+        await api.finishBuild(job.task.id, wentFine);
+        say(`Done (${resultName}): the task is in AI Review.${wentFine ? '' : ' It needs a look: see the task.'}`);
+        record({
+            config, job, startedAt,
+            entry: { result: resultName, branch, checksPassed, costUsd: result.outcome?.costUsd ?? null, error },
         });
     }
     catch (err)
     {
-        // The runner itself failed part-way (e.g. git). Say so on the task, so it doesn't sit in In progress.
-        await api.finishBuild(job.task.id, `The runner hit a problem on branch ${branch} and stopped: ${err.message}`).catch(() => {});
-        await record({ config, api, job, startedAt, entry: { result: 'runner error', branch, error: err.message } });
+        // The runner itself failed part-way (e.g. git). Say so on the board, so it doesn't sit in In progress.
+        if (log)
+        {
+            log.add('error', `The runner hit a problem and stopped: ${err.message}`);
+            await closeRun(api, runId, log, { status: 'failed', result: 'runner error', error: err.message });
+        }
+        await api.finishBuild(job.task.id, false).catch(() => {});
+        record({ config, job, startedAt, entry: { result: 'runner error', branch, error: err.message } });
         throw err;
     }
     finally
@@ -208,15 +282,18 @@ async function runOneStep({ quiet = false } = {})
 {
     const note = (message) => { if (!quiet) say(message); };
     const config = loadConfig();
+    // The board hears what the runner is doing whenever it can (not before the token is set up)
+    const token = process.env.RUNNER_TOKEN?.trim();
+    const api = token ? createApi(config.taskBoardUrl, token) : null;
     const until = pausedUntil(config.pauseFile);
     if (until)
     {
+        await tellBoard(api, { state: 'paused', pausedUntil: until.toISOString() });
         note(`Paused until ${until.toLocaleString()} (usage limit). Nothing to do before then.`);
         return { status: 'paused', until };
     }
 
     await preflight(config);
-    const api = createApi(config.taskBoardUrl, process.env.RUNNER_TOKEN.trim());
     try
     {
         await api.ping();
@@ -238,6 +315,7 @@ async function runOneStep({ quiet = false } = {})
         {
             const spent = spentToday(config.logFile);
             note(`Today's spend cap is used up (${dollars(spent)} of ${dollars(config.dailyCapUsd)}). Waiting until tomorrow.`);
+            await tellBoard(api, { state: 'capped' });
             return { status: 'capped' };
         }
 
@@ -245,11 +323,13 @@ async function runOneStep({ quiet = false } = {})
         if (!job)
         {
             note('Nothing to do.');
+            await tellBoard(api, { state: 'idle' });
             return { status: 'idle' };
         }
         if (await onBattery())
         {
             note('The laptop is on battery: nothing starts until it\'s plugged in.');
+            await tellBoard(api, { state: 'unplugged' });
             return { status: 'unplugged' };
         }
         const startedAt = new Date();
@@ -272,12 +352,24 @@ async function runOneStep({ quiet = false } = {})
             const message = `The project "${job.project}" isn't in the runner's projects.json`;
             await api.reportError(job.task.id, message);
             say(`Stopped: ${message}`);
-            await record({ config, api, job, startedAt, entry: { result: 'stopped', error: message } });
+            record({ config, job, startedAt, entry: { result: 'stopped', error: message } });
             return { status: 'done' };
         }
 
-        if (job.kind === 'BUILD') await doBuild({ job, project, config: runConfig, api, startedAt });
-        else await doRefine({ job, project, config: runConfig, api, startedAt });
+        // The board shows what the runner is working on, and hears from it during a long step
+        const working = { state: 'working', taskId: job.task.id, step: stepName };
+        await tellBoard(api, working);
+        const heartbeat = setInterval(() => tellBoard(api, working), HEARTBEAT_MS);
+        try
+        {
+            if (job.kind === 'BUILD') await doBuild({ job, project, config: runConfig, api, startedAt });
+            else await doRefine({ job, project, config: runConfig, api, startedAt });
+        }
+        finally
+        {
+            clearInterval(heartbeat);
+            await tellBoard(api, { state: 'idle' });
+        }
         return { status: 'done' };
     }
     finally

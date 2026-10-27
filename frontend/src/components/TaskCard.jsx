@@ -6,6 +6,8 @@ import Attachments from "./Attachments";
 import { formatDueDate, isOverdue } from "../dates";
 import { STATUSES } from "../statuses";
 import { Draggable } from "@hello-pangea/dnd";
+import AiChip from "./AiChip";
+import { aiStateOf } from "../aiState";
 
 // One card on the board: only what the task is and what needs attention.
 // Clicking the card (or its title) opens the task panel, where it's edited, moved to another column or deleted.
@@ -13,19 +15,10 @@ import { Draggable } from "@hello-pangea/dnd";
 //   dragDisabled: true while filters are on (a position among SOME of the column's cards isn't the real one)
 //   onChecklistProgress(taskId, done, total) / onAttachmentCount(taskId, count): App updates the counts
 //   onSessionEnded(err): an expired login goes back to the login screen
-// What the Claude runner is doing with this task, as one short line on the card (null = nothing to say)
-function aiStatusOf(task)
-{
-    if (task.aiError) return { text: 'Claude stopped', tone: 'danger' };
-    if (task.changesRequested) return { text: 'Revising…', tone: 'prompt' };
-    if (task.status === 'IN_PROGRESS' && task.aiBuiltAt) return { text: 'Waiting to build again', tone: 'ai' };
-    if (task.status === 'IN_PROGRESS' && task.aiBranch) return { text: 'Claude is building…', tone: 'ai' };
-    if (task.status === 'IN_PROGRESS' && task.promptApprovedAt) return { text: 'Approved, waiting for Claude', tone: 'ai' };
-    return null;
-}
+//   agentTaskId: the task the runner is working on right now (its AI chip's dot pulses)
 
 function TaskCard({
-    index, task, onOpen, dragDisabled = false,
+    index, task, onOpen, dragDisabled = false, agentTaskId = null,
     onChecklistProgress = () => {}, onAttachmentCount = () => {}, onSessionEnded = () => false,
 })
 {
@@ -41,8 +34,8 @@ function TaskCard({
     const done = task.checklistDone ?? 0;
     const total = task.checklistTotal ?? 0;
     const files = task.attachmentCount ?? 0;
-    const aiStatus = aiStatusOf(task);
-    const hasMeta = Boolean(task.dueDate) || total > 0 || files > 0 || aiStatus !== null;
+    const aiState = aiStateOf(task); // the Claude runner's part, as one small chip
+    const hasMeta = Boolean(task.dueDate) || total > 0 || files > 0 || aiState !== null;
 
     // A click on the card itself opens the task. Clicks on its own buttons, links and fields,
     // and anywhere inside an opened checklist or files list, do their own thing instead.
@@ -105,12 +98,7 @@ function TaskCard({
                             done === total ? 'complete' : '',
                         )}
                         {files > 0 && quickToggle('files', `Files, ${files}`, <><PaperclipIcon size={14} />{files}</>)}
-                        {aiStatus && (
-                            <span className={aiStatus.tone === 'danger' ? 'task-ai-status danger' : 'task-ai-status'}>
-                                <span className={`dot dot-${aiStatus.tone}`} aria-hidden="true" />
-                                {aiStatus.text}
-                            </span>
-                        )}
+                        {aiState && <AiChip state={aiState} active={agentTaskId === task.id} />}
                     </div>
                 )}
 

@@ -34,7 +34,7 @@ export function createApi(url, token)
             runnerNextJob {
                 kind project approvedPrompt
                 task { ${TASK_FIELDS} }
-                comments { body fromRunner createdAt }
+                comments { body fromRunner kind createdAt }
                 checklist { text done }
             }
         }`)).runnerNextJob,
@@ -49,15 +49,34 @@ export function createApi(url, token)
             { taskId, input: { branch } },
         ),
 
-        finishBuild: (taskId, summary) => request(
+        // checksPassed: false = it needs a look (the checks failed, or Claude stopped early)
+        finishBuild: (taskId, checksPassed) => request(
             `mutation ($taskId: Int!, $input: RunnerBuildResultInput!) { runnerFinishBuild(taskId: $taskId, input: $input) { id } }`,
-            { taskId, input: { summary } },
+            { taskId, input: { checksPassed } },
         ),
 
-        // One finished step for the task's run log: { step, result, branch, checksPassed, costUsd, error, startedAt }
-        logRun: (taskId, run) => request(
-            `mutation ($taskId: Int!, $input: RunnerRunLogInput!) { runnerLogRun(taskId: $taskId, input: $input) }`,
-            { taskId, input: run },
+        // A step starts: the board opens a run (shown as running) and returns its id
+        startRun: async (taskId, step, branch = null) => (await request(
+            `mutation ($taskId: Int!, $input: RunnerRunStartInput!) { runnerStartRun(taskId: $taskId, input: $input) }`,
+            { taskId, input: { step, branch } },
+        )).runnerStartRun,
+
+        // A few lines of the run's step-by-step log: [{ at, kind, text }]
+        appendLog: (runId, lines) => request(
+            `mutation ($runId: Int!, $input: RunnerLogInput!) { runnerAppendLog(runId: $runId, input: $input) }`,
+            { runId, input: { lines } },
+        ),
+
+        // The step ended: { status: 'succeeded' | 'failed', result, checksPassed, costUsd, error, summary }
+        finishRun: (runId, run) => request(
+            `mutation ($runId: Int!, $input: RunnerRunFinishInput!) { runnerFinishRun(runId: $runId, input: $input) }`,
+            { runId, input: run },
+        ),
+
+        // What the runner is doing now: { state, taskId, step, pausedUntil }
+        reportStatus: (status) => request(
+            `mutation ($input: RunnerStatusInput!) { runnerReportStatus(input: $input) }`,
+            { input: status },
         ),
 
         reportError: (taskId, message) => request(

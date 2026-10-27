@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { Task } from '../tasks/task.entity';
 import { TaskStatus } from '../tasks/tasks-status.enum';
 import { TasksService } from '../tasks/tasks.service';
@@ -51,9 +51,20 @@ export class PromptReviewService {
   // The task stays in Prompt Review, with "Revising…" on its card.
   async requestChanges(taskId: number, ownerId: number, comment: string): Promise<Task> {
     const task = await this.waitingForReview(taskId, ownerId);
-    await this.commentsRepository.save(this.commentsRepository.create({ taskId: task.id, authorId: ownerId, body: comment }));
+    await this.commentsRepository.save(this.commentsRepository.create({ taskId: task.id, authorId: ownerId, body: comment, kind: 'feedback' }));
     await this.tasksRepository.update(task.id, { changesRequested: true, aiError: null });
     return this.tasksService.findOwned(task.id, ownerId);
+  }
+
+  // Your feedback on Claude's prompts, and Claude's notes from before it had its own log, oldest first.
+  // They're shown in the task's AI tab, not under Comments.
+  async aiNotes(taskId: number, ownerId: number): Promise<TaskComment[]> {
+    await this.tasksService.findOwned(taskId, ownerId);
+    return this.commentsRepository.find({
+      where: { taskId, kind: In(['feedback', 'claude']) },
+      relations: { author: true },
+      order: { createdAt: 'ASC', id: 'ASC' },
+    });
   }
 
   // "Try again" after the runner stopped on a task: it's picked up again on the next run

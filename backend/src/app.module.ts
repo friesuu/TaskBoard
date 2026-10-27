@@ -17,6 +17,7 @@ import { LabelsModule } from './labels/labels.module';
 import { AttachmentsModule } from './attachments/attachments.module';
 import { AccountModule } from './account/account.module';
 import { RunnerModule } from './runner/runner.module';
+import { NotificationsModule } from './notifications/notifications.module';
 
 // NODE_ENV=production is set on the real server (see the deployment guide); locally it's unset
 const isProduction = process.env.NODE_ENV === 'production';
@@ -70,7 +71,8 @@ const isProduction = process.env.NODE_ENV === 'production';
     LabelsModule,
     AttachmentsModule,
     AccountModule,
-    RunnerModule
+    RunnerModule,
+    NotificationsModule
   ],
 })
 export class AppModule {}

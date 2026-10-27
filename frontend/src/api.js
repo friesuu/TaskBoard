@@ -5,7 +5,7 @@ const API_ORIGIN = GRAPHQL_URL.replace(/\/graphql$/, '');
 const TASK_FIELDS =
     'id title description status dueDate checklistDone checklistTotal attachmentCount labels { id name color } '
     // the Claude runner's part of the task (see AiSection)
-    + 'refinedPrompt changesRequested promptApprovedAt aiBranch aiBuiltAt aiError';
+    + 'refinedPrompt changesRequested promptApprovedAt aiBranch aiBuiltAt aiChecksPassed aiError';
 const CHAT_FIELDS = 'id role content createdAt responseMs';
 const BOARD_FIELDS = 'id name project';
 const ITEM_FIELDS = 'id text done position';
@@ -571,13 +571,74 @@ export async function revokeRunnerToken()
 }
 
 // A task's run log: every step the runner took on it, newest first
+// ----- The Claude runner's activity: the AI tab, the AI Activity page and the bell -----
+
+const RUN_FIELDS = 'id step status result project branch checksPassed costUsd error summary startedAt finishedAt';
+
+// A task's runs, newest first
 export async function getAgentRuns(taskId)
 {
     const data = await graphqlRequest(
-        `query AgentRuns($taskId: Int!) {
-            agentRuns(taskId: $taskId) { id step result branch checksPassed costUsd error startedAt finishedAt }
-        }`,
+        `query AgentRuns($taskId: Int!) { agentRuns(taskId: $taskId) { ${RUN_FIELDS} } }`,
         { taskId },
     );
     return data.agentRuns;
+}
+
+// Your feedback on Claude's prompts, and Claude's older notes (oldest first)
+export async function getAiNotes(taskId)
+{
+    const data = await graphqlRequest(
+        `query AiNotes($taskId: Int!) { aiNotes(taskId: $taskId) { id body kind createdAt } }`,
+        { taskId },
+    );
+    return data.aiNotes;
+}
+
+// Every run on every board, newest first. status: 'running', 'succeeded', 'failed' or null (all)
+export async function getAiRuns(status = null)
+{
+    const data = await graphqlRequest(
+        `query AiRuns($status: String) { aiRuns(status: $status) { ${RUN_FIELDS} task { id title boardId } } }`,
+        { status },
+    );
+    return data.aiRuns;
+}
+
+// One run's step-by-step log, in order
+export async function getRunLog(runId)
+{
+    const data = await graphqlRequest(
+        `query RunLog($runId: Int!) { agentRunLog(runId: $runId) { id at kind text } }`,
+        { runId },
+    );
+    return data.agentRunLog;
+}
+
+// What the runner is doing: working, idle, paused, unplugged, capped, offline or never
+export async function getAgentStatus()
+{
+    const data = await graphqlRequest(
+        `query { agentStatus { state step pausedUntil stateSince lastSeenAt task { id title boardId } } }`,
+    );
+    return data.agentStatus;
+}
+
+// The bell: your newest notifications, and how many aren't read yet
+export async function getNotifications()
+{
+    const data = await graphqlRequest(
+        `query { notifications { id kind message createdAt readAt task { id title boardId } } unreadNotificationCount }`,
+    );
+    return { notifications: data.notifications, unreadCount: data.unreadNotificationCount };
+}
+
+export async function markNotificationRead(id)
+{
+    await graphqlRequest(`mutation MarkRead($id: Int!) { markNotificationRead(id: $id) { id } }`, { id });
+}
+
+export async function markAllNotificationsRead()
+{
+    await graphqlRequest(`mutation { markAllNotificationsRead }`);
 }
