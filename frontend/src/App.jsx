@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   getTasks, createTask, updateTask, moveTask, deleteTask, getCurrentUser, logout, changePassword,
   getBoards, createBoard, renameBoard, deleteBoard, getLabels, setTimeZone,
+  getAgentStatus, getNotifications, markNotificationRead, markAllNotificationsRead,
 } from './api';
 import Column from './components/Column';
 import TaskForm from './components/TaskFrom';
@@ -26,12 +27,48 @@ import FilterBar from './components/FilterBar';
 import CalendarView from './components/CalendarView';
 import ViewSwitch from './components/ViewSwitch';
 import { SHORTCUTS, shortcutFor } from './shortcuts';
+import AiActivity from './components/AiActivity';
+import NotificationBell from './components/NotificationBell';
+import Toasts, { MAX_TOASTS } from './components/Toasts';
+import { NOTIFICATION_TONES } from './aiState';
 
 const SESSION_EXPIRED = 'Your session has expired. Please log in again.';
 
 // The pages, and the one in the address bar (?view=profile), so a refresh stays on it
-const VIEWS = ['board', 'calendar', 'profile', 'chat'];
+const VIEWS = ['board', 'calendar', 'profile', 'chat', 'ai'];
 const viewFromUrl = () => (VIEWS.includes(getUrlParam('view')) ? getUrlParam('view') : 'board');
+
+// The newest notification this browser has seen, per user, so toasts only show what's new since then
+const lastLookKey = (userId) => `taskboard:last-notification:${userId}`;
+
+// Notifications newer than this browser's last look, oldest first, at most MAX_TOASTS (the bell has the rest).
+// The very first look shows none: everything older is in the bell already. Storage blocked: no toasts.
+function newSinceLastLook(userId, notifications)
+{
+  const newestId = notifications[0]?.id ?? 0;
+  let lastId = NaN;
+  try
+  {
+    const saved = localStorage.getItem(lastLookKey(userId));
+    if (saved !== null) lastId = Number(saved);
+    localStorage.setItem(lastLookKey(userId), String(Math.max(newestId, Number.isNaN(lastId) ? 0 : lastId)));
+  }
+  catch
+  {
+    return [];
+  }
+  if (Number.isNaN(lastId)) return [];
+  return notifications.filter((n) => n.id > lastId && !n.readAt).slice(0, MAX_TOASTS).reverse();
+}
+
+// A notification as a toast. Failures (red) stay until you close them; the rest go by themselves.
+const toastFor = (n) => ({
+  id: `notification-${n.id}`,
+  notificationId: n.id,
+  tone: NOTIFICATION_TONES[n.kind] ?? 'info',
+  text: n.task ? `${n.message}: #${n.task.id} ${n.task.title}` : n.message,
+  task: n.task,
+});
 
 // "Put this task at the bottom of its column" (the server treats a position past the end as the bottom)
 const BOTTOM = 1_000_000;
@@ -60,6 +97,13 @@ function App()
   const [labels, setLabels] = useState([]); // the open board's labels (Board settings and the task panel use them)
   const [openTaskId, setOpenTaskId] = useState(null); // which task's panel is open (null = none)
   const [filters, setFilters] = useState(readFiltersFromUrl); // search + filters, from the address bar
+  // The Claude runner: what it's doing, the bell, the toasts, and which tab a task panel opens on
+  const [agentStatus, setAgentStatus] = useState(null);
+  const [bell, setBell] = useState({ notifications: [], unreadCount: 0 });
+  const [toasts, setToasts] = useState([]);
+  const [taskTab, setTaskTab] = useState('details');
+  const [reloadKey, setReloadKey] = useState(0); // goes up when you come back to the tab: the board reloads
+  const lastAiRefresh = useRef(0);
 
   const filtersActive = hasActiveFilters(filters);
   // The board and the calendar are two views of the same (filtered) tasks
@@ -134,7 +178,7 @@ function App()
       .then((list) => { if (!isStale) setTasks(list); })
       .catch(loadFailed);
     return () => { isStale = true; };
-  }, [user, boardId, view, apiFilter, loadFailed]);
+  }, [user, boardId, view, apiFilter, loadFailed, reloadKey]);
 
   // The page you're on goes in the address bar (the board is the default, so it's left out)
   useEffect(() => {
@@ -200,6 +244,10 @@ function App()
     setIsSidebarOpen(false);
     setView('board'); // the next person to log in starts on the board, not on someone's profile
     setSuccess(null);
+    setAgentStatus(null); // ...and none of the runner's notifications or toasts
+    setBell({ notifications: [], unreadCount: 0 });
+    setToasts([]);
+    setTaskTab('details');
     setError(message);
   }, []);
 
@@ -210,6 +258,49 @@ function App()
     showLogin(SESSION_EXPIRED);
     return true;
   }, [showLogin]); // it uses showLogin, so it lists it
+
+  // The runner's status and the bell. There's no timer: they're loaded when the app opens, when you come
+  // back to the tab, when you open the bell or the AI Activity page, and after you act on an AI task.
+  // Notifications that arrived since this browser last looked also pop up as toasts.
+  const refreshAi = useCallback(() => {
+    if (!user) return;
+    lastAiRefresh.current = Date.now();
+    Promise.all([getAgentStatus(), getNotifications()])
+      .then(([status, latest]) => {
+        setAgentStatus(status);
+        setBell(latest);
+        const fresh = newSinceLastLook(user.id, latest.notifications);
+        if (fresh.length) setToasts((current) => [...current, ...fresh.map(toastFor)]);
+      })
+      .catch(endedSession); // anything else: the bell just stays as it was
+  }, [user, endedSession]);
+
+  // After logging in: your runner and your bell (logging out clears them, see showLogin)
+  useEffect(() => {
+    refreshAi();
+  }, [refreshAi]);
+
+  // Coming back to the tab or the window: the board, the runner's status and the bell catch up.
+  // (Both events can fire for one return, so a second one within 2 seconds is skipped.)
+  useEffect(() => {
+    if (!user) return;
+    const handleReturn = () => {
+      if (document.visibilityState !== 'visible' || Date.now() - lastAiRefresh.current < 2000) return;
+      setReloadKey((k) => k + 1);
+      refreshAi();
+    };
+    document.addEventListener('visibilitychange', handleReturn);
+    window.addEventListener('focus', handleReturn);
+    return () => {
+      document.removeEventListener('visibilitychange', handleReturn);
+      window.removeEventListener('focus', handleReturn);
+    };
+  }, [user, refreshAi]);
+
+  // Opening the AI Activity page: the runner's status as it is now
+  useEffect(() => {
+    if (view === 'ai') refreshAi();
+  }, [view, refreshAi]);
 
   const handleLoggedIn = (loggedInUser) => {
     setError(null); // clear "session expired" etc.
@@ -279,6 +370,12 @@ function App()
     setView('chat');
   };
 
+  const goToAiActivity = () => {
+    closeSidebar();
+    setSuccess(null);
+    setView('ai');
+  };
+
   // Labels belong to a board, so a label filter makes no sense on another board
   const clearLabelFilter = () => {
     if (filters.labels.length) handleFiltersChange({ ...filters, labels: [] });
@@ -295,6 +392,50 @@ function App()
       clearLabelFilter();
       selectBoard(id);
     }
+  };
+
+  // Opens a task from the AI side (a notification, a toast, the AI Activity page): on its own board, with no
+  // filter hiding it, on the tab asked for
+  const openTaskFromAi = (task, tab = 'ai') => {
+    setTaskTab(tab);
+    switchBoard(task.boardId);
+    if (filtersActive) handleFiltersChange(EMPTY_FILTERS);
+    setOpenTaskId(task.id);
+  };
+
+  // A notification clicked in the bell (or a toast's View): it's read now, and its task opens
+  // (the usage limit has no task: the AI Activity page opens instead)
+  const openNotification = (notification) => {
+    if (!notification.readAt)
+    {
+      setBell((current) => ({
+        notifications: current.notifications.map((n) => (
+          n.id === notification.id ? { ...n, readAt: new Date().toISOString() } : n
+        )),
+        unreadCount: Math.max(0, current.unreadCount - 1),
+      }));
+      markNotificationRead(notification.id).catch(endedSession);
+    }
+    if (notification.task) openTaskFromAi(notification.task);
+    else setView('ai');
+  };
+
+  const markAllRead = () => {
+    const now = new Date().toISOString();
+    setBell((current) => ({
+      notifications: current.notifications.map((n) => ({ ...n, readAt: n.readAt ?? now })),
+      unreadCount: 0,
+    }));
+    markAllNotificationsRead().catch(endedSession);
+  };
+
+  // useCallback: each toast's timer depends on it, so it must stay the same function
+  const dismissToast = useCallback((id) => setToasts((current) => current.filter((t) => t.id !== id)), []);
+
+  const viewToast = (toast) => {
+    dismissToast(toast.id);
+    const notification = bell.notifications.find((n) => n.id === toast.notificationId);
+    openNotification({ id: toast.notificationId, task: toast.task, readAt: notification?.readAt ?? null });
   };
 
   const newBoardFromMenu = () => {
@@ -496,7 +637,12 @@ function App()
     : STATUSES;
 
   // The page header's title: the open board's name, or the page you're on
-  const pageTitle = view === 'profile' ? 'Profile' : view === 'chat' ? 'Assistant' : (currentBoard?.name ?? '');
+  const pageTitle = view === 'profile' ? 'Profile'
+    : view === 'chat' ? 'Assistant'
+    : view === 'ai' ? 'AI Activity'
+    : (currentBoard?.name ?? '');
+  // The task the runner is working on right now: its card's dot pulses
+  const agentTaskId = agentStatus?.state === 'working' ? (agentStatus.task?.id ?? null) : null;
 
   return(
     // The app shell: the dark page with the main panel on it. The navigation (Sidebar) slides in over it.
@@ -518,8 +664,8 @@ function App()
             <h1 className="page-title">{pageTitle}</h1>
           </div>
 
-          {isBoardPage && (
-            <div className="page-actions">
+          <div className="page-actions">
+            {isBoardPage && (<>
               <ViewSwitch view={view} onChange={setView} />
               {currentBoard && (
                 <button className="btn btn-secondary" onClick={() => openForm('board-settings')}>
@@ -536,8 +682,15 @@ function App()
                 <AddIcon size={16} />
                 Add task
               </button>
-            </div>
-          )}
+            </>)}
+            <NotificationBell
+              notifications={bell.notifications}
+              unreadCount={bell.unreadCount}
+              onOpen={refreshAi}
+              onOpenNotification={openNotification}
+              onMarkAllRead={markAllRead}
+            />
+          </div>
         </header>
 
         {/* Only this part scrolls; the header stays put. The chat manages its own scrolling. */}
@@ -548,6 +701,15 @@ function App()
           {/* "view" picks the page. Both use the same tasks, so the profile's numbers are always up to date. */}
           {view === 'chat' && (
             <ChatPanel boardId={boardId} boardName={currentBoard?.name} onSessionEnded={endedSession} />
+          )}
+
+          {view === 'ai' && (
+            <AiActivity
+              agentStatus={agentStatus}
+              onRefresh={refreshAi}
+              onOpenTask={openTaskFromAi}
+              onSessionEnded={endedSession}
+            />
           )}
 
           {view === 'profile' && (
@@ -579,6 +741,7 @@ function App()
                 title={s.label}
                 tasks={tasks.filter((t) => t.status === s.value)}
                 onOpen={setOpenTaskId}
+                agentTaskId={agentTaskId}
                 status={s.value}
                 dragDisabled={filtersActive}
                 onChecklistProgress={handleChecklistProgress}
@@ -605,6 +768,7 @@ function App()
         onBoard={goToBoard}
         onProfile={goToProfile}
         onChat={goToChat}
+        onAiActivity={goToAiActivity}
         onChangePassword={changePasswordFromMenu}
         onLogout={logoutFromMenu}
       />
@@ -661,20 +825,29 @@ function App()
 
       {openTask && (
         <TaskDetails
+          key={openTask.id}
           task={openTask}
           currentUserId={user.id}
           onSave={handleEdit}
           onChecklistProgress={handleChecklistProgress}
           onSessionEnded={endedSession}
-          onClose={() => setOpenTaskId(null)}
+          onClose={() => {
+            setOpenTaskId(null);
+            setTaskTab('details');
+          }}
           boardLabels={labels}
           onTaskChanged={handleTaskChanged}
           onAttachmentCount={handleAttachmentCount}
           onStatusChange={handleStatusChange}
           onDelete={handleDelete}
           boardProject={currentBoard?.project ?? null}
+          agentTaskId={agentTaskId}
+          initialTab={taskTab}
+          onAiChanged={refreshAi}
         />
       )}
+
+      <Toasts toasts={toasts} onDismiss={dismissToast} onView={viewToast} />
     </div>
   );
 }

@@ -5,7 +5,7 @@ import App from './App';
 import {
   getCurrentUser, getTasks, logout, getBoards, createBoard, getChecklist, getComments, getLabels, setTaskLabels,
   setTimeZone, getAttachments, updateChecklistItem,
-  getTaskStats,
+  getTaskStats, getAgentStatus, getNotifications, markNotificationRead, getAiRuns,
 } from './api';
 
 vi.mock('./api'); // the whole backend is faked: each test decides what the "server" answers
@@ -33,6 +33,11 @@ describe('App', () => {
     vi.mocked(getLabels).mockReset().mockResolvedValue([{ id: 7, name: 'Urgent', color: 'ORANGE' }]);
     vi.mocked(setTaskLabels).mockReset();
     vi.mocked(setTimeZone).mockReset().mockResolvedValue(undefined);
+    vi.mocked(getAgentStatus).mockReset().mockResolvedValue({ state: 'never', task: null, step: null });
+    vi.mocked(getNotifications).mockReset().mockResolvedValue({ notifications: [], unreadCount: 0 });
+    vi.mocked(markNotificationRead).mockReset().mockResolvedValue(undefined);
+    vi.mocked(getAiRuns).mockReset().mockResolvedValue([]);
+    localStorage.clear();
     vi.mocked(getTaskStats).mockReset().mockResolvedValue(
       { total: 0, todo: 0, inProgress: 0, done: 0, overdue: 0, dueThisWeek: 0, doneThisWeek: 0 },
     );
@@ -399,5 +404,47 @@ describe('App', () => {
     render(<App />);
 
     expect(await screen.findByText('Failed to fetch')).toBeInTheDocument();
+  });
+
+  it("pops up what's new from the runner as a toast, and the bell opens the task on its AI tab", async () => {
+    vi.mocked(getCurrentUser).mockResolvedValue(user);
+    localStorage.setItem('taskboard:last-notification:1', '4'); // this browser last saw notification 4
+    vi.mocked(getNotifications).mockResolvedValue({
+      notifications: [
+        {
+          id: 5, kind: 'prompt_ready', message: 'Prompt ready for approval', createdAt: new Date().toISOString(), readAt: null,
+          task: { id: 1, title: 'Write report', boardId: 10 },
+        },
+        {
+          id: 4, kind: 'review_ready', message: 'Ready for review', createdAt: new Date().toISOString(),
+          readAt: '2026-10-27T01:00:00Z', task: { id: 2, title: 'Fix login', boardId: 10 },
+        },
+      ],
+      unreadCount: 1,
+    });
+    render(<App />);
+
+    expect(await screen.findByText('Prompt ready for approval: #1 Write report')).toBeInTheDocument(); // the toast
+    expect(screen.queryByText('Ready for review: #2 Fix login')).not.toBeInTheDocument(); // seen before
+
+    await userEvent.click(screen.getByRole('button', { name: 'Notifications, 1 unread' }));
+    const list = screen.getByRole('region', { name: 'Notifications' });
+    await userEvent.click(within(list).getByRole('button', { name: /Prompt ready/ }));
+
+    expect(markNotificationRead).toHaveBeenCalledWith(5);
+    expect(await screen.findByRole('dialog', { name: 'Write report' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Notifications' })).toBeInTheDocument(); // nothing unread now
+  });
+
+  it('has an AI Activity page in the menu', async () => {
+    vi.mocked(getCurrentUser).mockResolvedValue(user);
+    vi.mocked(getAgentStatus).mockResolvedValue({ state: 'offline', lastSeenAt: new Date(Date.now() - 3600_000).toISOString() });
+    render(<App />);
+    await screen.findByText('Write report');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Open menu' }));
+    await userEvent.click(screen.getByRole('button', { name: 'AI Activity' }));
+    expect(await screen.findByRole('heading', { name: 'AI Activity', level: 1 })).toBeInTheDocument();
+    expect(await screen.findByText('Offline')).toBeInTheDocument();
   });
 });

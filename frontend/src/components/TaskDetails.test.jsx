@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import TaskDetails from './TaskDetails';
-import { getChecklist, getComments, getAttachments } from '../api';
+import { getChecklist, getComments, getAttachments, getAgentRuns, getAiNotes } from '../api';
 
 vi.mock('../api');
 
@@ -29,6 +29,8 @@ describe('TaskDetails', () => {
     vi.mocked(getChecklist).mockReset().mockResolvedValue([]);
     vi.mocked(getComments).mockReset().mockResolvedValue([]);
     vi.mocked(getAttachments).mockReset().mockResolvedValue([]);
+    vi.mocked(getAgentRuns).mockReset().mockResolvedValue([]);
+    vi.mocked(getAiNotes).mockReset().mockResolvedValue([]);
     // Fixed "today" so the friendly due date and "overdue" don't depend on when the tests run
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date(2026, 9, 15, 12, 0));
@@ -109,5 +111,31 @@ describe('TaskDetails', () => {
     await userEvent.click(await screen.findByRole('checkbox', { name: 'Cake' }));
 
     expect(onChecklistProgress).toHaveBeenLastCalledWith(5, 1, 1);
+  });
+
+  it('gives AI tasks an AI tab, kept apart from the rest of the task', async () => {
+    const aiTask = { ...task, status: 'PROMPT_REVIEW', labels: [{ id: 9, name: 'AI', color: 'TEAL' }], refinedPrompt: 'Goal' };
+    renderDetails({ task: aiTask, onTaskChanged: vi.fn() });
+
+    expect(screen.getByRole('tab', { name: 'Details' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.queryByRole('textbox', { name: "Claude's prompt" })).not.toBeInTheDocument();
+    // The AI tab has a dot when the task needs you
+    const aiTab = screen.getByRole('tab', { name: 'AI (Needs your approval)' });
+
+    await userEvent.click(aiTab);
+    expect(aiTab).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('textbox', { name: "Claude's prompt" })).toBeInTheDocument();
+    expect(screen.queryByText('Notes')).not.toBeInTheDocument();
+  });
+
+  it('opens on the AI tab when asked (e.g. from a notification)', () => {
+    const aiTask = { ...task, labels: [{ id: 9, name: 'AI', color: 'TEAL' }], aiBranch: 'ai/task-5-x', status: 'AI_REVIEW' };
+    renderDetails({ task: aiTask, initialTab: 'ai', onTaskChanged: vi.fn() });
+    expect(screen.getByRole('tab', { name: /^AI/ })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('has no tabs on tasks Claude has nothing to do with', () => {
+    renderDetails();
+    expect(screen.queryByRole('tab')).not.toBeInTheDocument();
   });
 });

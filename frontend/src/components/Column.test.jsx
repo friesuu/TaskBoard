@@ -61,20 +61,28 @@ describe('Column and TaskCard', () => {
     expect(card).toHaveClass('tone-warning'); // peach, like the In progress column
   });
 
-  it('says on the card what Claude is doing with the task', () => {
+  it('gives an AI task one small chip saying where Claude is with it', () => {
+    const AI = [{ id: 9, name: 'AI', color: 'TEAL' }];
+    const ai = (id, title, fields) => ({ id, title, description: null, dueDate: null, labels: AI, refinedPrompt: 'Goal', ...fields });
     renderColumn([
-      { id: 1, title: 'Being revised', description: null, status: 'TODO', dueDate: null, changesRequested: true },
-      { id: 2, title: 'Stuck', description: null, status: 'TODO', dueDate: null, aiError: 'The spend cap was reached' },
-      { id: 3, title: 'Building', description: null, status: 'IN_PROGRESS', dueDate: null, aiBranch: 'ai/task-3-x' },
-      {
-        id: 4, title: 'Built, moved back', description: null, status: 'IN_PROGRESS', dueDate: null,
-        aiBranch: 'ai/task-4-x', aiBuiltAt: '2026-10-27T02:10:00Z',
-      },
-    ]);
-    expect(screen.getByText('Revising…')).toBeInTheDocument();
-    expect(screen.getByText('Claude stopped')).toBeInTheDocument();
-    expect(screen.getByText('Claude is building…')).toBeInTheDocument();
-    expect(screen.getByText('Waiting to build again')).toBeInTheDocument();
+      ai(1, 'New one', { status: 'TODO', refinedPrompt: null }),
+      ai(2, 'To approve', { status: 'PROMPT_REVIEW' }),
+      ai(3, 'Being built', { status: 'IN_PROGRESS', promptApprovedAt: '2026-10-15T10:00:00Z', aiBranch: 'ai/task-3-x' }),
+      ai(4, 'Built', { status: 'AI_REVIEW', aiBranch: 'ai/task-4-x', aiChecksPassed: true }),
+      ai(5, 'Checks failed', { status: 'AI_REVIEW', aiBranch: 'ai/task-5-x', aiChecksPassed: false }),
+      { id: 6, title: 'Not for Claude', description: null, status: 'TODO', dueDate: null },
+    ], { agentTaskId: 3 });
+    const chipOf = (title) => screen.getByRole('heading', { name: title }).closest('.task-card').querySelector('.ai-chip');
+
+    expect(chipOf('New one')).toHaveTextContent('Refining prompt');
+    expect(chipOf('To approve')).toHaveTextContent('Needs your approval');
+    expect(chipOf('Being built')).toHaveTextContent('Working');
+    expect(chipOf('Built')).toHaveTextContent('Ready for review');
+    expect(chipOf('Checks failed')).toHaveTextContent('Failed');
+    expect(chipOf('Not for Claude')).toBeNull();
+    // Only the task the runner is on right now pulses
+    expect(chipOf('Being built').querySelector('.dot')).toHaveClass('pulsing');
+    expect(chipOf('New one').querySelector('.dot')).not.toHaveClass('pulsing');
   });
 
   it('keeps the card itself simple: no column dropdown, Open button or bin', () => {

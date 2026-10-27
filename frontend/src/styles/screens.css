@@ -85,19 +85,6 @@
 .task-card.tone-prompt { --edge: var(--label-purple); } /* Prompt Review: purple */
 .task-card.tone-ai { --edge: var(--label-teal); }       /* AI Review: teal */
 
-/* What Claude is doing with a task ("Revising…", "Claude stopped"), in the card's meta row */
-.task-ai-status {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  color: var(--text-2);
-  font-size: var(--fs-small);
-}
-
-.task-ai-status.danger {
-  color: var(--danger-text);
-}
-
 /* Hover: the card rises a little. `translate` (not `transform`) so it adds to the drag library's own
    movement instead of fighting it, and not while dragging, where the card already floats. */
 .task-card:hover:not(.dragging) {
@@ -1432,4 +1419,560 @@
 .ai-run-error {
   color: var(--danger-text);
   font-size: var(--fs-small);
+}
+
+/* ---------- AI status, logs and notifications ---------- */
+
+/* The AI chip: the outlined status pill (.pill, with its dot), on a card and at the top of the AI tab */
+.ai-chip {
+  align-self: flex-start;
+}
+
+.ai-chip.danger {
+  border-color: var(--danger-border);
+  color: var(--danger-text);
+}
+
+/* A dot that pulses while the runner is on it. Still for anyone who asked for reduced motion. */
+.dot.pulsing {
+  animation: ai-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes ai-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.7); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dot.pulsing {
+    animation: none;
+  }
+}
+
+/* A small action that reads like a link: Copy, Refresh, View, Mark all read */
+.text-btn {
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--link);
+  font: inherit;
+  font-size: var(--fs-small);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.text-btn:not(:disabled):hover {
+  text-decoration: underline;
+}
+
+.text-btn:disabled {
+  color: var(--muted);
+  cursor: default;
+}
+
+/* The task panel's Details and AI tabs, under its title */
+.details-tabs {
+  display: flex;
+  gap: var(--space-4);
+  padding: 0 var(--space-6);
+  border-bottom: 1px solid var(--divider);
+}
+
+.details-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: -1px;
+  padding: var(--space-3) 0;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: var(--fs-small);
+  font-weight: 500;
+  cursor: pointer;
+  transition: color var(--ease), border-color var(--ease);
+}
+
+.details-tab:hover {
+  color: var(--text);
+}
+
+.details-tab.active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+/* The AI tab */
+.ai-tab {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.ai-tab-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+/* Refine → Approve → Work → Review */
+.ai-steps {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ai-step {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--muted);
+  font-size: var(--fs-small);
+}
+
+.ai-step + .ai-step::before {
+  content: '';
+  width: var(--space-4);
+  height: 1px;
+  background-color: var(--border-strong);
+}
+
+.ai-step-mark {
+  width: var(--dot);
+  height: var(--dot);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+}
+
+.ai-step.done {
+  color: var(--text-2);
+}
+
+.ai-step.done .ai-step-mark {
+  background-color: var(--success);
+  border-color: var(--success);
+}
+
+.ai-step.current {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.ai-step.current .ai-step-mark {
+  background-color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* Folded away until opened: the prompt (outside Prompt Review), notes and logs */
+.ai-fold summary {
+  color: var(--text-2);
+  font-size: var(--fs-small);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.ai-fold[open] summary {
+  margin-bottom: var(--space-3);
+}
+
+.ai-last-run {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.ai-run-line {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--fs-small);
+}
+
+/* The build's summary, and a run's step-by-step log: monospace, on the sunken surface */
+.ai-summary,
+.run-log-text {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  background-color: var(--sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  line-height: 1.6;
+}
+
+.ai-summary {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.ai-notes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ai-note-who {
+  color: var(--muted);
+  font-size: var(--fs-small);
+}
+
+.ai-note-body {
+  margin: var(--space-1) 0 0;
+  white-space: pre-wrap;
+}
+
+/* A run you can open, in the AI tab's logs and on the AI Activity page */
+.ai-run-toggle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+  width: 100%;
+  padding: 0;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.run-log {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.run-log-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-4);
+}
+
+.run-log-text {
+  max-height: 24rem;
+  overflow: auto;
+}
+
+/* One line: time, who, what */
+.run-log-line {
+  display: grid;
+  grid-template-columns: auto 4.5rem 1fr;
+  gap: var(--space-3);
+}
+
+.run-log-time,
+.run-log-kind {
+  color: var(--muted);
+}
+
+.run-log-body {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.kind-claude .run-log-body {
+  color: var(--text);
+}
+
+.kind-thinking .run-log-body {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.kind-error .run-log-kind,
+.kind-error .run-log-body {
+  color: var(--danger-text);
+}
+
+/* The AI Activity page */
+.ai-activity {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+/* What the runner is doing. Calm in every state: offline is normal, the runner lives on your laptop. */
+.agent-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  background-color: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+}
+
+.agent-banner .dot {
+  margin-top: var(--space-2);
+}
+
+.agent-banner-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.agent-banner-note {
+  color: var(--text-2);
+  font-size: var(--fs-small);
+}
+
+.ai-activity-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.ai-empty {
+  padding: var(--space-8);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-card);
+  text-align: center;
+}
+
+.ai-empty-title {
+  margin: 0 0 var(--space-2);
+  font-weight: 500;
+}
+
+.ai-runs-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-small);
+}
+
+.ai-runs-table th {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--divider);
+  color: var(--muted);
+  font-weight: 500;
+  text-align: left;
+}
+
+.ai-runs-table td {
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--divider-subtle);
+  color: var(--text-2);
+  vertical-align: middle;
+}
+
+.ai-runs-row.open td {
+  border-bottom-color: transparent;
+}
+
+.ai-runs-table .ai-run-toggle {
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text);
+  font-weight: 500;
+}
+
+/* The arrow points right while closed, down while open */
+.ai-runs-table .ai-run-toggle svg {
+  flex-shrink: 0;
+  rotate: -90deg;
+  transition: rotate var(--ease);
+}
+
+.ai-runs-table .ai-run-toggle[aria-expanded="true"] svg {
+  rotate: none;
+}
+
+.ai-runs-detail-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.ai-runs-detail-head .text-btn {
+  margin-left: auto;
+}
+
+/* The bell in the header, and its list */
+.bell {
+  position: relative;
+}
+
+.bell-count {
+  position: absolute;
+  top: var(--space-1);
+  right: var(--space-1);
+  min-width: var(--space-4);
+  height: var(--space-4);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-pill);
+  background-color: var(--accent);
+  color: var(--primary-text);
+  font-size: var(--fs-pill);
+  font-weight: 600;
+  line-height: var(--space-4);
+  text-align: center;
+}
+
+.bell-menu {
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  right: 0;
+  z-index: 50;
+  width: calc(var(--menu-width) * 1.6);
+  max-height: calc(var(--menu-max-height) * 1.4);
+  overflow-y: auto;
+  padding: var(--menu-pad);
+  background-color: var(--raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-float);
+}
+
+.bell-menu-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+}
+
+.bell-menu-title {
+  margin: 0;
+  font-size: var(--fs-body);
+}
+
+.bell-empty {
+  margin: 0;
+  padding: var(--space-6) var(--space-3);
+  color: var(--muted);
+  font-size: var(--fs-small);
+  text-align: center;
+}
+
+.bell-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bell-item {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: start;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-3);
+  background: none;
+  border: none;
+  border-radius: var(--radius-control);
+  color: var(--text-2);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.bell-item:hover {
+  background-color: var(--hover);
+}
+
+.bell-item .dot {
+  margin-top: var(--space-2);
+}
+
+/* Read ones fade back; unread ones stand out */
+.bell-item:not(.unread) .dot {
+  opacity: 0.35;
+}
+
+.bell-item.unread .bell-item-message {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.bell-item-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.bell-item-message {
+  font-size: var(--fs-small);
+}
+
+.bell-item-task {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: var(--fs-small);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bell-item-time {
+  color: var(--muted);
+  font-size: var(--fs-pill);
+  white-space: nowrap;
+}
+
+/* Toasts: bottom right, above everything (even an open task), newest at the bottom */
+.toasts {
+  position: fixed;
+  right: var(--space-6);
+  bottom: var(--space-6);
+  z-index: 1200;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: calc(var(--menu-width) * 1.6);
+  pointer-events: none; /* only the toasts themselves catch clicks, not the space around them */
+}
+
+.toast {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-3) var(--space-3) var(--space-4);
+  background-color: var(--raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-float);
+  pointer-events: auto;
+  animation: fade-in var(--ease);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast {
+    animation: none;
+  }
+}
+
+.toast.danger {
+  border-color: var(--danger-border);
+}
+
+.toast-text {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--fs-small);
+}
+
+.toast-close {
+  width: auto;
+  height: auto;
+  padding: var(--space-1);
 }
