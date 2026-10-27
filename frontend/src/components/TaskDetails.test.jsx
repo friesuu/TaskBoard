@@ -118,13 +118,13 @@ describe('TaskDetails', () => {
     renderDetails({ task: aiTask, onTaskChanged: vi.fn() });
 
     expect(screen.getByRole('tab', { name: 'Details' })).toHaveAttribute('aria-selected', 'true');
-    expect(screen.queryByRole('textbox', { name: "Claude's prompt" })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: "Claude's prompt" })).not.toBeInTheDocument();
     // The AI tab has a dot when the task needs you
     const aiTab = screen.getByRole('tab', { name: 'AI (Needs your approval)' });
 
     await userEvent.click(aiTab);
     expect(aiTab).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByRole('textbox', { name: "Claude's prompt" })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: "Claude's prompt" })).toBeInTheDocument();
     expect(screen.queryByText('Notes')).not.toBeInTheDocument();
   });
 
