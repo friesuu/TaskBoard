@@ -163,8 +163,16 @@ textarea {
   resize: vertical;
 }
 
+/* Our own chevron instead of the browser's, so it sits as far from the right edge as the text does from the left */
 select {
   cursor: pointer;
+  appearance: none;
+  padding-right: calc(var(--input-pad-x) + 16px + var(--space-2)); /* edge gap + chevron + gap before the text */
+  /* stroke %237E828F = --muted (CSS variables can't go inside a data-URI) */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%237E828F' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right var(--input-pad-x) center;
+  background-size: 16px;
 }
 
 input:focus,
