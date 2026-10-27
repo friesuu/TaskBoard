@@ -1,5 +1,6 @@
 // The Claude runner: `pnpm once` does ONE step for ONE task, then stops. `pnpm watch` keeps doing that
 // (one step at a time) until you stop it: see watch.js.
+//   - a build you clicked Merge on  -> merge its branch into main (and e.g. runner-pro) -> Done. No Claude.
 //   - a task you approved          -> build it on a new branch, check it, commit, summarise -> AI Review
 //   - otherwise, an "AI" task that needs a prompt (new, or you asked for changes) -> write it -> Prompt Review
 // Everything about which task and which step is decided by the task board, not here.
@@ -13,6 +14,7 @@ import { watch } from './watch.js';
 import { releaseLock, takeLock } from './lock.js';
 import { refine } from './refine.js';
 import { build, checkProject, prepareMainCopy, prepareWorktree, removeWorktree, summaryComment } from './build.js';
+import { merge, MergeRefused } from './merge.js';
 import { parseReset, pause, pausedUntil } from './pause.js';
 import { MIN_STEP_BUDGET_USD, spentToday, stepBudget } from './budget.js';
 import { onBattery } from './power.js';
@@ -48,7 +50,7 @@ async function openRun(api, job, branch = null)
 {
     try
     {
-        return await api.startRun(job.task.id, job.kind === 'BUILD' ? 'build' : 'refine', branch);
+        return await api.startRun(job.task.id, job.kind.toLowerCase(), branch);
     }
     catch (err)
     {
@@ -254,6 +256,36 @@ async function doBuild({ job, project, config, api, startedAt })
     }
 }
 
+// Merges the branch you clicked Merge on. When it stops on purpose (a protected file, a conflict, uncommitted
+// changes), the task says why and waits in AI Review: "Try again" after fixing it, or merge it by hand.
+async function doMerge({ job, project, config, api, startedAt })
+{
+    const runId = await openRun(api, job, job.task.aiBranch);
+    const log = createRunLog({ api, runId, knownSecrets: knownSecrets() });
+    const finish = async (status, entry) => {
+        await closeRun(api, runId, log, { status, ...entry });
+        record({ config, job, startedAt, entry: { branch: job.task.aiBranch, ...entry } });
+    };
+
+    try
+    {
+        const problem = await checkProject(project);
+        if (problem) throw new MergeRefused(problem);
+        const { merged } = await merge({ job, project, projectName: job.project, config, log });
+        await api.finishMerge(job.task.id);
+        say(`Merged into ${merged.join(' and ')}: the task is Done.`);
+        await finish('succeeded', { result: 'merged', summary: `Merged ${job.task.aiBranch} into ${merged.join(' and ')}.` });
+    }
+    catch (err)
+    {
+        const message = err instanceof MergeRefused ? err.message : `The runner hit a problem: ${err.message}`;
+        log.add('error', message);
+        await api.reportError(job.task.id, message).catch(() => {});
+        say(`Not merged: ${message}`);
+        await finish('failed', { result: 'not merged', error: message });
+    }
+}
+
 // Today's cap for each step (API mode): the step's own cap, or what's left of the day's. null = used up.
 function todaysBudgets(config)
 {
@@ -280,12 +312,14 @@ async function runOneStep({ quiet = false } = {})
     const token = process.env.RUNNER_TOKEN?.trim();
     const api = token ? createApi(config.taskBoardUrl, token) : null;
     const until = pausedUntil(config.pauseFile);
-    if (until)
+    // Paused or not, a merge you asked for still happens: it doesn't use Claude
+    if (until && !(await runMergeIfWaiting({ config, api })))
     {
         await tellBoard(api, { state: 'paused', pausedUntil: until.toISOString() });
         note(`Paused until ${until.toLocaleString()} (usage limit). Nothing to do before then.`);
         return { status: 'paused', until };
     }
+    if (until) return { status: 'done' };
 
     await preflight(config);
     try
@@ -304,6 +338,13 @@ async function runOneStep({ quiet = false } = {})
     }
     try
     {
+        const job = await api.nextJob();
+        if (job?.kind === 'MERGE')
+        {
+            await doMergeJob({ job, config, api });
+            return { status: 'done' };
+        }
+
         const budgets = todaysBudgets(config);
         if (!budgets)
         {
@@ -313,7 +354,6 @@ async function runOneStep({ quiet = false } = {})
             return { status: 'capped' };
         }
 
-        const job = await api.nextJob();
         if (!job)
         {
             note('Nothing to do.');
@@ -365,6 +405,57 @@ async function runOneStep({ quiet = false } = {})
             await tellBoard(api, { state: 'idle' });
         }
         return { status: 'done' };
+    }
+    finally
+    {
+        releaseLock(config.lockFile);
+    }
+}
+
+// A merge job, with the board kept up to date: the runner is "working" on it until it's done
+async function doMergeJob({ job, config, api })
+{
+    const startedAt = new Date();
+    say(`Merging task #${job.task.id} "${job.task.title}" (${job.task.aiBranch})`);
+    const project = config.projects[job.project];
+    if (!project)
+    {
+        const message = `The project "${job.project}" isn't in the runner's projects.json`;
+        await api.reportError(job.task.id, message);
+        say(`Stopped: ${message}`);
+        return;
+    }
+    await tellBoard(api, { state: 'working', taskId: job.task.id, step: 'merge' });
+    try
+    {
+        await doMerge({ job, project, config, api, startedAt });
+    }
+    finally
+    {
+        await tellBoard(api, { state: 'idle' });
+    }
+}
+
+// While paused for the usage limit: do a waiting merge, if there is one. true = it did one.
+// Needs the board and the lock, but not Claude Code, so the Pro login isn't checked.
+async function runMergeIfWaiting({ config, api })
+{
+    if (!api) return false;
+    try
+    {
+        await api.ping();
+    }
+    catch
+    {
+        return false; // the board isn't reachable: say "paused" as usual and try again later
+    }
+    if (!takeLock(config.lockFile)) return false;
+    try
+    {
+        const job = await api.nextJob();
+        if (job?.kind !== 'MERGE') return false;
+        await doMergeJob({ job, config, api });
+        return true;
     }
     finally
     {

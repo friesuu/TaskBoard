@@ -9,8 +9,19 @@ Runs your task board's "AI" tasks through Claude Code, one step at a time:
 3. An approved task → Claude builds it on a new branch `ai/task-<id>-<title>` → the runner runs the
    build and tests itself, scans the changes for secrets, commits on that branch, and posts a summary →
    **AI Review**.
-4. You check the branch, merge it yourself if you're happy, and move the task to Done. The runner never
-   touches main, never pushes, never deploys.
+4. You check the branch: until it's merged, your app still runs the old code (the AI tab says so). If
+   you're happy, click **Merge** in the AI tab. On its next check the runner merges the branch into main,
+   then main into the project's `alsoMergeInto` branches (e.g. `runner-pro`), and moves the task to
+   **Done**. It never merges anything you didn't click Merge on, never pushes, never deploys.
+
+   It stops instead, changing nothing, and the task says why, when:
+   - the branch changes a `protectedPaths` file or folder (for task-board, `runner/`: the runner's own
+     code, safety locks included, is always merged by hand after you've read it);
+   - a folder where one of those branches is checked out has uncommitted changes (commit or stash them,
+     then **Try again**);
+   - the merge has conflicts (it's undone at once: merge it by hand).
+
+   A merge doesn't use Claude, so it goes ahead even while the runner is paused for the usage limit.
 
 To have Claude build a task again, move it back to **In progress**: it's built from scratch on a new
 branch (`…-2`), with the same approved prompt, so it costs another build. To change the prompt first, move
@@ -71,7 +82,9 @@ Each lock works on its own, so one mistake in any of them isn't enough to cause 
 ## Adding a project
 
 Add it to `projects.json` (its folder must be a git repository with a `main` branch), then type its name
-under **Claude project** in that board's settings.
+under **Claude project** in that board's settings. Two optional settings are for **Merge**:
+`alsoMergeInto` (branches that get main merged into them after a merge, e.g. `["runner-pro"]`) and
+`protectedPaths` (files, or folders ending in `/`, the runner never merges by itself, e.g. `["runner/"]`).
 
 ## Switching to the Pro plan later
 

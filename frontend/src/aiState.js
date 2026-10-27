@@ -14,6 +14,7 @@ export const AI_STATES = {
     approval: { label: 'Needs your approval', tone: 'prompt', live: false },
     working: { label: 'Working', tone: 'ai', live: true },
     review: { label: 'Ready for review', tone: 'success', live: false },
+    merging: { label: 'Merging', tone: 'ai', live: true },
     failed: { label: 'Failed', tone: 'danger', live: false },
 };
 
@@ -27,7 +28,9 @@ export function aiStateOf(task)
         case 'TODO': return isAiTask(task) && !task.refinedPrompt ? 'refining' : null;
         case 'PROMPT_REVIEW': return task.changesRequested ? 'refining' : (task.refinedPrompt ? 'approval' : null);
         case 'IN_PROGRESS': return task.promptApprovedAt ? 'working' : null;
-        case 'AI_REVIEW': return task.aiChecksPassed === false ? 'failed' : 'review';
+        case 'AI_REVIEW':
+            if (task.aiChecksPassed === false) return 'failed';
+            return task.aiMergeRequestedAt && !task.aiMergedAt ? 'merging' : 'review';
         default: return null;
     }
 }
@@ -49,7 +52,7 @@ export function aiStepOf(task)
 
 // ----- Runs -----
 
-export const STEP_NAMES = { refine: 'Writing the prompt', build: 'Building' };
+export const STEP_NAMES = { refine: 'Writing the prompt', build: 'Building', merge: 'Merging' };
 
 // "1m 22s". A run still going counts up to now.
 export function durationOf(run, now = new Date())
@@ -74,7 +77,9 @@ export const RUN_TONES = { running: 'ai', succeeded: 'success', failed: 'danger'
 
 // ----- Notifications -----
 
-export const NOTIFICATION_TONES = { prompt_ready: 'prompt', review_ready: 'success', run_failed: 'danger', usage_limit: 'warning' };
+export const NOTIFICATION_TONES = {
+    prompt_ready: 'prompt', review_ready: 'success', run_failed: 'danger', usage_limit: 'warning', merged: 'success',
+};
 
 // "just now", "5 min ago", "2 h ago", "3 days ago"
 export function timeAgo(isoString, now = new Date())

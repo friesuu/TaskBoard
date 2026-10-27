@@ -13,6 +13,8 @@
       "cd backend && pnpm install --frozen-lockfile && cd ../frontend && pnpm install --frozen-lockfile"
     ],
     "build": "sh /home/thierry/task-board/runner/projects/task-board/build.sh",
-    "test": "sh /home/thierry/task-board/runner/projects/task-board/test.sh"
+    "test": "sh /home/thierry/task-board/runner/projects/task-board/test.sh",
+    "alsoMergeInto": ["runner-pro"],
+    "protectedPaths": ["runner/"]
   }
 }

@@ -30,10 +30,13 @@ export class RunnerService {
     private readonly notificationsService: NotificationsService,
   ) {}
 
-  // The next thing to do, one task at a time: first anything approved and waiting to be built
-  // (oldest approval first), then any prompt to write or revise (oldest task first). null = nothing to do.
-  async nextJob(ownerId: number): Promise<RunnerJob | null> {
-    for (const kind of [RunnerJobKind.BUILD, RunnerJobKind.REFINE]) {
+  // The next thing to do, one task at a time: first a merge you asked for (quick, and no Claude), then
+  // anything approved and waiting to be built (oldest approval first), then any prompt to write or revise
+  // (oldest task first). null = nothing to do.
+  // kinds: the jobs this runner can do. An older runner doesn't know MERGE, so it's never handed one.
+  async nextJob(ownerId: number, kinds: RunnerJobKind[] = [RunnerJobKind.BUILD, RunnerJobKind.REFINE]): Promise<RunnerJob | null> {
+    for (const kind of [RunnerJobKind.MERGE, RunnerJobKind.BUILD, RunnerJobKind.REFINE]) {
+      if (!kinds.includes(kind)) continue;
       const task = await this.waiting(ownerId, kind).getOne();
       if (task) return this.jobFor(task.id, ownerId, kind);
     }
@@ -62,7 +65,9 @@ export class RunnerService {
   // The runner made the task's branch and is about to start. Marking it stops it being picked twice.
   async startBuild(taskId: number, ownerId: number, branch: string): Promise<Task> {
     const task = await this.claim(taskId, ownerId, RunnerJobKind.BUILD);
-    await this.tasksRepository.update(task.id, { aiBranch: branch, aiBuiltAt: null, aiChecksPassed: null });
+    await this.tasksRepository.update(task.id, {
+      aiBranch: branch, aiBuiltAt: null, aiChecksPassed: null, aiMergeRequestedAt: null, aiMergedAt: null,
+    });
     return this.tasksService.findOwned(task.id, ownerId);
   }
 
@@ -81,6 +86,14 @@ export class RunnerService {
       checksPassed ? 'Ready for review' : 'Built, but it needs a look: the checks failed or Claude stopped early', task.id,
     );
     return this.tasksService.move(task.id, { status: TaskStatus.AI_REVIEW, position: BOTTOM }, ownerId);
+  }
+
+  // The runner merged the branch you clicked Merge on: the work is in the project, so the task is Done
+  async finishMerge(taskId: number, ownerId: number): Promise<Task> {
+    const task = await this.claim(taskId, ownerId, RunnerJobKind.MERGE);
+    await this.tasksRepository.update(task.id, { aiMergedAt: new Date() });
+    await this.notificationsService.notify(ownerId, 'merged', 'Merged into the project', task.id);
+    return this.tasksService.move(task.id, { status: TaskStatus.DONE, position: BOTTOM }, ownerId);
   }
 
   // The runner couldn't carry on (e.g. the spend cap was reached). The task stays where it is and is
@@ -103,6 +116,15 @@ export class RunnerService {
       .andWhere('task.aiError IS NULL');
     if (taskId !== undefined) query.andWhere('task.id = :taskId', { taskId });
 
+    if (kind === RunnerJobKind.MERGE) {
+      // A build that went fine, in AI Review, that you clicked Merge on, not merged yet
+      return query
+        .andWhere('task.status = :aiReview', { aiReview: TaskStatus.AI_REVIEW })
+        .andWhere('task.aiBranch IS NOT NULL AND task.aiBuiltAt IS NOT NULL AND task.aiChecksPassed = true')
+        .andWhere('task.aiMergeRequestedAt IS NOT NULL AND task.aiMergedAt IS NULL')
+        .orderBy('task.aiMergeRequestedAt', 'ASC')
+        .addOrderBy('task.id', 'ASC');
+    }
     if (kind === RunnerJobKind.BUILD) {
       // Approved and in In progress: not started yet, or built before and moved back to In progress
       // (then it's built again, from scratch on a new branch). Never while a build is running.

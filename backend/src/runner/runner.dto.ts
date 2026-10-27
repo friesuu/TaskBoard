@@ -82,7 +82,7 @@ export const LOG_KINDS = ['info', 'claude', 'thinking', 'tool', 'check', 'error'
 @InputType('RunnerRunStartInput')
 export class RunnerRunStartDto {
   @Field()
-  @IsIn(['refine', 'build'])
+  @IsIn(['refine', 'build', 'merge'])
   step: string;
 
   @Field(() => String, { nullable: true })
@@ -175,7 +175,7 @@ export class RunnerStatusDto {
 
   @Field(() => String, { nullable: true })
   @IsOptional()
-  @IsIn(['refine', 'build'])
+  @IsIn(['refine', 'build', 'merge'])
   step?: string | null;
 
   @Field(() => Date, { nullable: true })

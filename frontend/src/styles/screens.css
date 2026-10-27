@@ -1345,6 +1345,15 @@
   align-items: flex-start;
 }
 
+/* Merge, under "Built on branch …": what it does, then the button on the right */
+.ai-merge {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
 /* A brand-new runner token: shown once, easy to select and copy */
 .runner-token-value {
   padding: var(--space-3) var(--space-4);

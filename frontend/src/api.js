@@ -5,7 +5,7 @@ const API_ORIGIN = GRAPHQL_URL.replace(/\/graphql$/, '');
 const TASK_FIELDS =
     'id title description status dueDate checklistDone checklistTotal attachmentCount labels { id name color } '
     // the Claude runner's part of the task (see AiSection)
-    + 'refinedPrompt changesRequested promptApprovedAt aiBranch aiBuiltAt aiChecksPassed aiError';
+    + 'refinedPrompt changesRequested promptApprovedAt aiBranch aiBuiltAt aiChecksPassed aiError aiMergeRequestedAt aiMergedAt';
 const CHAT_FIELDS = 'id role content createdAt responseMs';
 const BOARD_FIELDS = 'id name project';
 const ITEM_FIELDS = 'id text done position';
@@ -539,6 +539,16 @@ export async function requestPromptChanges(taskId, comment)
         { taskId, input: { comment } },
     );
     return data.requestPromptChanges;
+}
+
+// Merge, after you've checked a build in AI Review: the runner merges its branch on its next check
+export async function requestAiMerge(taskId)
+{
+    const data = await graphqlRequest(
+        `mutation RequestAiMerge($taskId: Int!) { requestAiMerge(taskId: $taskId) { ${TASK_FIELDS} } }`,
+        { taskId },
+    );
+    return data.requestAiMerge;
 }
 
 // "Try again" after the runner stopped on a task
