@@ -13,5 +13,6 @@ import { TasksModule } from '../tasks/tasks.module';
     TasksModule, // for TasksService.findOwned ("is this task yours?")
   ],
   providers: [CommentsService, CommentsResolver],
+  exports: [CommentsService], // the chat assistant reads a task's comments
 })
 export class CommentsModule {}

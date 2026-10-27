@@ -89,14 +89,6 @@ type ChatMessage {
   responseMs: Int
 }
 
-type ChecklistItem {
-  id: Int!
-  text: String!
-  done: Boolean!
-  position: Int!
-  taskId: Int!
-}
-
 type Comment {
   id: Int!
   body: String!
@@ -108,13 +100,14 @@ type Comment {
   fromRunner: Boolean!
 }
 
-type Attachment {
+type Notification {
   id: Int!
-  fileName: String!
-  mimeType: String!
-  size: Int!
+  task: Task
+  taskId: Int
+  kind: String!
+  message: String!
   createdAt: DateTime!
-  taskId: Int!
+  readAt: DateTime
 }
 
 type AgentRun {
@@ -151,14 +144,12 @@ type AgentStatusInfo {
   lastSeenAt: DateTime
 }
 
-type Notification {
+type ChecklistItem {
   id: Int!
-  task: Task
-  taskId: Int
-  kind: String!
-  message: String!
-  createdAt: DateTime!
-  readAt: DateTime
+  text: String!
+  done: Boolean!
+  position: Int!
+  taskId: Int!
 }
 
 type RunnerTokenInfo {
@@ -180,16 +171,22 @@ enum RunnerJobKind {
   BUILD
 }
 
+type Attachment {
+  id: Int!
+  fileName: String!
+  mimeType: String!
+  size: Int!
+  createdAt: DateTime!
+  taskId: Int!
+}
+
 type Query {
   tasks(boardId: Int!, filter: TaskFilterInput): [Task!]!
   taskStats: TaskStats!
   me: User!
   boards: [Board!]!
   chatMessages: [ChatMessage!]!
-  checklistItems(taskId: Int!): [ChecklistItem!]!
   comments(taskId: Int!): [Comment!]!
-  labels(boardId: Int!): [Label!]!
-  attachments(taskId: Int!): [Attachment!]!
   runnerToken: RunnerTokenInfo
   agentRuns(taskId: Int!): [AgentRun!]!
   aiNotes(taskId: Int!): [Comment!]!
@@ -200,6 +197,9 @@ type Query {
   agentRunLog(runId: Int!): [AgentRunLog!]!
   notifications: [Notification!]!
   unreadNotificationCount: Int!
+  checklistItems(taskId: Int!): [ChecklistItem!]!
+  labels(boardId: Int!): [Label!]!
+  attachments(taskId: Int!): [Attachment!]!
 }
 
 input TaskFilterInput {
@@ -232,20 +232,9 @@ type Mutation {
   deleteBoard(id: Int!): Boolean!
   sendChatMessage(input: SendChatMessageInput!): ChatMessage!
   clearChat: Boolean!
-  addChecklistItem(taskId: Int!, input: ChecklistItemInput!): ChecklistItem!
-  updateChecklistItem(id: Int!, input: UpdateChecklistItemInput!): ChecklistItem!
-  moveChecklistItem(id: Int!, position: Int!): [ChecklistItem!]!
-  deleteChecklistItem(id: Int!): Boolean!
   addComment(taskId: Int!, input: CommentInput!): Comment!
   updateComment(id: Int!, input: CommentInput!): Comment!
   deleteComment(id: Int!): Boolean!
-  createLabel(boardId: Int!, input: LabelInput!): Label!
-  updateLabel(id: Int!, input: UpdateLabelInput!): Label!
-  deleteLabel(id: Int!): Boolean!
-  setTaskLabels(taskId: Int!, input: SetTaskLabelsInput!): Task!
-  deleteAttachment(id: Int!): Boolean!
-  setDisplayName(input: DisplayNameInput!): User!
-  deleteAccount(input: DeleteAccountInput!): Boolean!
   createRunnerToken: String!
   revokeRunnerToken: Boolean!
   updateRefinedPrompt(taskId: Int!, input: RefinedPromptInput!): Task!
@@ -262,6 +251,17 @@ type Mutation {
   runnerReportStatus(input: RunnerStatusInput!): Boolean!
   markNotificationRead(id: Int!): Notification!
   markAllNotificationsRead: Int!
+  addChecklistItem(taskId: Int!, input: ChecklistItemInput!): ChecklistItem!
+  updateChecklistItem(id: Int!, input: UpdateChecklistItemInput!): ChecklistItem!
+  moveChecklistItem(id: Int!, position: Int!): [ChecklistItem!]!
+  deleteChecklistItem(id: Int!): Boolean!
+  createLabel(boardId: Int!, input: LabelInput!): Label!
+  updateLabel(id: Int!, input: UpdateLabelInput!): Label!
+  deleteLabel(id: Int!): Boolean!
+  setTaskLabels(taskId: Int!, input: SetTaskLabelsInput!): Task!
+  deleteAttachment(id: Int!): Boolean!
+  setDisplayName(input: DisplayNameInput!): User!
+  deleteAccount(input: DeleteAccountInput!): Boolean!
 }
 
 input CreateTaskInput {
@@ -316,39 +316,8 @@ input SendChatMessageInput {
   message: String!
 }
 
-input ChecklistItemInput {
-  text: String!
-}
-
-input UpdateChecklistItemInput {
-  text: String
-  done: Boolean
-}
-
 input CommentInput {
   body: String!
-}
-
-input LabelInput {
-  name: String!
-  color: LabelColor!
-}
-
-input UpdateLabelInput {
-  name: String
-  color: LabelColor
-}
-
-input SetTaskLabelsInput {
-  labelIds: [Int!]!
-}
-
-input DisplayNameInput {
-  displayName: String!
-}
-
-input DeleteAccountInput {
-  password: String!
 }
 
 input RefinedPromptInput {
@@ -404,4 +373,35 @@ input RunnerStatusInput {
   taskId: Int
   step: String
   pausedUntil: DateTime
+}
+
+input ChecklistItemInput {
+  text: String!
+}
+
+input UpdateChecklistItemInput {
+  text: String
+  done: Boolean
+}
+
+input LabelInput {
+  name: String!
+  color: LabelColor!
+}
+
+input UpdateLabelInput {
+  name: String
+  color: LabelColor
+}
+
+input SetTaskLabelsInput {
+  labelIds: [Int!]!
+}
+
+input DisplayNameInput {
+  displayName: String!
+}
+
+input DeleteAccountInput {
+  password: String!
 }

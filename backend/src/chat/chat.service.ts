@@ -7,6 +7,10 @@ import { TasksService } from '../tasks/tasks.service';
 import { Task } from '../tasks/task.entity';
 import { taskTools } from './task-tools';
 import { BoardsService } from '../boards/boards.service';
+import { aiTools } from './ai-tools';
+import { CommentsService } from '../comments/comments.service';
+import { PromptReviewService } from '../runner/prompt-review.service';
+import { AiActivityService } from '../runner/ai-activity.service';
 
 const MEMORY_SIZE = 20; // how many earlier messages Claude "remembers"
 
@@ -18,6 +22,9 @@ export class ChatService {
     private readonly tasksService: TasksService,
     private readonly llmService: LlmService,
     private readonly boardsService: BoardsService,
+    private readonly commentsService: CommentsService,
+    private readonly promptReviewService: PromptReviewService,
+    private readonly aiActivityService: AiActivityService,
   ) {}
 
   // The whole conversation, oldest first (for the screen)
@@ -50,7 +57,10 @@ export class ChatService {
     const answer = await this.llmService.reply([
       ...recent.map((m) => ({ role: m.role, content: m.content })),
       { role: 'user', content: context + text },],
-      taskTools(this.tasksService, ownerId, boardId), // built for THIS user and THIS board only
+      [ // built for THIS user and THIS board only
+        ...taskTools(this.tasksService, ownerId, boardId),
+        ...aiTools(this.tasksService, this.commentsService, this.promptReviewService, this.aiActivityService, ownerId, boardId),
+      ],
     );
     const responseMs = Date.now() - started; // in milliseconds, including any tool steps (e.g. creating tasks)
 
@@ -73,6 +83,6 @@ export class ChatService {
 function describeTasks(tasks: Task[]): string {
   if (tasks.length === 0) return 'No tasks yet.';
   return tasks
-    .map((t) => `- #${t.id} [${t.status}] ${t.title}${t.dueDate ? ` (due ${t.dueDate})` : ''}${t.description ? `: ${t.description}` : ''}`)
+    .map((t) => `- #${t.id} [${t.status}] ${t.title}${t.dueDate ? ` (due ${t.dueDate})` : ''}${t.changesRequested ? ' (Claude revising prompt)' : ''}${t.aiError ? ' (runner stopped)' : ''}${t.description ? `: ${t.description}` : ''}`)
     .join('\n');
 }

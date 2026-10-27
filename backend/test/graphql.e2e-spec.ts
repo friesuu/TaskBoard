@@ -2030,6 +2030,32 @@ describe('Tasks GraphQL API (e2e)', () => {
       expect(job).toMatchObject({ kind: 'REFINE', project: 'notes-app', task: { id: task.id, status: 'TODO' } });
     });
 
+    it("the assistant reads Claude's work and reviews its prompt, on the current board only", async () => {
+      const toolNamed = (name: string) => fakeLlm.lastTools.find((t) => t.name === name)!;
+      const { task, board } = await aiTask();
+      const home = await createTask({ title: 'Home task' });
+      await ok(asRunner(SAVE_PROMPT, { taskId: task.id, input: { prompt: 'Goal: a search box on the board page.' } }));
+      await gql(SEND_CHAT, { input: { boardId: board.id, message: 'How is the search task going?' } }).expect(200);
+
+      const details = await toolNamed('get_ai_details').run({ ids: [task.id, home.id] });
+      expect(details).toContain('Goal: a search box on the board page.');
+      expect(details).toContain(`Task #${home.id}: Task ${home.id} not found on this board`);
+
+      // Request changes: the feedback is saved like the button's, and the task waits for Claude's revision
+      await toolNamed('request_prompt_changes').run({ id: task.id, comment: 'Put it in the header' });
+      const notes = (await ok(gql(AI_NOTES, { taskId: task.id }))).aiNotes as { body: string; kind: string }[];
+      expect(notes).toEqual([expect.objectContaining({ body: 'Put it in the header', kind: 'feedback' })]);
+      await expect(toolNamed('approve_prompt').run({ id: task.id })).rejects.toThrow('Claude is still revising this prompt');
+
+      // Claude revises it, then the assistant approves it: the task goes to In progress, ready to build
+      await ok(asRunner(SAVE_PROMPT, { taskId: task.id, input: { prompt: 'Goal: a search box in the header.' } }));
+      await toolNamed('approve_prompt').run({ id: task.id });
+      expect(await titlesIn('IN_PROGRESS', board.id)).toEqual(['Add a search box']);
+      expect(await nextJob()).toMatchObject({ kind: 'BUILD', approvedPrompt: 'Goal: a search box in the header.' });
+
+      await expect(toolNamed('approve_prompt').run({ id: home.id })).rejects.toThrow(`Task ${home.id} not found on this board`);
+    });
+
     it('runs the whole flow: prompt, review, approve, build, AI Review', async () => {
       const { task } = await aiTask();
 

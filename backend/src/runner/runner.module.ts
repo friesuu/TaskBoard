@@ -45,5 +45,6 @@ import { RunnerResolver } from './runner.resolver';
     AiActivityService,
     AiActivityResolver,
   ],
+  exports: [PromptReviewService, AiActivityService], // the chat assistant reads runs and reviews prompts
 })
 export class RunnerModule {}
