@@ -1,7 +1,7 @@
 // The runner's connection to the task board: its own GraphQL operations, sent with the runner token.
 // The runner is a separate program, so it talks to the board through the API like the browser does.
 
-const TASK_FIELDS = 'id title description status refinedPrompt labels { name }';
+const TASK_FIELDS = 'id title description status refinedPrompt aiBranch labels { name }';
 
 export function createApi(url, token)
 {
@@ -29,9 +29,9 @@ export function createApi(url, token)
         // "Is my token valid?"
         ping: () => request('query { runnerPing }'),
 
-        // The next job, or null: { kind: 'REFINE' | 'BUILD', project, approvedPrompt, task, comments, checklist }
+        // The next job, or null: { kind: 'MERGE' | 'BUILD' | 'REFINE', project, approvedPrompt, task, comments, checklist }
         nextJob: async () => (await request(`query {
-            runnerNextJob {
+            runnerNextJob(kinds: [MERGE, BUILD, REFINE]) {
                 kind project approvedPrompt
                 task { ${TASK_FIELDS} }
                 comments { body fromRunner kind createdAt }
@@ -53,6 +53,12 @@ export function createApi(url, token)
         finishBuild: (taskId, checksPassed) => request(
             `mutation ($taskId: Int!, $input: RunnerBuildResultInput!) { runnerFinishBuild(taskId: $taskId, input: $input) { id } }`,
             { taskId, input: { checksPassed } },
+        ),
+
+        // The branch is merged: the task moves to Done
+        finishMerge: (taskId) => request(
+            `mutation ($taskId: Int!) { runnerFinishMerge(taskId: $taskId) { id } }`,
+            { taskId },
         ),
 
         // A step starts: the board opens a run (shown as running) and returns its id

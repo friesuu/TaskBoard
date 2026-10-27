@@ -6,7 +6,7 @@ import { User } from '../users/user.entity';
 import { Task } from '../tasks/task.entity';
 import { RunnerService } from './runner.service';
 import { AiActivityService } from './ai-activity.service';
-import { RunnerJob } from './runner-job.type';
+import { RunnerJob, RunnerJobKind } from './runner-job.type';
 import {
   RunnerBuildResultDto, RunnerBuildStartDto, RunnerErrorDto, RunnerLogInputDto, RunnerPromptDto,
   RunnerRunFinishDto, RunnerRunStartDto, RunnerStatusDto,
@@ -28,9 +28,13 @@ export class RunnerResolver {
     return true;
   }
 
+  // kinds: the jobs this runner can do (left out by runners from before MERGE existed)
   @Query(() => RunnerJob, { nullable: true })
-  runnerNextJob(@CurrentUser() user: User): Promise<RunnerJob | null> {
-    return this.runnerService.nextJob(user.id);
+  runnerNextJob(
+    @CurrentUser() user: User,
+    @Args('kinds', { type: () => [RunnerJobKind], nullable: true }) kinds?: RunnerJobKind[],
+  ): Promise<RunnerJob | null> {
+    return this.runnerService.nextJob(user.id, kinds ?? undefined);
   }
 
   @Mutation(() => Task)
@@ -58,6 +62,11 @@ export class RunnerResolver {
     @Args('input') input: RunnerBuildResultDto,
   ): Promise<Task> {
     return this.runnerService.finishBuild(taskId, user.id, input.checksPassed);
+  }
+
+  @Mutation(() => Task)
+  runnerFinishMerge(@CurrentUser() user: User, @Args('taskId', { type: () => Int }) taskId: number): Promise<Task> {
+    return this.runnerService.finishMerge(taskId, user.id);
   }
 
   @Mutation(() => Task)

@@ -53,6 +53,8 @@ type Task {
   aiBranch: String
   aiBuiltAt: DateTime
   aiChecksPassed: Boolean
+  aiMergeRequestedAt: DateTime
+  aiMergedAt: DateTime
   aiError: String
   boardId: Int!
   checklistTotal: Int!
@@ -169,6 +171,7 @@ type RunnerJob {
 enum RunnerJobKind {
   REFINE
   BUILD
+  MERGE
 }
 
 type Attachment {
@@ -191,7 +194,7 @@ type Query {
   agentRuns(taskId: Int!): [AgentRun!]!
   aiNotes(taskId: Int!): [Comment!]!
   runnerPing: Boolean!
-  runnerNextJob: RunnerJob
+  runnerNextJob(kinds: [RunnerJobKind!]): RunnerJob
   agentStatus: AgentStatusInfo!
   aiRuns(status: String): [AgentRun!]!
   agentRunLog(runId: Int!): [AgentRunLog!]!
@@ -240,10 +243,12 @@ type Mutation {
   updateRefinedPrompt(taskId: Int!, input: RefinedPromptInput!): Task!
   approvePrompt(taskId: Int!): Task!
   requestPromptChanges(taskId: Int!, input: PromptChangesInput!): Task!
+  requestAiMerge(taskId: Int!): Task!
   retryAiTask(taskId: Int!): Task!
   runnerSavePrompt(taskId: Int!, input: RunnerPromptInput!): Task!
   runnerStartBuild(taskId: Int!, input: RunnerBuildStartInput!): Task!
   runnerFinishBuild(taskId: Int!, input: RunnerBuildResultInput!): Task!
+  runnerFinishMerge(taskId: Int!): Task!
   runnerReportError(taskId: Int!, input: RunnerErrorInput!): Task!
   runnerStartRun(taskId: Int!, input: RunnerRunStartInput!): Int!
   runnerAppendLog(runId: Int!, input: RunnerLogInput!): Boolean!

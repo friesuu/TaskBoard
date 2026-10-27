@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { between, outcomeOf } from '../src/claude.js';
@@ -17,6 +17,7 @@ import { run, sandboxedCommand, stopChildren } from '../src/shell.js';
 import { CHECK_EVERY_MS, nextCheckDelay, statusMessage } from '../src/watch.js';
 import { isOnBattery } from '../src/power.js';
 import { addPackageJson, removePlaceholders } from '../src/placeholders.js';
+import { merge, MergeRefused, protectedFiles } from '../src/merge.js';
 import { homedir } from 'node:os';
 import { rmSync } from 'node:fs';
 
@@ -407,4 +408,94 @@ test('the log goes to the board a few lines at a time, in order, with secrets hi
     await failing.close();
     assert.equal(sent.length, 1);
     assert.match(warnings[0], /board down/);
+});
+
+// ----- Merging after your review (merge.js) -----
+
+// A project like task-board: main, plus "pro" checked out in the project folder (like runner-pro),
+// and a task branch built from main that changes `file`
+function mergeSetup(file = 'app.css', content = 'button { margin: 0 14px; }\n')
+{
+    const dir = tempRepo({ 'app.css': 'button {}\n', 'README.md': 'Hi\n' });
+    mkdirSync(join(dir, 'runner'));
+    writeFileSync(join(dir, 'runner', 'guard.js'), '// the guard\n');
+    const g = (...args) => spawnSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', ...args], { cwd: dir, encoding: 'utf8' });
+    g('add', '-A'); g('commit', '-q', '-m', 'Runner');
+    g('switch', '-q', '-c', 'ai/task-7-fix-pill');
+    mkdirSync(dirname(join(dir, file)), { recursive: true });
+    writeFileSync(join(dir, file), content);
+    g('add', '-A'); g('commit', '-q', '-m', 'Fix pill (task #7)');
+    g('switch', '-q', '-c', 'pro', 'main');
+    const project = { path: dir, baseBranch: 'main', alsoMergeInto: ['pro'], protectedPaths: ['runner/'] };
+    const config = { worktreeRoot: mkdtempSync(join(tmpdir(), 'runner-merge-worktrees-')) };
+    const job = { task: { id: 7, aiBranch: 'ai/task-7-fix-pill' } };
+    const log = { add: () => {} };
+    const show = (ref, path) => g('show', `${ref}:${path}`).stdout;
+    const cleanup = () => { rmSync(dir, { recursive: true, force: true }); rmSync(config.worktreeRoot, { recursive: true, force: true }); };
+    return { dir, project, config, job, log, g, show, cleanup };
+}
+
+test('a merge puts the branch into main, then main into the extra branches, updating the checked-out folder', async () => {
+    const { dir, project, config, job, log, show, cleanup } = mergeSetup();
+    try
+    {
+        const result = await merge({ job, project, projectName: 'demo', config, log });
+        assert.deepEqual(result.merged, ['main', 'pro']);
+        assert.equal(show('main', 'app.css'), 'button { margin: 0 14px; }\n');
+        assert.equal(show('pro', 'app.css'), 'button { margin: 0 14px; }\n');
+        assert.equal(readFileSync(join(dir, 'app.css'), 'utf8'), 'button { margin: 0 14px; }\n'); // your folder too
+
+        // Merging again (e.g. "Try again" after a later step stopped) changes nothing and doesn't fail
+        await merge({ job, project, projectName: 'demo', config, log });
+    }
+    finally
+    {
+        cleanup();
+    }
+});
+
+test("a merge never touches protected paths (the runner's own code): it stops and changes nothing", async () => {
+    const { project, config, job, log, g, cleanup } = mergeSetup('runner/guard.js', '// guard switched off\n');
+    try
+    {
+        const main = g('rev-parse', 'main').stdout;
+        await assert.rejects(merge({ job, project, projectName: 'demo', config, log }), (err) => {
+            assert.ok(err instanceof MergeRefused);
+            assert.match(err.message, /changes runner\/guard\.js, which the runner never merges by itself/);
+            return true;
+        });
+        assert.equal(g('rev-parse', 'main').stdout, main);
+        assert.deepEqual(protectedFiles(['runner/x.js', 'runnerish.js', 'package.json'], ['runner/', 'package.json']), ['runner/x.js', 'package.json']);
+    }
+    finally
+    {
+        cleanup();
+    }
+});
+
+test('a merge waits for you when the folder has uncommitted changes, and undoes a conflict at once', async () => {
+    const { dir, project, config, job, log, g, show, cleanup } = mergeSetup();
+    try
+    {
+        // Uncommitted work in the folder where "pro" is checked out: main is merged, pro is left alone
+        writeFileSync(join(dir, 'README.md'), 'my own edit\n');
+        await assert.rejects(merge({ job, project, projectName: 'demo', config, log }), /pro has uncommitted changes/);
+        assert.equal(show('pro', 'app.css'), 'button {}\n');
+        assert.equal(readFileSync(join(dir, 'README.md'), 'utf8'), 'my own edit\n'); // your edit is untouched
+        g('checkout', '--', 'README.md');
+
+        // pro changed the same line meanwhile: a conflict is undone, pro and your folder stay as they were
+        writeFileSync(join(dir, 'app.css'), 'button { margin: 0; }\n');
+        g('commit', '-q', '-am', 'My own fix');
+        await assert.rejects(merge({ job, project, projectName: 'demo', config, log }), /Merging main into pro has conflicts/);
+        assert.equal(readFileSync(join(dir, 'app.css'), 'utf8'), 'button { margin: 0; }\n');
+        assert.equal(g('status', '--porcelain').stdout, '');
+
+        // A branch that isn't this task's is refused before anything happens
+        await assert.rejects(merge({ job: { task: { id: 8, aiBranch: 'ai/task-7-fix-pill' } }, project, projectName: 'demo', config, log }), /isn't this task's branch/);
+    }
+    finally
+    {
+        cleanup();
+    }
 });

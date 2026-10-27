@@ -67,6 +67,21 @@ export class PromptReviewService {
     });
   }
 
+  // Merge, after you've checked a build in AI Review: the runner merges the branch on its next check (it
+  // has git; the board doesn't). Only a build that went fine: Claude finished and the checks passed.
+  async requestMerge(taskId: number, ownerId: number): Promise<Task> {
+    const task = await this.tasksService.findOwned(taskId, ownerId);
+    if (task.status !== TaskStatus.AI_REVIEW || !task.aiBranch || !task.aiBuiltAt) {
+      throw new BadRequestException('Only a built task in AI Review can be merged');
+    }
+    if (task.aiChecksPassed !== true) {
+      throw new BadRequestException("This build's checks didn't pass: merge it by hand if you still want it");
+    }
+    if (task.aiMergedAt) throw new BadRequestException('This branch is already merged');
+    await this.tasksRepository.update(task.id, { aiMergeRequestedAt: new Date(), aiError: null });
+    return this.tasksService.findOwned(task.id, ownerId);
+  }
+
   // "Try again" after the runner stopped on a task: it's picked up again on the next run
   async retry(taskId: number, ownerId: number): Promise<Task> {
     const task = await this.tasksService.findOwned(taskId, ownerId);

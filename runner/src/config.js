@@ -33,6 +33,17 @@ export function loadConfig()
         }
         project.path = expandPath(project.path);
         project.setup ??= [];
+        // Merging after your review: which other branches get main merged into them (e.g. runner-pro), and
+        // which files or folders ("runner/") the runner never merges by itself
+        project.alsoMergeInto ??= [];
+        project.protectedPaths ??= [];
+        for (const key of ['alsoMergeInto', 'protectedPaths'])
+        {
+            if (!Array.isArray(project[key]) || project[key].some((v) => typeof v !== 'string' || !/^[A-Za-z0-9._][A-Za-z0-9._/-]*$/.test(v)))
+            {
+                throw new Error(`projects.json: "${name}" "${key}" must be a list of plain names`);
+            }
+        }
     }
 
     return {

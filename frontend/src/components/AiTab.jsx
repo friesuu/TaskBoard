@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { approvePrompt, getAgentRuns, getAiNotes, requestPromptChanges, retryAiTask, updateRefinedPrompt } from '../api';
+import {
+    approvePrompt, getAgentRuns, getAiNotes, requestAiMerge, requestPromptChanges, retryAiTask, updateRefinedPrompt,
+} from '../api';
 import { formatDateTime } from '../dates';
 import { AI_STEPS, STEP_NAMES, aiStateOf, aiStepOf, durationOf, runResultText } from '../aiState';
 import AiChip from './AiChip';
@@ -146,7 +148,40 @@ function AiTab({ task, boardProject = null, agentTaskId = null, onTaskChanged, o
     {
         stateText = `Approved ${formatDateTime(task.promptApprovedAt)}. Claude will build it on its next run.`;
     }
-    else if (task.aiBranch) stateText = <>Built on branch {branch}.</>;
+    else if (task.aiMergedAt)
+    {
+        stateText = <>Merged {formatDateTime(task.aiMergedAt)}: the changes from branch {branch} are in your project.</>;
+    }
+    else if (task.status === 'AI_REVIEW' && task.aiMergeRequestedAt && !task.aiError)
+    {
+        stateText = <>Merging: the runner merges branch {branch} into your project on its next check.</>;
+    }
+    else if (task.status === 'AI_REVIEW' && task.aiBuiltAt && task.aiChecksPassed === false)
+    {
+        stateText = (
+            <>
+                Built on branch {branch}, but the checks failed. It isn&apos;t merged, so your app still runs the old
+                code. Look at the branch, and merge it by hand if you still want it.
+            </>
+        );
+    }
+    else if (task.status === 'AI_REVIEW' && task.aiBuiltAt)
+    {
+        stateText = (
+            <>
+                Built on branch {branch}. It isn&apos;t merged yet, so your app still runs the old code. Check the
+                changes, then click Merge.
+            </>
+        );
+    }
+    else if (task.aiBranch)
+    {
+        stateText = <>Built on branch {branch}. The runner didn&apos;t merge it: unless you merged it by hand, your app doesn&apos;t have it.</>;
+    }
+
+    // Merge: a build that went fine, checked by you, not merged or asked for yet
+    const canMerge = task.status === 'AI_REVIEW' && task.aiBuiltAt && task.aiChecksPassed === true
+        && !task.aiMergeRequestedAt && !task.aiMergedAt;
 
     return(
         <div className="ai-tab">
@@ -168,6 +203,16 @@ function AiTab({ task, boardProject = null, agentTaskId = null, onTaskChanged, o
             </div>
 
             {stateText && <p className="ai-state">{stateText}</p>}
+            {canMerge && (
+                <div className="ai-merge">
+                    <p className="profile-hint">
+                        Merges the branch into main and the project&apos;s other branches, then moves the task to Done.
+                    </p>
+                    <button type="button" className="btn btn-primary" onClick={() => act(() => requestAiMerge(task.id))} disabled={isBusy}>
+                        Merge
+                    </button>
+                </div>
+            )}
             {!boardProject && (
                 <p className="profile-hint">
                     Claude only picks up AI tasks on boards with a project. Set one in Board settings.
@@ -176,7 +221,7 @@ function AiTab({ task, boardProject = null, agentTaskId = null, onTaskChanged, o
             {error && <p className="error-message">{error}</p>}
             {task.aiError && (
                 <div className="ai-stopped">
-                    <p className="error-message">Claude stopped: {task.aiError}</p>
+                    <p className="error-message">{task.aiMergeRequestedAt ? 'Not merged' : 'Claude stopped'}: {task.aiError}</p>
                     <button className="btn btn-secondary" onClick={() => act(() => retryAiTask(task.id))} disabled={isBusy}>
                         Try again
                     </button>

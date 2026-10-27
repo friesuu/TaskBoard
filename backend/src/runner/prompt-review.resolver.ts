@@ -43,6 +43,11 @@ export class PromptReviewResolver {
   }
 
   @Mutation(() => Task)
+  requestAiMerge(@CurrentUser() user: User, @Args('taskId', { type: () => Int }) taskId: number): Promise<Task> {
+    return this.reviewService.requestMerge(taskId, user.id);
+  }
+
+  @Mutation(() => Task)
   retryAiTask(@CurrentUser() user: User, @Args('taskId', { type: () => Int }) taskId: number): Promise<Task> {
     return this.reviewService.retry(taskId, user.id);
   }

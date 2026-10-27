@@ -96,6 +96,16 @@ export class Task {
   @Column({ name: 'ai_checks_passed', type: 'boolean', nullable: true })
   aiChecksPassed: boolean | null;
 
+  // You clicked Merge in AI Review: the runner merges the task's branch on its next check
+  @Field(() => Date, { nullable: true })
+  @Column({ name: 'ai_merge_requested_at', type: 'timestamptz', nullable: true })
+  aiMergeRequestedAt: Date | null;
+
+  // When the runner merged the branch into the project (the task then moves to Done)
+  @Field(() => Date, { nullable: true })
+  @Column({ name: 'ai_merged_at', type: 'timestamptz', nullable: true })
+  aiMergedAt: Date | null;
+
   // Why the runner stopped on this task (e.g. "spend cap reached"). While set, the runner skips the task
   // until you click "Try again".
   @Field(() => String, { nullable: true })

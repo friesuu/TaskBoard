@@ -3,7 +3,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import AiTab from './AiTab';
 import {
-  approvePrompt, getAgentRuns, getAiNotes, getRunLog, requestPromptChanges, retryAiTask, updateRefinedPrompt,
+  approvePrompt, getAgentRuns, getAiNotes, getRunLog, requestAiMerge, requestPromptChanges, retryAiTask, updateRefinedPrompt,
 } from '../api';
 
 vi.mock('../api');
@@ -12,12 +12,18 @@ const AI = { id: 9, name: 'AI', color: 'TEAL' };
 const base = {
   id: 5, title: 'Add search', status: 'TODO', labels: [AI],
   refinedPrompt: null, changesRequested: false, promptApprovedAt: null, aiBranch: null, aiBuiltAt: null,
-  aiChecksPassed: null, aiError: null,
+  aiChecksPassed: null, aiError: null, aiMergeRequestedAt: null, aiMergedAt: null,
 };
 const buildRun = {
   id: 31, step: 'build', status: 'succeeded', result: 'built', project: 'notes-app', branch: 'ai/task-5-add-search',
   checksPassed: true, costUsd: 0.53, error: null, summary: 'Done: the build and tests passed.\n\nFiles:\nM\tsrc/App.jsx',
   startedAt: '2026-10-27T01:00:00Z', finishedAt: '2026-10-27T01:01:22Z',
+};
+
+// A build that went fine, waiting in AI Review
+const built = {
+  ...base, status: 'AI_REVIEW', refinedPrompt: 'Goal', aiBranch: 'ai/task-5-add-search',
+  aiBuiltAt: '2026-10-27T01:01:22Z', aiChecksPassed: true,
 };
 
 function renderTab(task, props = {}) {
@@ -37,6 +43,7 @@ describe('AiTab', () => {
     vi.mocked(approvePrompt).mockReset().mockResolvedValue({ ...base, status: 'IN_PROGRESS' });
     vi.mocked(requestPromptChanges).mockReset().mockResolvedValue({ ...base, status: 'PROMPT_REVIEW', changesRequested: true });
     vi.mocked(retryAiTask).mockReset().mockResolvedValue({ ...base, aiError: null });
+    vi.mocked(requestAiMerge).mockReset().mockImplementation(async () => ({ ...built, aiMergeRequestedAt: '2026-10-27T02:00:00Z' }));
   });
 
   it('says Claude will write a prompt, and that the board needs a project', async () => {
@@ -151,5 +158,38 @@ describe('AiTab', () => {
 
     expect(retryAiTask).toHaveBeenCalledWith(5);
     expect(onTaskChanged).toHaveBeenCalled();
+  });
+
+  it("says a build isn't merged yet, and Merge hands it to the runner", async () => {
+    const { onTaskChanged, onAiChanged, update } = renderTab(built);
+    expect(screen.getByText(/It isn't merged yet, so your app still runs the old code/)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Merge' }));
+    expect(requestAiMerge).toHaveBeenCalledWith(5);
+    expect(onTaskChanged).toHaveBeenCalledWith(expect.objectContaining({ aiMergeRequestedAt: '2026-10-27T02:00:00Z' }));
+    expect(onAiChanged).toHaveBeenCalled();
+
+    update({ aiMergeRequestedAt: '2026-10-27T02:00:00Z' });
+    expect(screen.getByText('Merging')).toBeInTheDocument(); // the chip
+    expect(screen.getByText(/the runner merges branch/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Merge' })).not.toBeInTheDocument();
+  });
+
+  it("offers no Merge for a build whose checks failed, and says why a merge stopped", () => {
+    renderTab({ ...built, aiChecksPassed: false });
+    expect(screen.getByText(/but the checks failed. It isn't merged/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Merge' })).not.toBeInTheDocument();
+  });
+
+  it('a merge the runner stopped on says why, with Try again', () => {
+    renderTab({ ...built, aiMergeRequestedAt: '2026-10-27T02:00:00Z', aiError: 'runner-pro has uncommitted changes in /home/x/task-board.' });
+    expect(screen.getByText('Not merged: runner-pro has uncommitted changes in /home/x/task-board.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+  });
+
+  it('says when it was merged', () => {
+    renderTab({ ...built, status: 'DONE', aiMergeRequestedAt: '2026-10-27T02:00:00Z', aiMergedAt: '2026-10-27T02:00:30Z' });
+    expect(screen.getByText(/: the changes from branch/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Merge' })).not.toBeInTheDocument();
   });
 });

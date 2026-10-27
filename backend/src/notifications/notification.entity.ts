@@ -8,7 +8,8 @@ import { User } from '../users/user.entity';
 //   review_ready  a task is built and ready for you to review
 //   run_failed    a run failed (the runner stopped, or the build's checks failed)
 //   usage_limit   the Pro plan's usage limit was reached: the runner waits until it resets
-export type NotificationKind = 'prompt_ready' | 'review_ready' | 'run_failed' | 'usage_limit';
+//   merged        the runner merged a task's branch, after you clicked Merge
+export type NotificationKind = 'prompt_ready' | 'review_ready' | 'run_failed' | 'usage_limit' | 'merged';
 
 // One notification in the header's bell. Called UserNotification in the code because "Notification" is
 // already a browser type in TypeScript (like Comment, see TaskComment). In GraphQL it's just "Notification".

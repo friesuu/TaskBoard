@@ -2147,6 +2147,48 @@ describe('Tasks GraphQL API (e2e)', () => {
       expect(bell.unreadNotificationCount).toBe(2);
     });
 
+    it('Merge: you ask after checking the build, the runner merges it, and the task is Done', async () => {
+      const MERGE = `mutation ($taskId: Int!) { requestAiMerge(taskId: $taskId) { id status aiMergeRequestedAt } }`;
+      const NEXT_ANY = `query { runnerNextJob(kinds: [MERGE, BUILD, REFINE]) { kind task { id aiBranch } } }`;
+      const FINISH_MERGE = `mutation ($taskId: Int!) { runnerFinishMerge(taskId: $taskId) { id status aiMergedAt } }`;
+      const { task } = await aiTask();
+      await ok(asRunner(SAVE_PROMPT, { taskId: task.id, input: { prompt: 'Goal: search.' } }));
+      await ok(gql(APPROVE, { taskId: task.id }));
+      const early = await gql(MERGE, { taskId: task.id }).expect(200); // nothing built yet
+      expect(early.body.errors[0].message).toBe('Only a built task in AI Review can be merged');
+      await ok(asRunner(START_BUILD, { taskId: task.id, input: { branch: `ai/task-${task.id}-search` } }));
+      await ok(asRunner(FINISH_BUILD, { taskId: task.id, input: { checksPassed: true } }));
+      // Finishing a merge nobody asked for is refused
+      const unasked = await asRunner(FINISH_MERGE, { taskId: task.id }).expect(200);
+      expect(unasked.body.errors[0].message).toBe(`Task ${task.id} isn't waiting for this step`);
+
+      // You click Merge. A runner from before merges existed (no kinds) is never handed it; a new one is.
+      const asked = (await ok(gql(MERGE, { taskId: task.id }))).requestAiMerge as { status: string; aiMergeRequestedAt: string };
+      expect(asked.status).toBe('AI_REVIEW');
+      expect(asked.aiMergeRequestedAt).not.toBeNull();
+      expect(await nextJob()).toBeNull();
+      expect((await ok(asRunner(NEXT_ANY))).runnerNextJob).toEqual({ kind: 'MERGE', task: { id: task.id, aiBranch: `ai/task-${task.id}-search` } });
+
+      // Merged: Done, and the bell says so
+      const merged = (await ok(asRunner(FINISH_MERGE, { taskId: task.id }))).runnerFinishMerge as { status: string; aiMergedAt: string };
+      expect(merged.status).toBe('DONE');
+      expect(merged.aiMergedAt).not.toBeNull();
+      expect((await ok(asRunner(NEXT_ANY))).runnerNextJob).toBeNull();
+      const bell = (await ok(gql(NOTIFICATIONS))) as Bell;
+      expect(bell.notifications[0]).toMatchObject({ kind: 'merged', message: 'Merged into the project', task: { id: task.id } });
+    });
+
+    it("a build whose checks failed can't be merged from the board", async () => {
+      const { task } = await aiTask();
+      await ok(asRunner(SAVE_PROMPT, { taskId: task.id, input: { prompt: 'Goal: search.' } }));
+      await ok(gql(APPROVE, { taskId: task.id }));
+      await ok(asRunner(START_BUILD, { taskId: task.id, input: { branch: `ai/task-${task.id}-search` } }));
+      await ok(asRunner(FINISH_BUILD, { taskId: task.id, input: { checksPassed: false } }));
+
+      const res = await gql(`mutation ($taskId: Int!) { requestAiMerge(taskId: $taskId) { id } }`, { taskId: task.id }).expect(200);
+      expect(res.body.errors[0].message).toBe("This build's checks didn't pass: merge it by hand if you still want it");
+    });
+
     it('a built task moved back to In progress is built again, from scratch on a new branch', async () => {
       const { task } = await aiTask();
       await ok(asRunner(SAVE_PROMPT, { taskId: task.id, input: { prompt: 'Goal: search.' } }));

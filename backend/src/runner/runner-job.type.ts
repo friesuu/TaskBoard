@@ -4,9 +4,11 @@ import { TaskComment } from '../comments/task-comment.entity';
 import { ChecklistItem } from '../checklist/checklist-item.entity';
 
 // REFINE = write (or revise) the prompt for a task. BUILD = carry out an approved prompt.
+// MERGE = merge a built branch you clicked Merge on (no Claude: the runner runs git itself).
 export enum RunnerJobKind {
   REFINE = 'refine',
   BUILD = 'build',
+  MERGE = 'merge',
 }
 
 registerEnumType(RunnerJobKind, { name: 'RunnerJobKind' });
