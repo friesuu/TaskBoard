@@ -1,4 +1,5 @@
-// The Claude runner: `pnpm once` does ONE step for ONE task, then stops.
+// The Claude runner: `pnpm once` does ONE step for ONE task, then stops. `pnpm watch` keeps doing that
+// (one step at a time) until you stop it: see watch.js.
 //   - a task you approved          -> build it on a new branch, check it, commit, summarise -> AI Review
 //   - otherwise, an "AI" task that needs a prompt (new, or you asked for changes) -> write it -> Prompt Review
 // Everything about which task and which step is decided by the task board, not here.
@@ -7,7 +8,8 @@ import { appendFileSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { loadConfig } from './config.js';
 import { createApi } from './api.js';
-import { run } from './shell.js';
+import { run, stopChildren } from './shell.js';
+import { watch } from './watch.js';
 import { releaseLock, takeLock } from './lock.js';
 import { refine } from './refine.js';
 import { build, checkProject, prepareMainCopy, prepareWorktree, removeWorktree, summaryComment } from './build.js';
@@ -183,32 +185,27 @@ function todaysBudgets(config)
     const caps = { refine: config.steps.refine.maxBudgetUsd, build: config.steps.build.maxBudgetUsd };
     if (config.auth !== 'api') return caps; // on the Pro plan the usage limit does this job
     const spent = spentToday(config.logFile);
-    if (config.dailyCapUsd - spent < MIN_STEP_BUDGET_USD)
-    {
-        say(`Today's spend cap is used up (${dollars(spent)} of ${dollars(config.dailyCapUsd)}). Waiting until tomorrow.`);
-        return null;
-    }
+    if (config.dailyCapUsd - spent < MIN_STEP_BUDGET_USD) return null;
     return {
         refine: stepBudget(caps.refine, config.dailyCapUsd, spent),
         build: stepBudget(caps.build, config.dailyCapUsd, spent),
     };
 }
 
-async function main()
+// At most one step for one task. Returns what happened, for watch mode:
+//   { status: 'done' }  a step ran          { status: 'idle' }    nothing waiting
+//   { status: 'paused', until }  Pro limit  { status: 'capped' }  today's spend cap used up
+//   { status: 'busy' }  another runner holds the lock
+// quiet: say nothing about idle / paused / capped / busy (watch mode reports only changes)
+async function runOneStep({ quiet = false } = {})
 {
-    if (process.argv[2] !== 'once')
-    {
-        console.log('Usage: pnpm once   (does one step for one task, then stops)');
-        process.exitCode = 1;
-        return;
-    }
-
+    const note = (message) => { if (!quiet) say(message); };
     const config = loadConfig();
     const until = pausedUntil(config.pauseFile);
     if (until)
     {
-        say(`Paused until ${until.toLocaleString()} (usage limit). Nothing to do before then.`);
-        return;
+        note(`Paused until ${until.toLocaleString()} (usage limit). Nothing to do before then.`);
+        return { status: 'paused', until };
     }
 
     await preflight(config);
@@ -224,19 +221,24 @@ async function main()
 
     if (!takeLock(config.lockFile))
     {
-        say('Another runner is already working. Stopping.');
-        return;
+        note('Another runner is already working. Stopping.');
+        return { status: 'busy' };
     }
     try
     {
         const budgets = todaysBudgets(config);
-        if (!budgets) return;
+        if (!budgets)
+        {
+            const spent = spentToday(config.logFile);
+            note(`Today's spend cap is used up (${dollars(spent)} of ${dollars(config.dailyCapUsd)}). Waiting until tomorrow.`);
+            return { status: 'capped' };
+        }
 
         const job = await api.nextJob();
         if (!job)
         {
-            say('Nothing to do.');
-            return;
+            note('Nothing to do.');
+            return { status: 'idle' };
         }
         const startedAt = new Date();
         const stepName = job.kind === 'BUILD' ? 'build' : 'refine';
@@ -259,16 +261,42 @@ async function main()
             await api.reportError(job.task.id, message);
             say(`Stopped: ${message}`);
             await record({ config, api, job, startedAt, entry: { result: 'stopped', error: message } });
-            return;
+            return { status: 'done' };
         }
 
         if (job.kind === 'BUILD') await doBuild({ job, project, config: runConfig, api, startedAt });
         else await doRefine({ job, project, config: runConfig, api, startedAt });
+        return { status: 'done' };
     }
     finally
     {
         releaseLock(config.lockFile);
     }
+}
+
+async function main()
+{
+    const mode = process.argv[2];
+    if (mode === 'watch')
+    {
+        await watch({ runStep: () => runOneStep({ quiet: true }), stopChildren, say });
+        return;
+    }
+    if (mode !== 'once')
+    {
+        console.log('Usage: pnpm once    (one step for one task, then stop)');
+        console.log('       pnpm watch   (keep doing the next waiting step until you press Ctrl+C)');
+        process.exitCode = 1;
+        return;
+    }
+
+    // Ctrl+C during `pnpm once`: stop what's running too (the programs it started have their own process group)
+    process.on('SIGINT', () => {
+        stopChildren();
+        say('Stopped. If a build was running, that task may need "Try again".');
+        process.exit(130);
+    });
+    await runOneStep();
 }
 
 main().catch((err) => {

@@ -8,6 +8,7 @@
   },
   "scripts": {
     "once": "node --env-file=.env src/main.js once",
+    "watch": "node --env-file=.env src/main.js watch",
     "test": "node --test",
     "self-check": "node --env-file=.env src/self-check.js"
   }

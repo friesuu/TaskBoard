@@ -12,7 +12,8 @@ import { spentToday, stepBudget } from '../src/budget.js';
 import { findSecrets } from '../src/secrets.js';
 import { slug } from '../src/build.js';
 import { claudeSettings, sandboxDenyRead } from '../src/claude.js';
-import { sandboxedCommand } from '../src/shell.js';
+import { run, sandboxedCommand, stopChildren } from '../src/shell.js';
+import { CHECK_EVERY_MS, nextCheckDelay, statusMessage } from '../src/watch.js';
 import { homedir } from 'node:os';
 import { rmSync } from 'node:fs';
 
@@ -201,4 +202,33 @@ test("the runner's own checks run sandboxed: no internet, secrets masked, no key
         process.env.ANTHROPIC_API_KEY = savedKey;
         rmSync(secretDir, { recursive: true, force: true });
     }
+});
+
+// ----- Watch mode -----
+
+test('watch mode checks again at once after a step, and waits otherwise', () => {
+    const now = new Date(2026, 9, 27, 14, 0);
+    assert.equal(nextCheckDelay({ status: 'done' }, now), 0);
+    assert.equal(nextCheckDelay({ status: 'idle' }, now), CHECK_EVERY_MS);
+    assert.equal(nextCheckDelay({ status: 'error' }, now), CHECK_EVERY_MS);
+    assert.equal(nextCheckDelay({ status: 'capped' }, now), 10 * 60 * 1000);
+    // paused: until the reset, but never more than 5 minutes between checks
+    assert.equal(nextCheckDelay({ status: 'paused', until: new Date(2026, 9, 27, 14, 2) }, now), 2 * 60 * 1000);
+    assert.equal(nextCheckDelay({ status: 'paused', until: new Date(2026, 9, 27, 18, 0) }, now), 5 * 60 * 1000);
+});
+
+test('watch mode only speaks when something changes, and says nothing after a step', () => {
+    assert.equal(statusMessage({ status: 'idle' }), 'Waiting for AI tasks…');
+    assert.match(statusMessage({ status: 'error', error: 'backend down' }), /backend down/);
+    assert.equal(statusMessage({ status: 'done' }), null);
+});
+
+test('stopping a program also stops everything it started', async () => {
+    const started = Date.now();
+    const pending = run('sh', ['-c', 'sleep 30 & sleep 30; echo never']);
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    stopChildren();
+    const result = await pending;
+    assert.ok(Date.now() - started < 5000);
+    assert.ok(!result.stdout.includes('never'));
 });

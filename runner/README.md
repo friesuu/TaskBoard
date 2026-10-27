@@ -19,11 +19,18 @@ Every step is in the task's **Run log** (Claude section of the task panel) and i
 ```bash
 cd ~/task-board/runner
 pnpm once         # one step for one task, then stop
+pnpm watch        # keep doing the next waiting step until you press Ctrl+C
 pnpm self-check   # prove the safety locks work (a few cents, cheapest model)
 pnpm test         # the runner's own tests (free, no Claude)
 ```
 
+**Watch mode** checks every 30 seconds and does the next step as soon as one is waiting, so a new task
+gets its prompt, and an approved one gets built, almost straight away. It stays quiet while nothing
+changes. Press Ctrl+C once to stop after the step that's running (a build is never cut off halfway), or
+twice to stop straight away. Waiting costs nothing: Claude only runs when there's a step to do.
+
 It also runs by itself every 15 minutes through Windows Task Scheduler: see `schedule/README.md`.
+The two never get in each other's way: only one runner works at a time.
 
 ## The safety locks
 

@@ -2,21 +2,39 @@
 import { spawn } from 'node:child_process';
 import { existsSync, statSync } from 'node:fs';
 
+// The programs running right now. Each gets its own process group (detached), so pressing Ctrl+C in the
+// terminal reaches only the runner, which decides what to stop and when (see stopChildren).
+const running = new Set();
+
+// Stops a program and everything it started (the whole process group)
+function stopGroup(child)
+{
+    try { process.kill(-child.pid, 'SIGTERM'); } catch { /* already gone */ }
+}
+
+// Stops every program the runner started (e.g. when you press Ctrl+C twice)
+export function stopChildren()
+{
+    for (const child of running) stopGroup(child);
+}
+
 // Runs a program and collects its output. Never throws: check `code` (0 = success).
 export function run(command, args, { cwd, env = process.env, input, timeoutMs = 10 * 60 * 1000 } = {})
 {
     return new Promise((resolve) => {
-        const child = spawn(command, args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] });
+        const child = spawn(command, args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'], detached: true });
+        running.add(child);
         let stdout = '';
         let stderr = '';
         let timedOut = false;
-        const timer = setTimeout(() => { timedOut = true; child.kill('SIGTERM'); }, timeoutMs);
+        const timer = setTimeout(() => { timedOut = true; stopGroup(child); }, timeoutMs);
 
         child.stdout.on('data', (chunk) => { stdout += chunk; });
         child.stderr.on('data', (chunk) => { stderr += chunk; });
         child.on('error', (err) => { stderr += err.message; }); // e.g. the program doesn't exist
         child.on('close', (code) => {
             clearTimeout(timer);
+            running.delete(child);
             resolve({ code: timedOut ? null : code, stdout, stderr, timedOut });
         });
         // A program that exits before reading its input (e.g. it refused its options) closes the pipe:
