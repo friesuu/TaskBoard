@@ -5,7 +5,7 @@ const API_ORIGIN = GRAPHQL_URL.replace(/\/graphql$/, '');
 const TASK_FIELDS =
     'id title description status dueDate checklistDone checklistTotal attachmentCount labels { id name color } '
     // the Claude runner's part of the task (see AiSection)
-    + 'refinedPrompt changesRequested promptApprovedAt aiBranch aiError';
+    + 'refinedPrompt changesRequested promptApprovedAt aiBranch aiBuiltAt aiError';
 const CHAT_FIELDS = 'id role content createdAt responseMs';
 const BOARD_FIELDS = 'id name project';
 const ITEM_FIELDS = 'id text done position';

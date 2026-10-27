@@ -8,6 +8,7 @@ import { AddChatResponseTime1792464610909 } from './1792464610909-AddChatRespons
 import { AddProfileSettings1792938232098 } from './1792938232098-AddProfileSettings';
 import { AddClaudeRunner1793065936801 } from './1793065936801-AddClaudeRunner';
 import { AddAgentRuns1793067333467 } from './1793067333467-AddAgentRuns';
+import { AddAiBuiltAt1793073308265 } from './1793073308265-AddAiBuiltAt';
 
 // Every migration, oldest first. Both the app (app.module.ts) and the command line (data-source.ts) read this list.
 // After `npm run migration:generate`, import the new class here and add it to the END of the list.
@@ -22,4 +23,5 @@ export const migrations = [
     AddProfileSettings1792938232098,
     AddClaudeRunner1793065936801,
     AddAgentRuns1793067333467,
+    AddAiBuiltAt1793073308265,
 ];

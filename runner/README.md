@@ -12,6 +12,10 @@ Runs your task board's "AI" tasks through Claude Code, one step at a time:
 4. You check the branch, merge it yourself if you're happy, and move the task to Done. The runner never
    touches main, never pushes, never deploys.
 
+To have Claude build a task again, move it back to **In progress**: it's built from scratch on a new
+branch (`…-2`), with the same approved prompt, so it costs another build. To change the prompt first, move
+it to **Prompt Review**, edit it and approve it again. Moving it out before the runner gets to it cancels that.
+
 Every step is in the task's **Run log** (Claude section of the task panel) and in `logs/runs.log`.
 
 ## Run it

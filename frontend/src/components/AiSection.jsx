@@ -140,6 +140,17 @@ function AiSection({ task, boardProject = null, onTaskChanged, onCommentsChanged
     {
         body = <p className="ai-state">Claude will write a prompt for this task on its next run.</p>;
     }
+    else if (task.status === 'IN_PROGRESS' && task.aiBuiltAt)
+    {
+        // Built before, then moved back to In progress
+        body = (
+            <p className="ai-state">
+                Claude will build it again on its next run, from scratch on a new branch, using the same approved
+                prompt. The last build is on branch {branch}. To change the prompt first, move the task to Prompt
+                Review.
+            </p>
+        );
+    }
     else if (task.status === 'IN_PROGRESS' && task.aiBranch)
     {
         body = <p className="ai-state">Claude is building it on branch {branch}…</p>;

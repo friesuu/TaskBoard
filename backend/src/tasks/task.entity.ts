@@ -84,6 +84,12 @@ export class Task {
   @Column({ name: 'ai_branch', type: 'varchar', length: 100, nullable: true })
   aiBranch: string | null;
 
+  // When Claude last finished building it (cleared when a build starts). A built task moved back to
+  // In progress is built again, from scratch on a new branch.
+  @Field(() => Date, { nullable: true })
+  @Column({ name: 'ai_built_at', type: 'timestamptz', nullable: true })
+  aiBuiltAt: Date | null;
+
   // Why the runner stopped on this task (e.g. "spend cap reached"). While set, the runner skips the task
   // until you click "Try again".
   @Field(() => String, { nullable: true })

@@ -18,6 +18,7 @@ function aiStatusOf(task)
 {
     if (task.aiError) return { text: 'Claude stopped', tone: 'danger' };
     if (task.changesRequested) return { text: 'Revising…', tone: 'prompt' };
+    if (task.status === 'IN_PROGRESS' && task.aiBuiltAt) return { text: 'Waiting to build again', tone: 'ai' };
     if (task.status === 'IN_PROGRESS' && task.aiBranch) return { text: 'Claude is building…', tone: 'ai' };
     if (task.status === 'IN_PROGRESS' && task.promptApprovedAt) return { text: 'Approved, waiting for Claude', tone: 'ai' };
     return null;

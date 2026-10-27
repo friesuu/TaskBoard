@@ -65,9 +65,16 @@ describe('Column and TaskCard', () => {
     renderColumn([
       { id: 1, title: 'Being revised', description: null, status: 'TODO', dueDate: null, changesRequested: true },
       { id: 2, title: 'Stuck', description: null, status: 'TODO', dueDate: null, aiError: 'The spend cap was reached' },
+      { id: 3, title: 'Building', description: null, status: 'IN_PROGRESS', dueDate: null, aiBranch: 'ai/task-3-x' },
+      {
+        id: 4, title: 'Built, moved back', description: null, status: 'IN_PROGRESS', dueDate: null,
+        aiBranch: 'ai/task-4-x', aiBuiltAt: '2026-10-27T02:10:00Z',
+      },
     ]);
     expect(screen.getByText('Revising…')).toBeInTheDocument();
     expect(screen.getByText('Claude stopped')).toBeInTheDocument();
+    expect(screen.getByText('Claude is building…')).toBeInTheDocument();
+    expect(screen.getByText('Waiting to build again')).toBeInTheDocument();
   });
 
   it('keeps the card itself simple: no column dropdown, Open button or bin', () => {

@@ -9,7 +9,7 @@ vi.mock('../api');
 const AI = { id: 9, name: 'AI', color: 'TEAL' };
 const base = {
   id: 5, title: 'Add search', status: 'TODO', labels: [AI],
-  refinedPrompt: null, changesRequested: false, promptApprovedAt: null, aiBranch: null, aiError: null,
+  refinedPrompt: null, changesRequested: false, promptApprovedAt: null, aiBranch: null, aiBuiltAt: null, aiError: null,
 };
 
 function renderSection(task, props = {}) {
@@ -72,6 +72,16 @@ describe('AiSection', () => {
     renderSection({ status: 'AI_REVIEW', refinedPrompt: 'Goal', aiBranch: 'ai/task-5-add-search' });
     expect(screen.getByText(/Built on branch/)).toBeInTheDocument();
     expect(screen.getByText('git switch ai/task-5-add-search')).toBeInTheDocument();
+  });
+
+  it('says a built task moved back to In progress will be built again, on a new branch', () => {
+    renderSection({
+      status: 'IN_PROGRESS', refinedPrompt: 'Goal', promptApprovedAt: '2026-10-27T02:00:00Z',
+      aiBranch: 'ai/task-5-add-search', aiBuiltAt: '2026-10-27T02:10:00Z',
+    });
+    expect(screen.getByText(/Claude will build it again on its next run, from scratch on a new branch/)).toBeInTheDocument();
+    expect(screen.getByText('ai/task-5-add-search')).toBeInTheDocument();
+    expect(screen.queryByText(/Claude is building it/)).not.toBeInTheDocument();
   });
 
   it('shows why Claude stopped, with a way to try again', async () => {

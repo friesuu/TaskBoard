@@ -86,17 +86,19 @@ export class RunnerService {
   // The runner made the task's branch and is about to start. Marking it stops it being picked twice.
   async startBuild(taskId: number, ownerId: number, branch: string): Promise<Task> {
     const task = await this.claim(taskId, ownerId, RunnerJobKind.BUILD);
-    await this.tasksRepository.update(task.id, { aiBranch: branch });
+    await this.tasksRepository.update(task.id, { aiBranch: branch, aiBuiltAt: null });
     await this.comment(task.id, ownerId, `Started building on branch ${branch}.`);
     return this.tasksService.findOwned(task.id, ownerId);
   }
 
   // Done (whether or not the build and tests passed: the summary says which). Moves the task to AI Review.
+  // Only for a build that's running: started, and not finished yet.
   async finishBuild(taskId: number, ownerId: number, summary: string): Promise<Task> {
     const task = await this.tasksService.findOwned(taskId, ownerId);
-    if (task.status !== TaskStatus.IN_PROGRESS || !task.aiBranch) {
+    if (task.status !== TaskStatus.IN_PROGRESS || !task.aiBranch || task.aiBuiltAt) {
       throw new BadRequestException(`Task ${taskId} isn't being built`);
     }
+    await this.tasksRepository.update(task.id, { aiBuiltAt: new Date() });
     await this.comment(task.id, ownerId, summary);
     return this.tasksService.move(task.id, { status: TaskStatus.AI_REVIEW, position: BOTTOM }, ownerId);
   }
@@ -122,11 +124,12 @@ export class RunnerService {
     if (taskId !== undefined) query.andWhere('task.id = :taskId', { taskId });
 
     if (kind === RunnerJobKind.BUILD) {
-      // Approved, in In progress, and not started yet
+      // Approved and in In progress: not started yet, or built before and moved back to In progress
+      // (then it's built again, from scratch on a new branch). Never while a build is running.
       return query
         .andWhere('task.status = :inProgress', { inProgress: TaskStatus.IN_PROGRESS })
         .andWhere('task.approvedPrompt IS NOT NULL')
-        .andWhere('task.aiBranch IS NULL')
+        .andWhere('(task.aiBranch IS NULL OR task.aiBuiltAt IS NOT NULL)')
         .orderBy('task.promptApprovedAt', 'ASC')
         .addOrderBy('task.id', 'ASC');
     }

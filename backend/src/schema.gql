@@ -51,6 +51,7 @@ type Task {
   changesRequested: Boolean!
   promptApprovedAt: DateTime
   aiBranch: String
+  aiBuiltAt: DateTime
   aiError: String
   boardId: Int!
   checklistTotal: Int!

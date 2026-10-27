@@ -2063,6 +2063,37 @@ describe('Tasks GraphQL API (e2e)', () => {
       ]);
     });
 
+    it('a built task moved back to In progress is built again, from scratch on a new branch', async () => {
+      const { task } = await aiTask();
+      await ok(asRunner(SAVE_PROMPT, { taskId: task.id, input: { prompt: 'Goal: search.' } }));
+      await ok(gql(APPROVE, { taskId: task.id }));
+      await ok(asRunner(START_BUILD, { taskId: task.id, input: { branch: `ai/task-${task.id}-search` } }));
+
+      // While it's being built, moving it within In progress doesn't hand it out again
+      await gql(MOVE_TASK, { id: task.id, input: { status: 'IN_PROGRESS', position: 0 } }).expect(200);
+      expect(await nextJob()).toBeNull();
+      await ok(asRunner(FINISH_BUILD, { taskId: task.id, input: { summary: 'Done.' } }));
+
+      // Into In progress and straight back out before the runner looks: nothing happens
+      await gql(MOVE_TASK, { id: task.id, input: { status: 'IN_PROGRESS', position: 0 } }).expect(200);
+      await gql(MOVE_TASK, { id: task.id, input: { status: 'AI_REVIEW', position: 0 } }).expect(200);
+      expect(await nextJob()).toBeNull();
+
+      // Moved back to In progress: built again from the same approved prompt, on a new branch
+      await gql(MOVE_TASK, { id: task.id, input: { status: 'IN_PROGRESS', position: 0 } }).expect(200);
+      expect(await nextJob()).toMatchObject({ kind: 'BUILD', approvedPrompt: 'Goal: search.', task: { id: task.id } });
+      const notStarted = await asRunner(FINISH_BUILD, { taskId: task.id, input: { summary: 'Done.' } }).expect(200);
+      expect(notStarted.body.errors[0].message).toContain("isn't being built");
+
+      const restarted = (await ok(asRunner(START_BUILD, { taskId: task.id, input: { branch: `ai/task-${task.id}-search-2` } })))
+        .runnerStartBuild as { aiBranch: string };
+      expect(restarted.aiBranch).toBe(`ai/task-${task.id}-search-2`);
+      expect(await nextJob()).toBeNull();
+      const finished = (await ok(asRunner(FINISH_BUILD, { taskId: task.id, input: { summary: 'Done again.' } })))
+        .runnerFinishBuild as { status: string };
+      expect(finished.status).toBe('AI_REVIEW');
+    });
+
     it('"Request changes" keeps the task in Prompt Review and Claude revises it', async () => {
       const { task } = await aiTask();
       await ok(asRunner(SAVE_PROMPT, { taskId: task.id, input: { prompt: 'First try' } }));
