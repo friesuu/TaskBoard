@@ -1,6 +1,7 @@
-//! GraphQL errors in the shape NestJS sends them, because the frontend reads that shape: it logs you out
+//! GraphQL errors in the shapes NestJS sends them, because the frontend reads those shapes: it logs you out
 //! on `extensions.code == "UNAUTHENTICATED"`, and shows `extensions.originalError.message` for others.
-//! What NestJS sends for `me` without a login cookie (HTTP 200, like every GraphQL answer):
+//! Each function below copies one shape exactly (HTTP 200 for all of them, like every GraphQL answer).
+//! What NestJS sends for `me` without a login cookie:
 //!
 //! ```text
 //! {"errors":[{"message":"Unauthorized","locations":[{"line":1,"column":3}],"path":["me"],
@@ -10,7 +11,7 @@
 
 use async_graphql::{Error, ErrorExtensions, value};
 
-/// No login cookie, a forged or expired one, or one from before a password change
+/// No login cookie, a forged or expired one, or one from before a password change (NestJS's login guard)
 pub fn unauthorized() -> Error {
     Error::new("Unauthorized").extend_with(|_, extensions| {
         extensions.set("code", "UNAUTHENTICATED");
@@ -18,6 +19,61 @@ pub fn unauthorized() -> Error {
             "originalError",
             value!({ "message": "Unauthorized", "statusCode": 401 }),
         );
+    })
+}
+
+/// Unauthorized with a message, e.g. "Invalid email or password" (UnauthorizedException('...') in NestJS)
+pub fn unauthorized_because(message: &str) -> Error {
+    Error::new(message).extend_with(|_, extensions| {
+        extensions.set("code", "UNAUTHENTICATED");
+        extensions.set(
+            "originalError",
+            value!({ "message": message, "error": "Unauthorized", "statusCode": 401 }),
+        );
+    })
+}
+
+/// A request we refuse, e.g. "Current password is incorrect" (BadRequestException('...') in NestJS).
+/// BAD_REQUEST, not UNAUTHENTICATED, so the frontend doesn't log you out.
+pub fn bad_request(message: &str) -> Error {
+    Error::new(message).extend_with(|_, extensions| {
+        extensions.set("code", "BAD_REQUEST");
+        extensions.set(
+            "originalError",
+            value!({ "message": message, "error": "Bad Request", "statusCode": 400 }),
+        );
+    })
+}
+
+/// Input that breaks the rules (NestJS's ValidationPipe): every broken rule's message, in a list.
+/// The message itself is always "Bad Request Exception"; the frontend shows the list.
+pub fn invalid_input(messages: Vec<String>) -> Error {
+    Error::new("Bad Request Exception").extend_with(move |_, extensions| {
+        extensions.set("code", "BAD_REQUEST");
+        extensions.set(
+            "originalError",
+            value!({ "message": messages.clone(), "error": "Bad Request", "statusCode": 400 }),
+        );
+    })
+}
+
+/// Already exists, e.g. "Email is already registered" (ConflictException in NestJS, which sends it with
+/// the code INTERNAL_SERVER_ERROR and status 409: odd, but it's what the frontend gets today)
+pub fn conflict(message: &str) -> Error {
+    Error::new(message).extend_with(|_, extensions| {
+        extensions.set("code", "INTERNAL_SERVER_ERROR");
+        extensions.set("status", 409);
+        extensions.set(
+            "originalError",
+            value!({ "message": message, "error": "Conflict", "statusCode": 409 }),
+        );
+    })
+}
+
+/// Over a rate limit (ThrottlerGuard in NestJS: only a code, no details)
+pub fn too_many_attempts() -> Error {
+    Error::new("Too many attempts. Please wait a minute and try again.").extend_with(|_, extensions| {
+        extensions.set("code", "INTERNAL_SERVER_ERROR");
     })
 }
 
@@ -34,18 +90,46 @@ pub fn internal(problem: impl std::fmt::Display) -> Error {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
+    use serde_json::{Value, json};
 
+    // The error as it's sent: message and extensions
+    fn sent(error: Error) -> Value {
+        let sent = serde_json::to_value(error.into_server_error(Default::default())).unwrap();
+        json!({ "message": sent["message"], "extensions": sent["extensions"] })
+    }
+
+    // Each expected value below is what NestJS sent for the same case (captured on 2026-10-28)
     #[test]
-    fn unauthorized_is_the_same_as_nestjs() {
-        let error = unauthorized().into_server_error(Default::default());
-
-        let sent = serde_json::to_value(&error).unwrap();
-
-        assert_eq!(sent["message"], "Unauthorized");
+    fn the_same_as_nestjs() {
         assert_eq!(
-            sent["extensions"],
-            json!({ "code": "UNAUTHENTICATED", "originalError": { "message": "Unauthorized", "statusCode": 401 } })
+            sent(unauthorized()),
+            json!({ "message": "Unauthorized", "extensions": { "code": "UNAUTHENTICATED",
+                "originalError": { "message": "Unauthorized", "statusCode": 401 } } })
+        );
+        assert_eq!(
+            sent(unauthorized_because("Invalid email or password")),
+            json!({ "message": "Invalid email or password", "extensions": { "code": "UNAUTHENTICATED",
+                "originalError": { "message": "Invalid email or password", "error": "Unauthorized", "statusCode": 401 } } })
+        );
+        assert_eq!(
+            sent(bad_request("Password is incorrect")),
+            json!({ "message": "Password is incorrect", "extensions": { "code": "BAD_REQUEST",
+                "originalError": { "message": "Password is incorrect", "error": "Bad Request", "statusCode": 400 } } })
+        );
+        assert_eq!(
+            sent(invalid_input(vec!["password should not be empty".to_string()])),
+            json!({ "message": "Bad Request Exception", "extensions": { "code": "BAD_REQUEST",
+                "originalError": { "message": ["password should not be empty"], "error": "Bad Request", "statusCode": 400 } } })
+        );
+        assert_eq!(
+            sent(conflict("Email is already registered")),
+            json!({ "message": "Email is already registered", "extensions": { "code": "INTERNAL_SERVER_ERROR", "status": 409,
+                "originalError": { "message": "Email is already registered", "error": "Conflict", "statusCode": 409 } } })
+        );
+        assert_eq!(
+            sent(too_many_attempts()),
+            json!({ "message": "Too many attempts. Please wait a minute and try again.",
+                "extensions": { "code": "INTERNAL_SERVER_ERROR" } })
         );
     }
 }

@@ -5,13 +5,18 @@
 
 // Each `mod` line brings in one file of src/ (`mod auth;` = src/auth.rs). A file only sees what another
 // file marks `pub`.
+mod account;
 mod auth;
 mod config;
+mod cookies;
 mod errors;
 mod graphql;
+mod passwords;
 mod proxy;
 mod routing;
+mod throttle;
 mod users;
+mod validate;
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -55,12 +60,19 @@ async fn main() {
             std::process::exit(1);
         });
 
+    // Made once (it takes a moment): logging in with an unknown email is checked against it
+    let dummy_hash = passwords::DummyHash::new().await.unwrap_or_else(|err| {
+        eprintln!("Can't make the dummy password hash: {err}");
+        std::process::exit(1);
+    });
+
     let port = config.port;
     let cors = cors(&config.frontend_url);
+    let config = Arc::new(config);
     let state = AppState {
-        schema: graphql::schema(db, &config.jwt_secret),
+        schema: graphql::schema(db, config.clone(), dummy_hash),
         http: proxy::client(),
-        config: Arc::new(config),
+        config,
     };
 
     // POST /graphql is decided in graphql.rs. Everything else goes to NestJS: other methods on /graphql

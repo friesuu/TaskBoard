@@ -11,14 +11,22 @@ axum = "0.8"
 async-graphql = "7"
 # PostgreSQL, with plain SQL
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "postgres", "macros"] }
-# Runs async code (every request handler is an `async fn`)
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "net"] }
+# Runs async code (every request handler is an `async fn`); fs: deleting uploaded files
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "fs"] }
 # An HTTP client, for passing requests on to NestJS
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream"] }
 # CORS: which website may call this backend with your login cookie
 tower-http = { version = "0.6", features = ["cors"] }
-# The login cookie is a JWT signed by NestJS; this checks it
+# The login cookie is a JWT; this signs and checks it
 jsonwebtoken = "9"
+# Password hashes, the same kind NestJS makes (argon2id), so existing passwords keep working
+argon2 = "0.5"
+# Patterns for checking text (email addresses, invisible characters in names)
+regex = "1"
+# Every time zone name, to check the one the browser sends
+chrono-tz = { version = "0.10", features = ["case-insensitive"] }
+# Dates in the format cookies use ("Thu, 29 Oct 2026 08:15:40 GMT")
+httpdate = "1"
 # Turning JSON into Rust types and back
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

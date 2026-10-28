@@ -1,4 +1,5 @@
-//! Users. For now only `me`, the logged-in user: the first operation that moves from NestJS to Rust.
+//! Users: the User type, `me` (the first operation that moved from NestJS to Rust), and the users table's
+//! queries for logging in, registering and the account settings (auth.rs and account.rs use them).
 
 use crate::auth;
 use async_graphql::{Context, Object, SimpleObject};
@@ -52,3 +53,101 @@ impl UsersQuery {
     }
 }
 // ================================================================================================
+
+/// The name of the board every new account starts with (DEFAULT_BOARD_NAME in boards.service.ts)
+const FIRST_BOARD_NAME: &str = "My board";
+
+/// A user and their password hash, for checking a password. Not a GraphQL type, so the hash can never be sent.
+/// `#[sqlx(flatten)]`: the user's own columns fill `user`, the rest of the row fills the other fields.
+#[derive(sqlx::FromRow)]
+pub struct UserWithPassword {
+    #[sqlx(flatten)]
+    pub user: User,
+    pub password_hash: String,
+}
+
+/// The user with this email (already trimmed and in lowercase, as it's saved), with their password hash
+pub async fn find_by_email(db: &PgPool, email: &str) -> Result<Option<UserWithPassword>, sqlx::Error> {
+    sqlx::query_as(
+        "SELECT id, email, time_zone, display_name, token_version, password_hash FROM users WHERE email = $1",
+    )
+    .bind(email)
+    .fetch_optional(db)
+    .await
+}
+
+/// The user with this id, with their password hash
+pub async fn find_with_password(db: &PgPool, id: i32) -> Result<Option<UserWithPassword>, sqlx::Error> {
+    sqlx::query_as("SELECT id, email, time_zone, display_name, token_version, password_hash FROM users WHERE id = $1")
+        .bind(id)
+        .fetch_optional(db)
+        .await
+}
+
+/// A new user and their first board, saved together: never a user with no board. A transaction does that:
+/// both are saved by `commit`, or neither (if anything fails before it, the transaction is dropped and undone).
+pub async fn create(db: &PgPool, email: &str, password_hash: &str) -> Result<User, sqlx::Error> {
+    let mut transaction = db.begin().await?;
+    let user = sqlx::query_as::<_, User>(
+        "INSERT INTO users (email, password_hash) VALUES ($1, $2)
+         RETURNING id, email, time_zone, display_name, token_version",
+    )
+    .bind(email)
+    .bind(password_hash)
+    .fetch_one(&mut *transaction) // `&mut *`: run it inside the transaction
+    .await?;
+    sqlx::query("INSERT INTO boards (name, owner_id) VALUES ($1, $2)")
+        .bind(FIRST_BOARD_NAME)
+        .bind(user.id)
+        .execute(&mut *transaction)
+        .await?;
+    transaction.commit().await?;
+    Ok(user)
+}
+
+/// Is this database error "that email is already taken"? (23505: a unique column got a value it already has)
+pub fn is_duplicate(error: &sqlx::Error) -> bool {
+    error.as_database_error().and_then(|err| err.code()).as_deref() == Some("23505")
+}
+
+pub async fn set_time_zone(db: &PgPool, id: i32, time_zone: &str) -> Result<User, sqlx::Error> {
+    sqlx::query_as(
+        "UPDATE users SET time_zone = $2 WHERE id = $1 RETURNING id, email, time_zone, display_name, token_version",
+    )
+    .bind(id)
+    .bind(time_zone)
+    .fetch_one(db)
+    .await
+}
+
+/// None removes the name (the email is shown again)
+pub async fn set_display_name(db: &PgPool, id: i32, display_name: Option<&str>) -> Result<User, sqlx::Error> {
+    sqlx::query_as(
+        "UPDATE users SET display_name = $2 WHERE id = $1 RETURNING id, email, time_zone, display_name, token_version",
+    )
+    .bind(id)
+    .bind(display_name)
+    .fetch_one(db)
+    .await
+}
+
+/// A new password. The token version goes up with it, so every login token made before now stops working.
+pub async fn set_password(db: &PgPool, id: i32, password_hash: &str) -> Result<User, sqlx::Error> {
+    sqlx::query_as(
+        "UPDATE users SET password_hash = $2, token_version = token_version + 1 WHERE id = $1
+         RETURNING id, email, time_zone, display_name, token_version",
+    )
+    .bind(id)
+    .bind(password_hash)
+    .fetch_one(db)
+    .await
+}
+
+/// Deletes the user and, through the database's ON DELETE CASCADE, everything that belongs to them
+pub async fn delete(db: &PgPool, id: i32) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM users WHERE id = $1")
+        .bind(id)
+        .execute(db)
+        .await?;
+    Ok(())
+}

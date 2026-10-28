@@ -3,6 +3,7 @@
 //! already set wins over the file: that's how scripts/e2e.sh points both at the test database.
 
 use std::env;
+use std::path::{Path, PathBuf};
 
 use sqlx::postgres::PgConnectOptions;
 
@@ -13,8 +14,13 @@ pub struct Config {
     pub nestjs_url: String,
     /// FRONTEND_URL (default http://localhost:5173): the only website allowed to call this with cookies
     pub frontend_url: String,
-    /// JWT_SECRET: NestJS signs the login cookie with it, Rust checks it with it
+    /// JWT_SECRET: signs the login cookie's token and checks it, the same secret as NestJS
     pub jwt_secret: String,
+    /// NODE_ENV=production (the real server, as for NestJS): the login cookie is only sent over https
+    pub secure_cookies: bool,
+    /// UPLOAD_DIR (default "uploads"): the folder with the uploaded files, the same one NestJS uses.
+    /// A relative path is from the folder of the .env file (../backend), as it is for NestJS.
+    pub upload_dir: PathBuf,
     database: PgConnectOptions,
 }
 
@@ -35,11 +41,17 @@ impl Config {
             .password(&required("DB_PASSWORD")?)
             .database(&required("DB_NAME")?);
 
+        // NestJS runs in ../backend, so its relative paths start there
+        let backend_folder = Path::new(&env_file).parent().unwrap_or(Path::new("."));
+        let upload_dir = backend_folder.join(optional("UPLOAD_DIR", "uploads")); // an absolute path stays as it is
+
         Ok(Config {
             port: port("RUST_PORT", 3000)?,
             nestjs_url: optional("NESTJS_URL", "http://localhost:3001"),
             frontend_url: optional("FRONTEND_URL", "http://localhost:5173"),
             jwt_secret: required("JWT_SECRET")?,
+            secure_cookies: env::var("NODE_ENV").as_deref() == Ok("production"),
+            upload_dir,
             database,
         })
     }

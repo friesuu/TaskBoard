@@ -12,6 +12,8 @@ import { closeDb, sql, sqlValue } from './db';
 // saved with SQL. So they can test any backend with the same API: the NestJS app they start themselves,
 // or with E2E_URL a backend that's already running, e.g. the Rust one (see e2e-external.sh).
 const E2E_URL = process.env.E2E_URL;
+// With E2E_URL: a second copy of that backend with the rate limits on, for the rate limit tests
+const E2E_LIMITED_URL = process.env.E2E_LIMITED_URL;
 
 // The login cookie's name (auth-cookies.ts)
 const AUTH_COOKIE = 'taskToken';
@@ -355,35 +357,58 @@ describe('Tasks GraphQL API (e2e)', () => {
   //   rejected by ValidationPipe  -> HTTP 200, data null, messages in extensions.originalError.message
   //   thrown by the service       -> HTTP 200, data null, message in errors[0].message
 
-  // Only with the app these tests start: they switch the limit on and off in this process.
-  // With E2E_URL they're skipped (the backend there runs with the limit off for the whole run).
-  (E2E_URL ? describe.skip : describe)('rate limits', () => {
-    // Switched off for the other tests (e2e.env); switched on only inside these tests
+  // The limits are off for the other tests (e2e.env). With the app these tests start, they switch them on in
+  // this process. With E2E_URL they need a second copy of the backend that has them on, at E2E_LIMITED_URL
+  // (backend-rs/scripts/e2e.sh starts one); without it they're skipped.
+  (E2E_URL && !E2E_LIMITED_URL ? describe.skip : describe)('rate limits', () => {
     beforeEach(() => { process.env.DISABLE_RATE_LIMIT = 'false'; });
     afterEach(() => { process.env.DISABLE_RATE_LIMIT = 'true'; });
 
+    // A function: `server` is only known once beforeAll has run
+    const limited = () => E2E_LIMITED_URL ?? server;
+    const TOO_MANY = 'Too many attempts. Please wait a minute and try again.';
     const wrong = { input: { email: 'nobody@test.com', password: 'wrong-password' } };
+
+    // One request, as the sender at `ip` (X-Forwarded-For: the tests all run on this computer, see below)
+    const from = (ip: string, query: string, variables?: Record<string, unknown>, who?: string[]) => {
+      const req = request(limited()).post('/graphql').set('X-Forwarded-For', ip);
+      return (who ? req.set('Cookie', who) : req).send({ query, variables }).expect(200);
+    };
 
     it('blocks the 6th login attempt within a minute', async () => {
       for (let attempt = 1; attempt <= 5; attempt++) {
-        const res = await gqlLoggedOut(LOGIN, wrong).expect(200);
+        const res = await request(limited()).post('/graphql').send({ query: LOGIN, variables: wrong }).expect(200);
         expect(res.body.errors[0].message).toBe('Invalid email or password');
       }
 
-      const sixth = await gqlLoggedOut(LOGIN, wrong).expect(200);
-      expect(sixth.body.errors[0].message).toBe('Too many attempts. Please wait a minute and try again.');
+      const sixth = await request(limited()).post('/graphql').send({ query: LOGIN, variables: wrong }).expect(200);
+      expect(sixth.body.errors[0].message).toBe(TOO_MANY);
     });
 
     // While the Rust backend is being built, it passes requests on to NestJS from this computer.
     // X-Forwarded-For says who really sent them, so one person's attempts don't block everyone else.
     it('counts each person separately behind a front door on this computer', async () => {
-      const from = (ip: string) =>
-        request(server).post('/graphql').set('X-Forwarded-For', ip).send({ query: LOGIN, variables: wrong }).expect(200);
+      for (let attempt = 1; attempt <= 5; attempt++) await from('203.0.113.1', LOGIN, wrong);
 
-      for (let attempt = 1; attempt <= 5; attempt++) await from('203.0.113.1');
+      expect((await from('203.0.113.1', LOGIN, wrong)).body.errors[0].message).toBe(TOO_MANY);
+      expect((await from('203.0.113.2', LOGIN, wrong)).body.errors[0].message).toBe('Invalid email or password');
+    });
 
-      expect((await from('203.0.113.1')).body.errors[0].message).toBe('Too many attempts. Please wait a minute and try again.');
-      expect((await from('203.0.113.2')).body.errors[0].message).toBe('Invalid email or password');
+    // Changing the password counts by account, not by address: guessing from many addresses doesn't help
+    it('limits password changes per account, wherever the tries come from', async () => {
+      const user = { email: 'e2e-limits@test.com', password: 'e2e-password' };
+      await sql('DELETE FROM users WHERE email = $1', [user.email]);
+      await from('198.51.100.200', REGISTER, { input: user });
+      const session = cookieFrom(await from('198.51.100.201', LOGIN, { input: user }));
+      const guess = { input: { currentPassword: 'a-wrong-guess', newPassword: 'new-password-1' } };
+
+      for (let attempt = 1; attempt <= 5; attempt++) {
+        const res = await from(`198.51.100.${attempt}`, CHANGE_PASSWORD, guess, session);
+        expect(res.body.errors[0].message).toBe('Current password is incorrect');
+      }
+
+      expect((await from('198.51.100.6', CHANGE_PASSWORD, guess, session)).body.errors[0].message).toBe(TOO_MANY);
+      await sql('DELETE FROM users WHERE email = $1', [user.email]);
     });
   });
 

@@ -56,7 +56,8 @@ The tests are in `test/graphql.e2e-spec.ts`. They send real GraphQL requests to 
 They only reach the backend over HTTP, and check what it saved with SQL, so they can test any backend with the same API. The assistant's chat goes to a fake Claude (`test/fake-claude.ts`): no real API calls, no cost. Test settings are in `test/e2e.env`.
 
 - `npm run test:e2e` starts NestJS inside the test run.
-- `npm run test:e2e:external` (Linux/WSL) starts a production build of NestJS as its own program and tests it through `E2E_URL`, the way the Rust backend will be tested. The two rate limit tests only run in the first mode.
+- `npm run test:e2e:external` (Linux/WSL) starts a production build of NestJS as its own program and tests it through `E2E_URL`. The rate limit tests are skipped there: they need a second copy of the backend with the limits on (`E2E_LIMITED_URL`).
+- `backend-rs/scripts/e2e.sh` tests the Rust backend (in front of NestJS) the same way, with both copies, so every test runs. See `backend-rs/README.md`.
 
 To measure speed and memory, see `bench/README.md`.
 

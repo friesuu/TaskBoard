@@ -2,7 +2,8 @@
 # The backend's e2e tests, through Rust: the tests talk to Rust (port 3102), which answers what has moved
 # and passes the rest to NestJS (port 3101). Both servers get the test settings (../backend/test/e2e.env):
 # the test database, never your real one, and the tests' fake Claude, never the real one (no cost).
-# Their own ports, so your dev servers can keep running (the benchmark uses 3100).
+# The rate limits are off there; a second pair with them on (Rust 3103, NestJS 3104) is for the rate limit
+# tests. Their own ports, so your dev servers can keep running (the benchmark uses 3100).
 #
 #   scripts/e2e.sh                     # every test
 #   scripts/e2e.sh -t "login"          # extra arguments go to Jest: here only the tests named "login..."
@@ -35,7 +36,14 @@ nestjs=$!
 (cd "$rust_dir" && RUST_PORT=3102 NESTJS_URL=http://127.0.0.1:3101 exec target/debug/task-board-backend) \
   > "$logs/rust.log" 2>&1 &
 rust=$!
-trap 'kill $nestjs $rust 2>/dev/null || true' EXIT # both stop when this script ends, however it ends
+# The second pair, with the rate limits on
+(cd "$backend_dir" && PORT=3104 DISABLE_RATE_LIMIT=false exec node dist/main) > "$logs/nestjs-limited.log" 2>&1 &
+nestjs_limited=$!
+(cd "$rust_dir" && RUST_PORT=3103 NESTJS_URL=http://127.0.0.1:3104 DISABLE_RATE_LIMIT=false \
+  exec target/debug/task-board-backend) > "$logs/rust-limited.log" 2>&1 &
+rust_limited=$!
+# They all stop when this script ends, however it ends
+trap 'kill $nestjs $rust $nestjs_limited $rust_limited 2>/dev/null || true' EXIT
 
 # Waits until a server answers GraphQL (at most 30 seconds)
 wait_for() {
@@ -49,9 +57,8 @@ wait_for() {
   echo "Nothing answered on port $1. The logs are in $logs"
   exit 1
 }
-wait_for 3101
-wait_for 3102
+for port in 3101 3102 3104 3103; do wait_for $port; done
 
 echo "Running the e2e tests through Rust..."
 cd "$backend_dir"
-E2E_URL=http://127.0.0.1:3102 pnpm run test:e2e "$@"
+E2E_URL=http://127.0.0.1:3102 E2E_LIMITED_URL=http://127.0.0.1:3103 pnpm run test:e2e "$@"
