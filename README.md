@@ -53,6 +53,13 @@ npm run test:e2e
 
 The tests are in `test/graphql.e2e-spec.ts`. They send real GraphQL requests to the API and check the answers. They use the `taskboard_test` database, so they don't touch your real tasks.
 
+They only reach the backend over HTTP, and check what it saved with SQL, so they can test any backend with the same API. The assistant's chat goes to a fake Claude (`test/fake-claude.ts`): no real API calls, no cost. Test settings are in `test/e2e.env`.
+
+- `npm run test:e2e` starts NestJS inside the test run.
+- `npm run test:e2e:external` (Linux/WSL) starts a production build of NestJS as its own program and tests it through `E2E_URL`, the way the Rust backend will be tested. The two rate limit tests only run in the first mode.
+
+To measure speed and memory, see `bench/README.md`.
+
 ## The API
 Everything goes to one URL: `POST http://localhost:3000/graphql`. You can try it in the browser by opening that URL (it opens GraphiQL).
 
