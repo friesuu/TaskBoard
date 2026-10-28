@@ -1,5 +1,6 @@
 //! Users. For now only `me`, the logged-in user: the first operation that moves from NestJS to Rust.
 
+use crate::auth;
 use async_graphql::{Context, Object, SimpleObject};
 use sqlx::PgPool;
 
@@ -29,9 +30,11 @@ pub struct User {
 ///   `.bind(id)` fills in $1.
 /// - `.fetch_optional(db)` gives at most one row as an Option; `.await` waits for the database.
 /// - The function returns a Result: Ok(Some(user)), Ok(None), or Err if the database failed.
-#[allow(unused_variables)] // remove this line when you've written it
 pub async fn find(db: &PgPool, id: i32) -> Result<Option<User>, sqlx::Error> {
-    todo!("phase 1, your part: find the user with this id")
+    sqlx::query_as::<_, User>("SELECT id, email, time_zone, display_name, token_version FROM users WHERE id = $1")
+        .bind(id)
+        .fetch_optional(db)
+        .await
 }
 
 /// The users part of the GraphQL Query type. `Default` lets graphql.rs make one with no arguments.
@@ -44,9 +47,8 @@ impl UsersQuery {
     /// The logged-in user. Without a valid login cookie: Unauthorized (code UNAUTHENTICATED), like NestJS.
     ///
     /// Hint: auth.rs already has a function that finds the logged-in user, or gives exactly that error.
-    #[allow(unused_variables)] // remove this line when you've written it
     async fn me(&self, ctx: &Context<'_>) -> async_graphql::Result<User> {
-        todo!("phase 1, your part: the logged-in user")
+        auth::current_user(ctx).await
     }
 }
 // ================================================================================================

@@ -14,7 +14,7 @@ pub struct Moved {
 }
 
 pub const MOVED: Moved = Moved {
-    queries: &[],
+    queries: &["me"],
     mutations: &[],
 };
 

@@ -53,7 +53,6 @@ pub fn login_cookie(headers: &HeaderMap) -> LoginCookie {
 
 /// The logged-in user. Otherwise NestJS's "Unauthorized": no cookie, a forged or expired token, or one made
 /// before a password change (the user's token version has gone up since).
-#[allow(dead_code)] // `me` uses it once you've written it (see users.rs): then remove this line
 pub async fn current_user(ctx: &Context<'_>) -> async_graphql::Result<User> {
     // `let ... else`: take the value out, or stop here if there isn't one
     let Some(token) = ctx.data_opt::<LoginCookie>().and_then(|cookie| cookie.0.as_deref()) else {
