@@ -1,0 +1,29 @@
+[package]
+name = "task-board-backend"
+version = "0.1.0"
+edition = "2024"
+description = "The task board's backend in Rust, taking over from the NestJS one in ../backend one part at a time"
+
+[dependencies]
+# The web server: routes, request handlers ("extractors" give a handler what it asks for)
+axum = "0.8"
+# GraphQL: the schema is written as Rust types, like NestJS's @ObjectType / @Resolver classes
+async-graphql = "7"
+# PostgreSQL, with plain SQL
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "postgres", "macros"] }
+# Runs async code (every request handler is an `async fn`)
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net"] }
+# An HTTP client, for passing requests on to NestJS
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream"] }
+# CORS: which website may call this backend with your login cookie
+tower-http = { version = "0.6", features = ["cors"] }
+# The login cookie is a JWT signed by NestJS; this checks it
+jsonwebtoken = "9"
+# Turning JSON into Rust types and back
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Reads ../backend/.env, the settings file NestJS uses
+dotenvy = "0.15"
+# Log lines (tracing::info!, tracing::error!) printed with the time and level
+tracing = "0.1"
+tracing-subscriber = "0.3"
