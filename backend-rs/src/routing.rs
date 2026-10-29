@@ -3,8 +3,11 @@
 //! parse (NestJS sends the proper error), introspection (__schema, __typename), a fragment at the top level,
 //! or several operations without saying which one to run.
 
+use async_graphql::Positioned;
 use async_graphql::parser::parse_query;
-use async_graphql::parser::types::{DocumentOperations, OperationType, Selection};
+use async_graphql::parser::types::{
+    DocumentOperations, ExecutableDocument, OperationDefinition, OperationType, Selection,
+};
 
 /// The operations that have moved to Rust. Each phase adds its own here once its code is in and
 /// scripts/e2e.sh passes with them.
@@ -14,7 +17,7 @@ pub struct Moved {
 }
 
 pub const MOVED: Moved = Moved {
-    queries: &["me"],
+    queries: &["me", "boards"],
     mutations: &[
         "register",
         "login",
@@ -23,6 +26,10 @@ pub const MOVED: Moved = Moved {
         "changePassword",
         "setDisplayName",
         "deleteAccount",
+        "createBoard",
+        "renameBoard",
+        "setBoardProject",
+        "deleteBoard",
     ],
 };
 
@@ -31,17 +38,8 @@ pub fn rust_answers(query: &str, operation_name: Option<&str>, moved: &Moved) ->
     let Ok(document) = parse_query(query) else {
         return false;
     };
-
-    // The operation to run: the only one, or the one operation_name names
-    let operation = match (&document.operations, operation_name) {
-        (DocumentOperations::Single(operation), _) => operation,
-        (DocumentOperations::Multiple(operations), Some(name)) => {
-            match operations.iter().find(|(key, _)| key.as_str() == name) {
-                Some((_, operation)) => operation,
-                None => return false,
-            }
-        }
-        (DocumentOperations::Multiple(_), None) => return false,
+    let Some(operation) = operation(&document, operation_name) else {
+        return false;
     };
 
     let names = match operation.node.ty {
@@ -61,6 +59,22 @@ pub fn rust_answers(query: &str, operation_name: Option<&str>, moved: &Moved) ->
             Selection::Field(field) => names.contains(&field.node.name.node.as_str()),
             _ => false, // a fragment at the top level: NestJS
         })
+}
+
+/// The operation to run: the only one, or the one operation_name names. None when it isn't clear which.
+/// `'a`: the operation lives inside the document, so it can only be used while the document is still there.
+pub fn operation<'a>(
+    document: &'a ExecutableDocument,
+    operation_name: Option<&str>,
+) -> Option<&'a Positioned<OperationDefinition>> {
+    match (&document.operations, operation_name) {
+        (DocumentOperations::Single(operation), _) => Some(operation),
+        (DocumentOperations::Multiple(operations), Some(name)) => operations
+            .iter()
+            .find(|(key, _)| key.as_str() == name)
+            .map(|(_, operation)| operation),
+        (DocumentOperations::Multiple(_), None) => None,
+    }
 }
 
 #[cfg(test)]

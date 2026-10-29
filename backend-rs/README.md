@@ -11,7 +11,10 @@ and the same login secret: a login made by one works in the other.
 | Phase | Moved to Rust |
 | --- | --- |
 | 1 | `me` |
-| 2 | `register`, `login`, `logout`, `setTimeZone`, `changePassword`, `setDisplayName`, `deleteAccount` (once your part is done) |
+| 2 | `register`, `login`, `logout`, `setTimeZone`, `changePassword`, `setDisplayName`, `deleteAccount` |
+| 3 | `boards`, `createBoard`, `renameBoard`, `setBoardProject`, `deleteBoard`; `labels`, `createLabel`, `updateLabel`, `deleteLabel` (once your part is done) |
+
+`setTaskLabels` stays in NestJS until phase 4: it answers with a whole Task, and tasks move then.
 
 ## Run it (development)
 
@@ -41,32 +44,40 @@ costs nothing. The first pair (Rust 3102, NestJS 3101) has the rate limits off, 
 
 An operation counts as moved only when `scripts/e2e.sh` passes with it in `MOVED`.
 
-## Phase 2: your part
+## Phase 3: your part
 
-Logging in, registering and the account settings move in phase 2. Everything is written except the login
-cookie's `Set-Cookie` header: two function bodies in `src/cookies.rs` are yours (`todo!()` for now). Until
-you're done, these operations keep going to NestJS, so everything works in the meantime.
+Boards and labels move in phase 3. The boards are done and already answered by Rust. Three pieces of the
+labels are yours, in `src/labels.rs` between the `YOUR PART` lines. Until you're done, the label operations
+keep going to NestJS, so everything works in the meantime.
 
-1. Write `login_cookie` and `clear_cookie` (the hints are above them). Check with `cargo test cookies`:
-   its 4 tests fail until both are right, and they show exactly which characters differ.
-2. Remove the three `#[allow(...)]` lines in `src/cookies.rs`.
-3. Move the operations to Rust: in `src/routing.rs`, `mutations: &[]` becomes
-   `mutations: &["register", "login", "logout", "setTimeZone", "changePassword", "setDisplayName", "deleteAccount"]`.
-4. Check: `cargo fmt`, `cargo clippy` (no warnings), `cargo test` (25 passed), then `scripts/e2e.sh` (143 passed).
-   Almost every test logs in first, so a wrong cookie shows up everywhere.
+1. **An enum:** add the other seven colours to `LabelColor`. `cargo test labels` checks them, in order.
+2. **A `match`:** write the body of `change`, one arm for each of `MaybeUndefined`'s three variants.
+   `cargo test labels` has a test for each.
+3. **A query:** write the body of `find_all`, the SQL for a board's labels, A to Z. No unit test can reach the
+   database; `scripts/e2e.sh` checks it (step 6).
+4. Remove the two `#[allow(...)]` lines in `src/labels.rs`.
+5. Move the operations to Rust, in `src/routing.rs`: add `"labels"` to `queries`, and `"createLabel"`,
+   `"updateLabel"`, `"deleteLabel"` to `mutations`.
+6. Check: `cargo fmt`, `cargo clippy` (no warnings), `cargo test` (31 passed), then `scripts/e2e.sh` (143 passed).
 
 The compiler's messages are the best help: `cargo build` after each change, and read the first error.
 
-Phase 1 (`me`, in `src/users.rs`) was your part before this one: done.
+Phases 1 (`me`, in `src/users.rs`) and 2 (the login cookie, in `src/cookies.rs`) were your parts before this
+one: done.
 
 ## Where Rust doesn't match NestJS yet
 
-The answers were compared with NestJS's for the same 49 requests (every error case of phase 2, the rate
-limits, the cookies): 48 were identical. The one that isn't:
+The answers were compared with NestJS's for the same requests: 49 in phase 2 (every error case, the rate
+limits, the cookies), 48 identical; 71 in phase 3 (every error case of boards and labels, the input rules, and
+broken requests), 66 identical. The ones that aren't:
 
-- **A request that isn't valid GraphQL for the schema** (e.g. a required field missing): both answer HTTP 400
-  with the code `GRAPHQL_VALIDATION_FAILED`, but the message is worded differently, and Rust also sends
-  `"data": null`. Only a broken request gets this, never the app. To look at again when NestJS is gone.
+- **A broken request** (an unknown field, or a variable that doesn't fit its type): both answer HTTP 400 with
+  the same code (`BAD_USER_INPUT` for a variable, `GRAPHQL_VALIDATION_FAILED` for the query itself), but the
+  message is worded differently (`src/bad_requests.rs`), and for a wrong value written into the query itself,
+  Rust points at the argument's name where NestJS points at the value. Missing and null variables match
+  exactly. Only a broken client gets any of this, never the app. To look at again when NestJS is gone.
+- **Two labels saved with the same name at the same moment**: the database refuses the second. NestJS answers
+  it with "Internal server error"; Rust with the usual "There is already a label called ..." message.
 - **The schema's descriptions**: the `///` comments on Rust's GraphQL types become descriptions in Rust's schema;
   NestJS's has none. Nobody sees them while introspection (`__schema`) still goes to NestJS. To look at again
   then too.
@@ -79,10 +90,14 @@ limits, the cookies): 48 were identical. The one that isn't:
 | `src/config.rs` | The settings, from the environment and `../backend/.env` |
 | `src/routing.rs` | Who answers each GraphQL request: Rust or NestJS |
 | `src/graphql.rs` | POST /graphql, and the GraphQL schema |
+| `src/bad_requests.rs` | Requests that are wrong before anything runs, answered like Apollo (NestJS) answers them |
 | `src/proxy.rs` | Passes requests to NestJS and the answers back, with X-Forwarded-For saying who sent them (so NestJS's login limit counts each person) |
 | `src/auth.rs` | The login cookie and its token; `register`, `login`, `logout`, `setTimeZone`, `changePassword` |
 | `src/account.rs` | `setDisplayName`, `deleteAccount` (with the account's uploaded files) |
 | `src/cookies.rs` | The login cookie's `Set-Cookie` header (your part in phase 2) |
+| `src/boards.rs` | `boards`, `createBoard`, `renameBoard`, `setBoardProject`, `deleteBoard` |
+| `src/labels.rs` | `labels`, `createLabel`, `updateLabel`, `deleteLabel` (your part in phase 3) |
+| `src/scalars.rs` | The DateTime scalar, written like a JavaScript Date (`2026-10-29T02:34:40.123Z`) |
 | `src/passwords.rs` | Password hashes (argon2id, the same as NestJS's) |
 | `src/throttle.rs` | Rate limits (5 tries a minute), like NestJS's ThrottlerGuard |
 | `src/validate.rs` | Input rules, with NestJS's messages |

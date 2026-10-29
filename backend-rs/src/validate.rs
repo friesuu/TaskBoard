@@ -61,6 +61,22 @@ pub fn no_hidden_characters(text: &str) -> Option<String> {
     (!VISIBLE.is_match(text)).then(|| "The name can't contain invisible or control characters".to_string())
 }
 
+/// The board project's own rule (@Matches in board-project.dto.ts): a project name from the runner, lowercase
+/// letters and digits with single dashes between them ("notes-app"), or nothing at all (no project)
+pub fn project_name(text: &str) -> Option<String> {
+    static PROJECT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^([a-z0-9]+(-[a-z0-9]+)*)?$").unwrap());
+    (!PROJECT.is_match(text))
+        .then(|| r#"Use a project name from the runner, e.g. "notes-app" (letters, digits and dashes)"#.to_string())
+}
+
+/// A board's or a label's name (board-name.dto.ts, label.dto.ts): trimmed, then @IsNotEmpty @MaxLength(max),
+/// checked bottom up. Gives back the trimmed name, which is the one that's saved.
+pub fn name(text: &str, max: usize) -> async_graphql::Result<&str> {
+    let name = js_trim(text);
+    check([at_most("name", name, max), not_empty("name", name)])?;
+    Ok(name)
+}
+
 /// A text's length the way class-validator counts it: one per character (an emoji is one, although
 /// JavaScript's own .length says two), and the invisible "show this as an emoji" marks (U+FE0E, U+FE0F) not at all
 pub fn length(text: &str) -> usize {
@@ -294,6 +310,16 @@ mod tests {
             "x\u{85}\u{180E}\u{200B}"
         );
         assert_eq!(js_trim("  Sam Lee  "), "Sam Lee");
+    }
+
+    #[test]
+    fn project_names() {
+        for good in ["notes-app", "app2", "a-b-c", ""] {
+            assert!(project_name(good).is_none(), "{good:?}");
+        }
+        for bad in ["notes app", "-x", "x-", "a--b", "Notes", "ab\nc", "notes_app", "ü"] {
+            assert!(project_name(bad).is_some(), "{bad:?}");
+        }
     }
 
     #[test]

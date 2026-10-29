@@ -7,13 +7,17 @@
 // file marks `pub`.
 mod account;
 mod auth;
+mod bad_requests;
+mod boards;
 mod config;
 mod cookies;
 mod errors;
 mod graphql;
+mod labels;
 mod passwords;
 mod proxy;
 mod routing;
+mod scalars;
 mod throttle;
 mod users;
 mod validate;

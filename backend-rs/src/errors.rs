@@ -70,6 +70,19 @@ pub fn conflict(message: &str) -> Error {
     })
 }
 
+/// Doesn't exist, or isn't yours, e.g. "Board 7 not found" (NotFoundException in NestJS: the same odd shape as
+/// conflict, with status 404)
+pub fn not_found(message: &str) -> Error {
+    Error::new(message).extend_with(|_, extensions| {
+        extensions.set("code", "INTERNAL_SERVER_ERROR");
+        extensions.set("status", 404);
+        extensions.set(
+            "originalError",
+            value!({ "message": message, "error": "Not Found", "statusCode": 404 }),
+        );
+    })
+}
+
 /// Over a rate limit (ThrottlerGuard in NestJS: only a code, no details)
 pub fn too_many_attempts() -> Error {
     Error::new("Too many attempts. Please wait a minute and try again.").extend_with(|_, extensions| {
@@ -125,6 +138,11 @@ mod tests {
             sent(conflict("Email is already registered")),
             json!({ "message": "Email is already registered", "extensions": { "code": "INTERNAL_SERVER_ERROR", "status": 409,
                 "originalError": { "message": "Email is already registered", "error": "Conflict", "statusCode": 409 } } })
+        );
+        assert_eq!(
+            sent(not_found("Board 7 not found")),
+            json!({ "message": "Board 7 not found", "extensions": { "code": "INTERNAL_SERVER_ERROR", "status": 404,
+                "originalError": { "message": "Board 7 not found", "error": "Not Found", "statusCode": 404 } } })
         );
         assert_eq!(
             sent(too_many_attempts()),

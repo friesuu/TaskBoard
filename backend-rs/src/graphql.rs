@@ -8,26 +8,28 @@ use async_graphql::{EmptySubscription, MergedObject, Schema, Value};
 use axum::Json;
 use axum::body::Bytes;
 use axum::extract::{ConnectInfo, State};
-use axum::http::{HeaderMap, Method, StatusCode, Uri};
+use axum::http::{HeaderMap, Method, Uri};
 use axum::response::{IntoResponse, Response};
 use sqlx::PgPool;
 
 use crate::account::AccountMutation;
 use crate::auth::{AuthMutation, ClientAddress, JwtKeys, login_cookie};
+use crate::boards::{BoardsMutation, BoardsQuery};
 use crate::config::Config;
+use crate::labels::{LabelsMutation, LabelsQuery};
 use crate::passwords::DummyHash;
 use crate::routing::{MOVED, rust_answers};
 use crate::throttle::{RateLimits, client_address};
 use crate::users::UsersQuery;
-use crate::{AppState, proxy};
+use crate::{AppState, bad_requests, proxy};
 
 /// The Query and Mutation types. Each module adds its part here as it moves (MergedObject joins the parts
 /// into one type).
 #[derive(MergedObject, Default)]
-pub struct Query(UsersQuery);
+pub struct Query(UsersQuery, BoardsQuery, LabelsQuery);
 
 #[derive(MergedObject, Default)]
-pub struct Mutation(AuthMutation, AccountMutation);
+pub struct Mutation(AuthMutation, AccountMutation, BoardsMutation, LabelsMutation);
 
 pub type AppSchema = Schema<Query, Mutation, EmptySubscription>;
 
@@ -62,6 +64,13 @@ pub async fn handler(
         return proxy::pass_on(&app, sender, &method, &uri, &headers, body.into()).await;
     };
 
+    // A required variable that's missing or null: refused before anything runs, even the login check
+    if let Some(refused) = bad_requests::missing_variables(&request) {
+        return refused;
+    }
+    // Kept for bad_requests::refused: `execute` uses the request up
+    let (query, operation_name) = (request.query.clone(), request.operation_name.clone());
+
     // Two things go along with this one request, for the resolvers: the login cookie (auth::current_user) and
     // who sent it (the rate limits)
     let request = request
@@ -69,25 +78,18 @@ pub async fn handler(
         .data(ClientAddress(client_address(sender.ip(), &headers)));
     let mut response = app.schema.execute(request).await;
 
-    // The request itself was wrong (e.g. a required field missing): nothing ran. NestJS (Apollo) answers that
-    // with HTTP 400 and the code GRAPHQL_VALIDATION_FAILED; other errors come from a resolver, with HTTP 200.
-    let mut status = StatusCode::OK;
+    // The request itself was wrong (e.g. an unknown field, or a variable that doesn't fit its type): nothing
+    // ran. Errors from a resolver have a path (which field), and come with HTTP 200.
     if response.data == Value::Null
         && !response.errors.is_empty()
         && response.errors.iter().all(|error| error.path.is_empty())
     {
-        status = StatusCode::BAD_REQUEST;
-        for error in &mut response.errors {
-            error
-                .extensions
-                .get_or_insert_with(Default::default)
-                .set("code", "GRAPHQL_VALIDATION_FAILED");
-        }
+        return bad_requests::refused(response.errors, &query, operation_name.as_deref());
     }
 
     // Headers the resolvers added (the login cookie's Set-Cookie) go on the HTTP answer
     let extra_headers = std::mem::take(&mut response.http_headers);
-    let mut answer = (status, Json(response)).into_response();
+    let mut answer = Json(response).into_response();
     answer.headers_mut().extend(extra_headers);
     answer
 }

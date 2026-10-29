@@ -9,8 +9,10 @@ description = "The task board's backend in Rust, taking over from the NestJS one
 axum = "0.8"
 # GraphQL: the schema is written as Rust types, like NestJS's @ObjectType / @Resolver classes
 async-graphql = "7"
-# PostgreSQL, with plain SQL
-sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "postgres", "macros"] }
+# PostgreSQL, with plain SQL; chrono: date-and-time columns (timestamptz) read as chrono's DateTime
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "postgres", "macros", "chrono"] }
+# Dates and times (when a board was made), and writing them the way NestJS sends them
+chrono = { version = "0.4", default-features = false, features = ["std"] }
 # Runs async code (every request handler is an `async fn`); fs: deleting uploaded files
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "fs"] }
 # An HTTP client, for passing requests on to NestJS
