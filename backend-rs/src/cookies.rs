@@ -8,7 +8,6 @@ use std::time::SystemTime;
 pub const AUTH_COOKIE: &str = "taskToken";
 
 /// How long a login lasts: one day, the same as the token inside it (TOKEN_LIFETIME_SECONDS in auth.rs)
-#[allow(dead_code)] // login_cookie uses it once you've written it: then remove this line
 pub const COOKIE_LIFETIME_SECONDS: u64 = 24 * 60 * 60;
 
 // ===================================== YOUR PART (phase 2) =====================================
@@ -27,9 +26,14 @@ pub const COOKIE_LIFETIME_SECONDS: u64 = 24 * 60 * 60;
 /// - Expires is `now` plus a day: `now + std::time::Duration::from_secs(COOKIE_LIFETIME_SECONDS)`.
 /// - `httpdate::fmt_http_date(time)` writes a time the way cookies need it ("Thu, 29 Oct 2026 08:15:40 GMT").
 /// - `if secure { "; Secure" } else { "" }` is an expression: it gives back one of the two texts.
-#[allow(unused_variables)] // remove this line when you've written it
 pub fn login_cookie(token: &str, secure: bool, now: SystemTime) -> String {
-    todo!("phase 2, your part: the Set-Cookie header for logging in")
+    let expires_at = now + std::time::Duration::from_secs(COOKIE_LIFETIME_SECONDS);
+    let expires_text = httpdate::fmt_http_date(expires_at);
+    let secure_part = if secure { "; Secure" } else { "" };
+
+    format!(
+        "{AUTH_COOKIE}={token}; Max-Age={COOKIE_LIFETIME_SECONDS}; Path=/; Expires={expires_text}; HttpOnly{secure_part}; SameSite=Lax"
+    )
 }
 
 /// Logging out (and deleting the account): tells the browser to delete the cookie, by sending it empty and
@@ -37,9 +41,10 @@ pub fn login_cookie(token: &str, secure: bool, now: SystemTime) -> String {
 ///
 ///   taskToken=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; SameSite=Lax
 /// and with secure = true, "; Secure" before "; SameSite=Lax" again.
-#[allow(unused_variables)] // remove this line when you've written it
 pub fn clear_cookie(secure: bool) -> String {
-    todo!("phase 2, your part: the Set-Cookie header for logging out")
+    let secure_part = if secure { "; Secure" } else { "" };
+
+    format!("{AUTH_COOKIE}=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly{secure_part}; SameSite=Lax")
 }
 // ================================================================================================
 

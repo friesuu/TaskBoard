@@ -15,7 +15,15 @@ pub struct Moved {
 
 pub const MOVED: Moved = Moved {
     queries: &["me"],
-    mutations: &[],
+    mutations: &[
+        "register",
+        "login",
+        "logout",
+        "setTimeZone",
+        "changePassword",
+        "setDisplayName",
+        "deleteAccount",
+    ],
 };
 
 /// `query`: the GraphQL text; `operation_name`: which of its operations to run (requests can send several)
