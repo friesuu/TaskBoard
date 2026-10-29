@@ -1,14 +1,13 @@
 //! "Today" and "this week" as calendar dates where the user is (common/dates.ts in NestJS). Due dates are plain
 //! dates with no time ("2026-10-29"), so the board compares them with these: overdue, due today, due this week.
 
-use chrono::{DateTime, FixedOffset, NaiveDate, Utc};
+use chrono::{DateTime, Datelike, Days, FixedOffset, NaiveDate, Utc};
 use chrono_tz::Tz;
 
 /// A user's time zone, ready for chrono. setTimeZone takes two kinds, as the browser's Intl does:
 ///   Named: a zone from the time zone database, e.g. "Asia/Kuala_Lumpur". It knows the zone's history and its
 ///     summer time, so its offset from UTC can change during the year (New York: -4 hours in summer, -5 in winter).
 ///   Offset: a fixed offset from UTC, e.g. "+05:30". The same all year.
-#[allow(dead_code)] // today_in reads the zone inside each kind once you've written it: then remove this line
 pub enum Zone {
     Named(Tz),
     Offset(FixedOffset),
@@ -66,9 +65,11 @@ fn offset(text: &str) -> Option<FixedOffset> {
 /// - `now.with_timezone(tz)` is the same moment as a time in that zone; `.date_naive()` is its date.
 /// - The two arms make different types of time (one in a Tz, one in a FixedOffset), so `.date_naive()` goes
 ///   inside each arm: both arms then give a NaiveDate, which is what the match gives back.
-#[allow(unused_variables)] // remove this line when you've written it
 pub fn today_in(zone: &Zone, now: DateTime<Utc>) -> NaiveDate {
-    todo!("phase 4, your part: today's date where the user is")
+    match zone {
+        Zone::Named(tz) => now.with_timezone(tz).date_naive(),
+        Zone::Offset(fixed_offset) => now.with_timezone(fixed_offset).date_naive(),
+    }
 }
 
 /// The Monday and the Sunday of the week `day` is in (weeks start on Monday)
@@ -80,9 +81,11 @@ pub fn today_in(zone: &Zone, now: DateTime<Utc>) -> NaiveDate {
 /// - `day - Days::new(n)` is n days earlier, `+` later (`Days` needs adding to the `use` line too). Days::new wants
 ///   a u64; num_days_from_monday gives a u32: `u64::from(number)` turns one into the other.
 /// - Give back both dates as a tuple: `(monday, sunday)`.
-#[allow(unused_variables)] // remove this line when you've written it
 pub fn week_of(day: NaiveDate) -> (NaiveDate, NaiveDate) {
-    todo!("phase 4, your part: this week's Monday and Sunday")
+    let days_since_monday = u64::from(day.weekday().num_days_from_monday());
+    let monday = day - Days::new(days_since_monday);
+    let sunday = monday + Days::new(6);
+    (monday, sunday)
 }
 // ================================================================================================
 
