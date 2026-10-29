@@ -1,6 +1,7 @@
 //! Labels, e.g. "Urgent" in orange: labels.resolver.ts and labels.service.ts in NestJS. Labels belong to a
-//! board; a task can have several. Giving a task its labels (setTaskLabels) stays in NestJS until tasks move
-//! in phase 4, because it answers with a whole Task.
+//! board; a task can have several (setTaskLabels).
+
+use std::collections::HashMap;
 
 use async_graphql::{Context, Enum, InputObject, MaybeUndefined, Object, SimpleObject};
 use sqlx::PgPool;
@@ -8,6 +9,7 @@ use sqlx::PgPool;
 use crate::auth::current_user;
 use crate::boards;
 use crate::errors::{bad_request, conflict, internal, not_found};
+use crate::tasks::{self, Task};
 use crate::users::is_duplicate;
 use crate::validate;
 
@@ -98,6 +100,13 @@ pub struct LabelInput {
 pub struct UpdateLabelInput {
     name: MaybeUndefined<String>,
     color: MaybeUndefined<LabelColor>,
+}
+
+/// The labels a task should have from now on
+#[derive(InputObject)]
+#[graphql(name = "SetTaskLabelsInput")]
+pub struct SetTaskLabelsInput {
+    label_ids: Vec<i32>,
 }
 
 /// The labels part of the GraphQL Query type
@@ -197,6 +206,82 @@ impl LabelsMutation {
             .map_err(internal)?;
         Ok(true)
     }
+
+    /// Replaces a task's labels ([] removes them all). Every label must be on the task's own board, so a task
+    /// can never get a label from another board, or another user. Answers with the task and its new labels.
+    async fn set_task_labels(
+        &self,
+        ctx: &Context<'_>,
+        task_id: i32,
+        input: SetTaskLabelsInput,
+    ) -> async_graphql::Result<Task> {
+        let user = current_user(ctx).await?;
+        // labelIds: @IsArray @ArrayMaxSize(10) @IsInt({ each: true }), bottom up
+        validate::check([validate::at_most_items("labelIds", &input.label_ids, 10)])?;
+
+        let db = ctx.data::<PgPool>()?;
+        let task = tasks::find_owned(db, task_id, user.id).await?;
+        // The same label twice counts once
+        let mut ids = input.label_ids;
+        ids.sort_unstable();
+        ids.dedup();
+        let on_the_board: i64 = sqlx::query_scalar("SELECT count(*) FROM labels WHERE id = ANY($1) AND board_id = $2")
+            .bind(&ids)
+            .bind(task.board_id)
+            .fetch_one(db)
+            .await
+            .map_err(internal)?;
+        if on_the_board != ids.len() as i64 {
+            return Err(not_found("Label not found on this board"));
+        }
+
+        // The links live in task_labels, one row per task and label: the old ones out, the new ones in, together
+        let mut transaction = db.begin().await.map_err(internal)?;
+        sqlx::query("DELETE FROM task_labels WHERE task_id = $1")
+            .bind(task_id)
+            .execute(&mut *transaction)
+            .await
+            .map_err(internal)?;
+        sqlx::query("INSERT INTO task_labels (task_id, label_id) SELECT $1, unnest($2::int[])")
+            .bind(task_id)
+            .bind(&ids)
+            .execute(&mut *transaction)
+            .await
+            .map_err(internal)?;
+        transaction.commit().await.map_err(internal)?;
+
+        tasks::find_owned(db, task_id, user.id).await
+    }
+}
+
+/// The labels of these tasks, by task id. Each task's labels are A to Z the way NestJS sorts them: with
+/// JavaScript's localeCompare. The database's own order isn't the same (Windows' "English_Malaysia" here, which
+/// puts "-x" before "_x" and emoji last); its ICU collation "und-x-icu" follows the same rules as JavaScript.
+pub async fn of_tasks(db: &PgPool, task_ids: &[i32]) -> Result<HashMap<i32, Vec<Label>>, sqlx::Error> {
+    /// One row: a label, and the task it's on
+    #[derive(sqlx::FromRow)]
+    struct OnTask {
+        task_id: i32,
+        #[sqlx(flatten)]
+        label: Label,
+    }
+
+    let rows: Vec<OnTask> = sqlx::query_as(
+        r#"SELECT link.task_id, labels.id, labels.name, labels.color, labels.board_id
+           FROM task_labels link JOIN labels ON labels.id = link.label_id
+           WHERE link.task_id = ANY($1)
+           ORDER BY labels.name COLLATE "und-x-icu", labels.id"#,
+    )
+    .bind(task_ids)
+    .fetch_all(db)
+    .await?;
+
+    let mut by_task: HashMap<i32, Vec<Label>> = HashMap::new();
+    for row in rows {
+        // entry: the task's list, made empty the first time
+        by_task.entry(row.task_id).or_default().push(row.label);
+    }
+    Ok(by_task)
 }
 
 /// A label on one of YOUR boards. Someone else's label looks exactly like one that doesn't exist.

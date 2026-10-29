@@ -18,6 +18,7 @@ use std::sync::LazyLock;
 use regex::Regex;
 
 use crate::errors::invalid_input;
+use crate::iso8601;
 
 /// Ok when no rule is broken; otherwise the "Bad Request Exception" error with every broken rule's message
 pub fn check<const N: usize>(rules: [Option<String>; N]) -> async_graphql::Result<()> {
@@ -86,13 +87,38 @@ pub fn length(text: &str) -> usize {
 /// JavaScript's .trim(). Rust's .trim() takes off a slightly different set of characters (it keeps
 /// U+FEFF and removes U+0085), and NestJS trims with JavaScript's.
 pub fn js_trim(text: &str) -> &str {
-    text.trim_matches(|c| {
-        matches!(
-            c,
-            '\t' | '\n' | '\u{B}' | '\u{C}' | '\r' | ' ' | '\u{A0}' | '\u{1680}' | '\u{2000}'
-                ..='\u{200A}' | '\u{2028}' | '\u{2029}' | '\u{202F}' | '\u{205F}' | '\u{3000}' | '\u{FEFF}'
-        )
-    })
+    text.trim_matches(is_js_space)
+}
+
+/// A space the way JavaScript sees one: what .trim() takes off, and what \s matches in a pattern
+pub fn is_js_space(c: char) -> bool {
+    matches!(
+        c,
+        '\t' | '\n' | '\u{B}' | '\u{C}' | '\r' | ' ' | '\u{A0}' | '\u{1680}' | '\u{2000}'
+            ..='\u{200A}' | '\u{2028}' | '\u{2029}' | '\u{202F}' | '\u{205F}' | '\u{3000}' | '\u{FEFF}'
+    )
+}
+
+/// @IsDateString({ strict: true }): validator.js's ISO 8601 check (iso8601.rs). "2026-10" passes it, so the due
+/// date has date_format too.
+pub fn iso_date(field: &str, text: &str) -> Option<String> {
+    (!iso8601::is_valid(text)).then(|| format!("{field} must be a valid ISO 8601 date string"))
+}
+
+/// The due date's own rule (@Matches in create-task.dto.ts): exactly YYYY-MM-DD
+pub fn date_format(text: &str) -> Option<String> {
+    static DATE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$").unwrap());
+    (!DATE.is_match(text)).then(|| "dueDate must be in YYYY-MM-DD format".to_string())
+}
+
+/// @ArrayMaxSize
+pub fn at_most_items<T>(field: &str, list: &[T], max: usize) -> Option<String> {
+    (list.len() > max).then(|| format!("{field} must contain no more than {max} elements"))
+}
+
+/// @Min
+pub fn not_below(field: &str, number: i32, min: i32) -> Option<String> {
+    (number < min).then(|| format!("{field} must not be less than {min}"))
 }
 
 /// A real time zone, by the same rule as Node's Intl (which class-validator asks): an IANA name in any mix of

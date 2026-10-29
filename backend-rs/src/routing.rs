@@ -33,6 +33,11 @@ pub const MOVED: Moved = Moved {
         "createLabel",
         "deleteLabel",
         "updateLabel",
+        "createTask",
+        "updateTask",
+        "moveTask",
+        "deleteTask",
+        "setTaskLabels",
     ],
 };
 

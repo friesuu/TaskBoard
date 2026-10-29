@@ -12,9 +12,8 @@ and the same login secret: a login made by one works in the other.
 | --- | --- |
 | 1 | `me` |
 | 2 | `register`, `login`, `logout`, `setTimeZone`, `changePassword`, `setDisplayName`, `deleteAccount` |
-| 3 | `boards`, `createBoard`, `renameBoard`, `setBoardProject`, `deleteBoard`; `labels`, `createLabel`, `updateLabel`, `deleteLabel` (once your part is done) |
-
-`setTaskLabels` stays in NestJS until phase 4: it answers with a whole Task, and tasks move then.
+| 3 | `boards`, `createBoard`, `renameBoard`, `setBoardProject`, `deleteBoard`; `labels`, `createLabel`, `updateLabel`, `deleteLabel` |
+| 4 | `createTask`, `updateTask`, `moveTask`, `deleteTask`, `setTaskLabels`; `tasks`, `taskStats` (once your part is done) |
 
 ## Run it (development)
 
@@ -44,38 +43,43 @@ costs nothing. The first pair (Rust 3102, NestJS 3101) has the rate limits off, 
 
 An operation counts as moved only when `scripts/e2e.sh` passes with it in `MOVED`.
 
-## Phase 3: your part
+## Phase 4: your part
 
-Boards and labels move in phase 3. The boards are done and already answered by Rust. Three pieces of the
-labels are yours, in `src/labels.rs` between the `YOUR PART` lines. Until you're done, the label operations
-keep going to NestJS, so everything works in the meantime.
+Tasks move in phase 4. Creating, changing, moving and deleting tasks, and giving them labels, are done and
+already answered by Rust. The two queries that need "today" where the user is, `tasks` (its due date filter)
+and `taskStats` (overdue, due this week, finished this week), wait for your part: two function bodies in
+`src/dates.rs`, between the `YOUR PART` lines. Until you're done, they keep going to NestJS.
 
-1. **An enum:** add the other seven colours to `LabelColor`. `cargo test labels` checks them, in order.
-2. **A `match`:** write the body of `change`, one arm for each of `MaybeUndefined`'s three variants.
-   `cargo test labels` has a test for each.
-3. **A query:** write the body of `find_all`, the SQL for a board's labels, A to Z. No unit test can reach the
-   database; `scripts/e2e.sh` checks it (step 6).
-4. Remove the two `#[allow(...)]` lines in `src/labels.rs`.
-5. Move the operations to Rust, in `src/routing.rs`: add `"labels"` to `queries`, and `"createLabel"`,
-   `"updateLabel"`, `"deleteLabel"` to `mutations`.
-6. Check: `cargo fmt`, `cargo clippy` (no warnings), `cargo test` (31 passed), then `scripts/e2e.sh` (143 passed).
+1. **`today_in`:** today's date in the user's time zone, with a `match` over the two kinds of `Zone`.
+2. **`week_of`:** the Monday and Sunday around a date. It needs a trait brought into scope (the hints say which).
+3. Check with `cargo test dates`: its 4 tests fail until both are right. One of them is about summer time in
+   New York, which `today_in` gets right without doing anything special: the zone knows its own summer time.
+4. Remove the three `#[allow(...)]` lines in `src/dates.rs`.
+5. Move the operations to Rust, in `src/routing.rs`: add `"tasks"` and `"taskStats"` to `queries`.
+6. Check: `cargo fmt`, `cargo clippy` (no warnings), `cargo test` (37 passed), then `scripts/e2e.sh` (143 passed).
 
 The compiler's messages are the best help: `cargo build` after each change, and read the first error.
 
-Phases 1 (`me`, in `src/users.rs`) and 2 (the login cookie, in `src/cookies.rs`) were your parts before this
-one: done.
+Your parts before this one, all done: phase 1 `me` (`src/users.rs`), phase 2 the login cookie (`src/cookies.rs`),
+phase 3 the label colours, `change` and `find_all` (`src/labels.rs`).
 
 ## Where Rust doesn't match NestJS yet
 
 The answers were compared with NestJS's for the same requests: 49 in phase 2 (every error case, the rate
 limits, the cookies), 48 identical; 71 in phase 3 (every error case of boards and labels, the input rules, and
-broken requests), 66 identical. The ones that aren't:
+broken requests), 66 identical; 164 in phase 4 (every task operation and its errors, 31 due dates, the filters,
+the numbers in 8 time zones), 158 identical. The ones that aren't:
 
 - **A broken request** (an unknown field, or a variable that doesn't fit its type): both answer HTTP 400 with
   the same code (`BAD_USER_INPUT` for a variable, `GRAPHQL_VALIDATION_FAILED` for the query itself), but the
   message is worded differently (`src/bad_requests.rs`), and for a wrong value written into the query itself,
   Rust points at the argument's name where NestJS points at the value. Missing and null variables match
   exactly. Only a broken client gets any of this, never the app. To look at again when NestJS is gone.
+- **`createTask` with `status: null`**: the database refuses it in both. NestJS passes the database's own message
+  on ("null value in column ..."); Rust says "Internal server error", as for any database problem, with the
+  same code. The app never sends it.
+- **A due date before the year 1000**: Rust always refuses it. NestJS's validator.js reads such a date in the
+  server's own time zone, so its answer depends on where the server is: in Kuala Lumpur it refuses them too.
 - **Two labels saved with the same name at the same moment**: the database refuses the second. NestJS answers
   it with "Internal server error"; Rust with the usual "There is already a label called ..." message.
 - **The schema's descriptions**: the `///` comments on Rust's GraphQL types become descriptions in Rust's schema;
@@ -96,7 +100,10 @@ broken requests), 66 identical. The ones that aren't:
 | `src/account.rs` | `setDisplayName`, `deleteAccount` (with the account's uploaded files) |
 | `src/cookies.rs` | The login cookie's `Set-Cookie` header (your part in phase 2) |
 | `src/boards.rs` | `boards`, `createBoard`, `renameBoard`, `setBoardProject`, `deleteBoard` |
-| `src/labels.rs` | `labels`, `createLabel`, `updateLabel`, `deleteLabel` (your part in phase 3) |
+| `src/labels.rs` | `labels`, `createLabel`, `updateLabel`, `deleteLabel`, `setTaskLabels` (your part in phase 3) |
+| `src/tasks.rs` | `tasks` (with its filters), `taskStats`, `createTask`, `updateTask`, `moveTask`, `deleteTask` |
+| `src/dates.rs` | Today and this week in the user's time zone (your part in phase 4) |
+| `src/iso8601.rs` | validator.js's ISO 8601 date check, for the due date |
 | `src/scalars.rs` | The DateTime scalar, written like a JavaScript Date (`2026-10-29T02:34:40.123Z`) |
 | `src/passwords.rs` | Password hashes (argon2id, the same as NestJS's) |
 | `src/throttle.rs` | Rate limits (5 tries a minute), like NestJS's ThrottlerGuard |

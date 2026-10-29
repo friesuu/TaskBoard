@@ -19,6 +19,7 @@ use crate::config::Config;
 use crate::labels::{LabelsMutation, LabelsQuery};
 use crate::passwords::DummyHash;
 use crate::routing::{MOVED, rust_answers};
+use crate::tasks::{TasksMutation, TasksQuery};
 use crate::throttle::{RateLimits, client_address};
 use crate::users::UsersQuery;
 use crate::{AppState, bad_requests, proxy};
@@ -26,10 +27,16 @@ use crate::{AppState, bad_requests, proxy};
 /// The Query and Mutation types. Each module adds its part here as it moves (MergedObject joins the parts
 /// into one type).
 #[derive(MergedObject, Default)]
-pub struct Query(UsersQuery, BoardsQuery, LabelsQuery);
+pub struct Query(UsersQuery, BoardsQuery, LabelsQuery, TasksQuery);
 
 #[derive(MergedObject, Default)]
-pub struct Mutation(AuthMutation, AccountMutation, BoardsMutation, LabelsMutation);
+pub struct Mutation(
+    AuthMutation,
+    AccountMutation,
+    BoardsMutation,
+    LabelsMutation,
+    TasksMutation,
+);
 
 pub type AppSchema = Schema<Query, Mutation, EmptySubscription>;
 
