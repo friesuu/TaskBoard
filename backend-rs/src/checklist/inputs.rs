@@ -1,8 +1,6 @@
 //! What the checklist operations take, and their input rules (checklist-item.dto.ts in NestJS). Each input's
 //! `checked` does what NestJS's ValidationPipe does: trims the text, checks the rules, and gives it back.
 
-#![allow(dead_code)] // nothing calls this file's functions until you've written resolver.rs: then remove this line
-
 use async_graphql::{InputObject, MaybeUndefined};
 
 use crate::validate;

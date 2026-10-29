@@ -2,8 +2,6 @@
 //! (already checked) and whose checklists they are. No GraphQL in here.
 //! An item has no owner of its own: "is this yours?" is answered through its task's owner.
 
-#![allow(dead_code)] // nothing calls this file's functions until you've written resolver.rs: then remove this line
-
 use sqlx::{PgExecutor, PgPool};
 
 use super::inputs::UpdateChecklistItemInput;
@@ -112,9 +110,11 @@ pub async fn move_to(db: &PgPool, id: i32, owner_id: i32, position: i32) -> asyn
 ///   `usize`, and position is an `i32`: `usize::try_from(number)` converts it, and gives a Result, because a
 ///   negative number has no usize.
 /// - `list.insert(index, id)` puts it in, moving the rest down. The Vec has to be `let mut` for that.
-#[allow(unused_variables)] // remove this line when you've written it
 pub fn reorder(ids: Vec<i32>, id: i32, position: i32) -> Vec<i32> {
-    todo!("phase 5, your part: the new order of a checklist")
+    let mut list: Vec<i32> = ids.into_iter().filter(|&other| other != id).collect();
+    let index = usize::try_from(position.max(0)).unwrap_or(0).min(list.len());
+    list.insert(index, id);
+    list
 }
 // ================================================================================================
 

@@ -2,6 +2,10 @@
 //! NestJS's order: who's logged in, the input rules, then the service.
 
 use async_graphql::{Context, Object};
+use sqlx::PgPool;
+
+use crate::auth::current_user;
+use crate::checklist::service;
 
 use super::inputs::{ChecklistItemInput, UpdateChecklistItemInput};
 use super::types::ChecklistItem;
@@ -21,12 +25,13 @@ use super::types::ChecklistItem;
 #[derive(Default)]
 pub struct ChecklistQuery;
 
-#[allow(unused_variables)] // remove this line when you've written the body below
 #[Object]
 impl ChecklistQuery {
     /// A task's checklist, top to bottom
     async fn checklist_items(&self, ctx: &Context<'_>, task_id: i32) -> async_graphql::Result<Vec<ChecklistItem>> {
-        todo!("phase 5, your part: service::find_all")
+        let user = current_user(ctx).await?;
+        let db = ctx.data::<PgPool>()?;
+        service::find_all(db, task_id, user.id).await
     }
 }
 
@@ -34,7 +39,6 @@ impl ChecklistQuery {
 #[derive(Default)]
 pub struct ChecklistMutation;
 
-#[allow(unused_variables)] // remove this line when you've written the bodies below
 #[Object]
 impl ChecklistMutation {
     /// A new item, at the bottom of the checklist
@@ -44,7 +48,10 @@ impl ChecklistMutation {
         task_id: i32,
         input: ChecklistItemInput,
     ) -> async_graphql::Result<ChecklistItem> {
-        todo!("phase 5, your part: service::add (it takes the text: `&input.text`)")
+        let user = current_user(ctx).await?;
+        let input = input.checked()?;
+        let db = ctx.data::<PgPool>()?;
+        service::add(db, task_id, user.id, &input.text).await
     }
 
     /// Tick/untick and/or rename
@@ -54,7 +61,10 @@ impl ChecklistMutation {
         id: i32,
         input: UpdateChecklistItemInput,
     ) -> async_graphql::Result<ChecklistItem> {
-        todo!("phase 5, your part: service::update (it takes the whole input)")
+        let user = current_user(ctx).await?;
+        let input = input.checked()?;
+        let db = ctx.data::<PgPool>()?;
+        service::update(db, id, user.id, input).await
     }
 
     /// position 0 = top; past the end = bottom. Answers with the whole checklist, in its new order.
@@ -64,11 +74,16 @@ impl ChecklistMutation {
         id: i32,
         position: i32,
     ) -> async_graphql::Result<Vec<ChecklistItem>> {
-        todo!("phase 5, your part: service::move_to (no input, so nothing to check)")
+        let user = current_user(ctx).await?;
+        let db = ctx.data::<PgPool>()?;
+        service::move_to(db, id, user.id, position).await
     }
 
     async fn delete_checklist_item(&self, ctx: &Context<'_>, id: i32) -> async_graphql::Result<bool> {
-        todo!("phase 5, your part: service::remove, then Ok(true)")
+        let user = current_user(ctx).await?;
+        let db = ctx.data::<PgPool>()?;
+        service::remove(db, id, user.id).await?;
+        Ok(true)
     }
 }
 // ================================================================================================

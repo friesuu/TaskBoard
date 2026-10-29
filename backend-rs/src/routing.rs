@@ -26,6 +26,7 @@ pub const MOVED: Moved = Moved {
         "comments",
         "notifications",
         "unreadNotificationCount",
+        "checklistItems",
     ],
     mutations: &[
         "register",
@@ -52,6 +53,10 @@ pub const MOVED: Moved = Moved {
         "deleteComment",
         "markNotificationRead",
         "markAllNotificationsRead",
+        "addChecklistItem",
+        "updateChecklistItem",
+        "moveChecklistItem",
+        "deleteChecklistItem",
     ],
 };
 
