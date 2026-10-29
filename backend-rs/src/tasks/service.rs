@@ -105,6 +105,17 @@ pub async fn find_owned(db: &PgPool, id: i32, owner_id: i32) -> async_graphql::R
     Ok(tasks.remove(0))
 }
 
+/// These tasks (in no particular order), each with its labels, for a caller that already knows whose they are:
+/// the tasks a user's notifications are about
+pub async fn find_many(db: &PgPool, ids: &[i32]) -> async_graphql::Result<Vec<Task>> {
+    let tasks = sqlx::query_as(&format!("SELECT {TASK_COLUMNS} FROM tasks WHERE tasks.id = ANY($1)"))
+        .bind(ids)
+        .fetch_all(db)
+        .await
+        .map_err(internal)?;
+    with_labels(db, tasks).await
+}
+
 /// The profile's numbers, across ALL your boards. "Today" and "this week" are the user's own (`time_zone`).
 pub async fn stats(db: &PgPool, owner_id: i32, time_zone: Option<&str>) -> async_graphql::Result<TaskStats> {
     let today = dates::today_in(&Zone::of(time_zone), Utc::now());

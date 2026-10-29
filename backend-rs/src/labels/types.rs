@@ -23,7 +23,7 @@ pub enum LabelColor {
 }
 
 /// A label, as the API shows it (type Label in ../backend/src/schema.gql)
-#[derive(SimpleObject, sqlx::FromRow)]
+#[derive(SimpleObject, sqlx::FromRow, Clone)]
 pub struct Label {
     pub id: i32,
     pub name: String,

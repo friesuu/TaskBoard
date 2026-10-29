@@ -17,7 +17,16 @@ pub struct Moved {
 }
 
 pub const MOVED: Moved = Moved {
-    queries: &["me", "boards", "labels", "tasks", "taskStats"],
+    queries: &[
+        "me",
+        "boards",
+        "labels",
+        "tasks",
+        "taskStats",
+        "comments",
+        "notifications",
+        "unreadNotificationCount",
+    ],
     mutations: &[
         "register",
         "login",
@@ -38,6 +47,11 @@ pub const MOVED: Moved = Moved {
         "moveTask",
         "deleteTask",
         "setTaskLabels",
+        "addComment",
+        "updateComment",
+        "deleteComment",
+        "markNotificationRead",
+        "markAllNotificationsRead",
     ],
 };
 

@@ -70,12 +70,17 @@ pub fn project_name(text: &str) -> Option<String> {
         .then(|| r#"Use a project name from the runner, e.g. "notes-app" (letters, digits and dashes)"#.to_string())
 }
 
-/// A board's or a label's name (board-name.dto.ts, label.dto.ts): trimmed, then @IsNotEmpty @MaxLength(max),
-/// checked bottom up. Gives back the trimmed name, which is the one that's saved.
+/// A board's or a label's name (board-name.dto.ts, label.dto.ts): see `trimmed`
 pub fn name(text: &str, max: usize) -> async_graphql::Result<&str> {
-    let name = js_trim(text);
-    check([at_most("name", name, max), not_empty("name", name)])?;
-    Ok(name)
+    trimmed("name", text, max)
+}
+
+/// The usual rule for a piece of text (a name, a checklist item, a comment): trimmed, then @IsString
+/// @IsNotEmpty @MaxLength(max), checked bottom up. Gives back the trimmed text, which is the one that's saved.
+pub fn trimmed<'a>(field: &str, text: &'a str, max: usize) -> async_graphql::Result<&'a str> {
+    let text = js_trim(text);
+    check([at_most(field, text, max), not_empty(field, text)])?;
+    Ok(text)
 }
 
 /// A text's length the way class-validator counts it: one per character (an emoji is one, although

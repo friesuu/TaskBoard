@@ -18,5 +18,5 @@ mod types;
 
 // `pub use`: these can be used from outside as tasks::TasksQuery, tasks::find_owned..., as if written here
 pub use resolver::{TasksMutation, TasksQuery};
-pub use service::find_owned;
+pub use service::{find_many, find_owned};
 pub use types::Task;

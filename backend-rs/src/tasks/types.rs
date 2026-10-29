@@ -18,7 +18,7 @@ pub enum TaskStatus {
 }
 
 /// A task, as the API shows it (type Task in ../backend/src/schema.gql)
-#[derive(SimpleObject, sqlx::FromRow)]
+#[derive(SimpleObject, sqlx::FromRow, Clone)]
 pub struct Task {
     pub id: i32,
     pub title: String,

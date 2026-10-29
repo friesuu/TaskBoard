@@ -15,8 +15,11 @@ use sqlx::PgPool;
 use crate::account::AccountMutation;
 use crate::auth::{AuthMutation, JwtKeys, login_cookie};
 use crate::boards::{BoardsMutation, BoardsQuery};
+use crate::checklist::{ChecklistMutation, ChecklistQuery};
+use crate::comments::{CommentsMutation, CommentsQuery};
 use crate::config::Config;
 use crate::labels::{LabelsMutation, LabelsQuery};
+use crate::notifications::{NotificationsMutation, NotificationsQuery};
 use crate::passwords::DummyHash;
 use crate::routing::{MOVED, rust_answers};
 use crate::tasks::{TasksMutation, TasksQuery};
@@ -27,7 +30,15 @@ use crate::{AppState, bad_requests, proxy};
 /// The Query and Mutation types. Each module adds its part here as it moves (MergedObject joins the parts
 /// into one type).
 #[derive(MergedObject, Default)]
-pub struct Query(UsersQuery, BoardsQuery, LabelsQuery, TasksQuery);
+pub struct Query(
+    UsersQuery,
+    BoardsQuery,
+    LabelsQuery,
+    TasksQuery,
+    ChecklistQuery,
+    CommentsQuery,
+    NotificationsQuery,
+);
 
 #[derive(MergedObject, Default)]
 pub struct Mutation(
@@ -36,6 +47,9 @@ pub struct Mutation(
     BoardsMutation,
     LabelsMutation,
     TasksMutation,
+    ChecklistMutation,
+    CommentsMutation,
+    NotificationsMutation,
 );
 
 pub type AppSchema = Schema<Query, Mutation, EmptySubscription>;

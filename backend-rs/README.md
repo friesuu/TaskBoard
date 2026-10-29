@@ -13,7 +13,8 @@ and the same login secret: a login made by one works in the other.
 | 1 | `me` |
 | 2 | `register`, `login`, `logout`, `setTimeZone`, `changePassword`, `setDisplayName`, `deleteAccount` |
 | 3 | `boards`, `createBoard`, `renameBoard`, `setBoardProject`, `deleteBoard`; `labels`, `createLabel`, `updateLabel`, `deleteLabel` |
-| 4 | `createTask`, `updateTask`, `moveTask`, `deleteTask`, `setTaskLabels`; `tasks`, `taskStats` (once your part is done) |
+| 4 | `createTask`, `updateTask`, `moveTask`, `deleteTask`, `setTaskLabels`, `tasks`, `taskStats` |
+| 5 | `comments`, `addComment`, `updateComment`, `deleteComment`; `notifications`, `unreadNotificationCount`, `markNotificationRead`, `markAllNotificationsRead`; `checklistItems`, `addChecklistItem`, `updateChecklistItem`, `moveChecklistItem`, `deleteChecklistItem` (once your part is done) |
 
 ## Run it (development)
 
@@ -43,32 +44,35 @@ costs nothing. The first pair (Rust 3102, NestJS 3101) has the rate limits off, 
 
 An operation counts as moved only when `scripts/e2e.sh` passes with it in `MOVED`.
 
-## Phase 4: your part
+## Phase 5: your part
 
-Tasks move in phase 4. Creating, changing, moving and deleting tasks, and giving them labels, are done and
-already answered by Rust. The two queries that need "today" where the user is, `tasks` (its due date filter)
-and `taskStats` (overdue, due this week, finished this week), wait for your part: two function bodies in
-`src/dates.rs`, between the `YOUR PART` lines. Until you're done, they keep going to NestJS.
+Checklists, comments and notifications move in phase 5. Comments and notifications are done and already
+answered by Rust. The checklist (`src/checklist/`) is written except two pieces, which are yours; until you're
+done, its operations keep going to NestJS.
 
-1. **`today_in`:** today's date in the user's time zone, with a `match` over the two kinds of `Zone`.
-2. **`week_of`:** the Monday and Sunday around a date. It needs a trait brought into scope (the hints say which).
-3. Check with `cargo test dates`: its 4 tests fail until both are right. One of them is about summer time in
-   New York, which `today_in` gets right without doing anything special: the zone knows its own summer time.
-4. Remove the three `#[allow(...)]` lines in `src/dates.rs`.
-5. Move the operations to Rust, in `src/routing.rs`: add `"tasks"` and `"taskStats"` to `queries`.
-6. Check: `cargo fmt`, `cargo clippy` (no warnings), `cargo test` (37 passed), then `scripts/e2e.sh` (143 passed).
+1. **`reorder`** in `src/checklist/service.rs`: the new order of a checklist when one item moves. Plain Vec work,
+   no database: `cargo test checklist` runs its 4 tests.
+2. **The five operation bodies** in `src/checklist/resolver.rs`, following `src/tasks/resolver.rs`: the login
+   check, the input rules, then the service. The `use` lines they need aren't there yet: let `cargo build` tell
+   you what's missing.
+3. Remove the `#[allow(...)]` lines: two in `resolver.rs`, one in `service.rs` (on `reorder`), and the
+   `#![allow(dead_code)]` lines at the top of `service.rs` and `inputs.rs`.
+4. Move the operations to Rust, in `src/routing.rs`: add `"checklistItems"` to `queries`, and
+   `"addChecklistItem"`, `"updateChecklistItem"`, `"moveChecklistItem"`, `"deleteChecklistItem"` to `mutations`.
+5. Check: `cargo fmt`, `cargo clippy` (no warnings), `cargo test` (41 passed), then `scripts/e2e.sh` (143 passed).
 
 The compiler's messages are the best help: `cargo build` after each change, and read the first error.
 
 Your parts before this one, all done: phase 1 `me` (`src/users.rs`), phase 2 the login cookie (`src/cookies.rs`),
-phase 3 the label colours, `change` and `find_all` (`src/labels.rs`).
+phase 3 the label colours, `change` and `find_all` (`src/labels/`), phase 4 today and this week (`src/dates.rs`).
 
 ## Where Rust doesn't match NestJS yet
 
 The answers were compared with NestJS's for the same requests: 49 in phase 2 (every error case, the rate
 limits, the cookies), 48 identical; 71 in phase 3 (every error case of boards and labels, the input rules, and
 broken requests), 66 identical; 164 in phase 4 (every task operation and its errors, 31 due dates, the filters,
-the numbers in 8 time zones), 158 identical. The ones that aren't:
+the numbers in 8 time zones), 158 identical; 86 in phase 5 (every checklist, comment and notification operation
+and its errors, Claude's comments and prompt feedback), 84 identical. The ones that aren't:
 
 - **A broken request** (an unknown field, or a variable that doesn't fit its type): both answer HTTP 400 with
   the same code (`BAD_USER_INPUT` for a variable, `GRAPHQL_VALIDATION_FAILED` for the query itself), but the
@@ -78,6 +82,11 @@ the numbers in 8 time zones), 158 identical. The ones that aren't:
 - **`createTask` with `status: null`**: the database refuses it in both. NestJS passes the database's own message
   on ("null value in column ..."); Rust says "Internal server error", as for any database problem, with the
   same code. The app never sends it.
+- **A notification's task**: NestJS loads only its `id`, `title` and `boardId` (what the bell shows), so asking for
+  any other field of it gives `task: null` and an error. Rust gives the whole task.
+- **Several top-level fields failing at once** (e.g. the bell's `notifications` and `unreadNotificationCount`
+  when logged out): NestJS's GraphQL library reports only the first error (it waits on the fields with
+  `Promise.all`, which stops at the first failure); Rust reports one for each field. The app reads the first.
 - **A due date before the year 1000**: Rust always refuses it. NestJS's validator.js reads such a date in the
   server's own time zone, so its answer depends on where the server is: in Kuala Lumpur it refuses them too.
 - **Two labels saved with the same name at the same moment**: the database refuses the second. NestJS answers
@@ -117,6 +126,9 @@ The bigger modules are folders (`src/tasks/`, `src/labels/`, `src/auth/`). The s
 | `src/boards.rs` | `boards`, `createBoard`, `renameBoard`, `setBoardProject`, `deleteBoard` |
 | `src/labels/` | `labels`, `createLabel`, `updateLabel`, `deleteLabel`, `setTaskLabels` (your part in phase 3: `LabelColor` in `types.rs`, `change` and `find_all` in `service.rs`) |
 | `src/tasks/` | `tasks` (with its filters), `taskStats`, `createTask`, `updateTask`, `moveTask`, `deleteTask` |
+| `src/checklist/` | `checklistItems`, `addChecklistItem`, `updateChecklistItem`, `moveChecklistItem`, `deleteChecklistItem` (your part in phase 5) |
+| `src/comments/` | `comments`, `addComment`, `updateComment`, `deleteComment` |
+| `src/notifications.rs` | The bell: `notifications`, `unreadNotificationCount`, `markNotificationRead`, `markAllNotificationsRead` |
 | `src/dates.rs` | Today and this week in the user's time zone (your part in phase 4) |
 | `src/iso8601.rs` | validator.js's ISO 8601 date check, for the due date |
 | `src/scalars.rs` | The DateTime scalar, written like a JavaScript Date (`2026-10-29T02:34:40.123Z`) |
