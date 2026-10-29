@@ -10,11 +10,34 @@ use std::net::IpAddr;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+use async_graphql::Context;
 use axum::http::HeaderMap;
 
 use crate::errors::too_many_attempts;
+use crate::users::User;
 
 const WINDOW: Duration = Duration::from_secs(60);
+
+/// How many tries a minute the rate limited operations allow (ThrottlerModule's default in app.module.ts)
+const TRIES_PER_MINUTE: usize = 5;
+
+/// Who sent the request (client_address), handed to the GraphQL resolvers with the request
+pub struct ClientAddress(pub IpAddr);
+
+/// One try at a rate limited operation, counted by the sender's address (nobody is logged in yet): register and
+/// login. Like NestJS's GqlThrottlerGuard, it runs before the input rules.
+pub fn limit_by_address(ctx: &Context<'_>, operation: &str) -> async_graphql::Result<()> {
+    let address = ctx.data::<ClientAddress>()?.0;
+    ctx.data::<RateLimits>()?
+        .check(operation, &address.to_string(), TRIES_PER_MINUTE)
+}
+
+/// One try at a rate limited operation, counted by account (the login check has already run): changePassword
+/// and deleteAccount
+pub fn limit_by_account(ctx: &Context<'_>, operation: &str, user: &User) -> async_graphql::Result<()> {
+    ctx.data::<RateLimits>()?
+        .check(operation, &format!("user-{}", user.id), TRIES_PER_MINUTE)
+}
 
 /// Every person's recent tries, per operation. A Mutex: requests are answered at the same time on several
 /// threads, and only one at a time may change the list. (std's Mutex is fine here: it's held only for a

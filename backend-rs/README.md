@@ -86,6 +86,21 @@ the numbers in 8 time zones), 158 identical. The ones that aren't:
   NestJS's has none. Nobody sees them while introspection (`__schema`) still goes to NestJS. To look at again
   then too.
 
+## How a module is laid out
+
+Each feature is split the way NestJS splits it, so the same parts are in the same places:
+
+| Part | In NestJS | What it does |
+| --- | --- | --- |
+| `types.rs` | `*.entity.ts`, enums, `@ObjectType`s | What the API shows (and what a database row fills) |
+| `inputs.rs` | the DTOs | What the operations take. Each input's `checked` does what NestJS's ValidationPipe does: trims it, checks its rules, and gives it back. |
+| `resolver.rs` | `*.resolver.ts` | The GraphQL operations: the login check, then `checked`, then the service. Nothing else. |
+| `service.rs` | `*.service.ts` | The work itself: plain functions that take the database and whose data it is, with no GraphQL in them, so other modules (the chat assistant, later) can use them too |
+| `mod.rs` | `*.module.ts` | The module's front door: its files, and what the rest of the backend may use (`pub use`) |
+
+The bigger modules are folders (`src/tasks/`, `src/labels/`, `src/auth/`). The small ones (`boards.rs`,
+`account.rs`) are one file each, with the same parts as sections, in the same order.
+
 ## The files
 
 | File | What it does |
@@ -96,17 +111,17 @@ the numbers in 8 time zones), 158 identical. The ones that aren't:
 | `src/graphql.rs` | POST /graphql, and the GraphQL schema |
 | `src/bad_requests.rs` | Requests that are wrong before anything runs, answered like Apollo (NestJS) answers them |
 | `src/proxy.rs` | Passes requests to NestJS and the answers back, with X-Forwarded-For saying who sent them (so NestJS's login limit counts each person) |
-| `src/auth.rs` | The login cookie and its token; `register`, `login`, `logout`, `setTimeZone`, `changePassword` |
+| `src/auth/` | `register`, `login`, `logout`, `setTimeZone`, `changePassword`; `session.rs`: the login cookie and its token, and `current_user` |
 | `src/account.rs` | `setDisplayName`, `deleteAccount` (with the account's uploaded files) |
 | `src/cookies.rs` | The login cookie's `Set-Cookie` header (your part in phase 2) |
 | `src/boards.rs` | `boards`, `createBoard`, `renameBoard`, `setBoardProject`, `deleteBoard` |
-| `src/labels.rs` | `labels`, `createLabel`, `updateLabel`, `deleteLabel`, `setTaskLabels` (your part in phase 3) |
-| `src/tasks.rs` | `tasks` (with its filters), `taskStats`, `createTask`, `updateTask`, `moveTask`, `deleteTask` |
+| `src/labels/` | `labels`, `createLabel`, `updateLabel`, `deleteLabel`, `setTaskLabels` (your part in phase 3: `LabelColor` in `types.rs`, `change` and `find_all` in `service.rs`) |
+| `src/tasks/` | `tasks` (with its filters), `taskStats`, `createTask`, `updateTask`, `moveTask`, `deleteTask` |
 | `src/dates.rs` | Today and this week in the user's time zone (your part in phase 4) |
 | `src/iso8601.rs` | validator.js's ISO 8601 date check, for the due date |
 | `src/scalars.rs` | The DateTime scalar, written like a JavaScript Date (`2026-10-29T02:34:40.123Z`) |
 | `src/passwords.rs` | Password hashes (argon2id, the same as NestJS's) |
-| `src/throttle.rs` | Rate limits (5 tries a minute), like NestJS's ThrottlerGuard |
+| `src/throttle.rs` | Rate limits (5 tries a minute), like NestJS's ThrottlerGuard: `limit_by_address`, `limit_by_account` |
 | `src/validate.rs` | Input rules, with NestJS's messages |
 | `src/errors.rs` | Errors in the shapes the frontend expects from NestJS |
 | `src/users.rs` | The User type, `me`, and the users table's queries |

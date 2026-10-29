@@ -13,14 +13,14 @@ use axum::response::{IntoResponse, Response};
 use sqlx::PgPool;
 
 use crate::account::AccountMutation;
-use crate::auth::{AuthMutation, ClientAddress, JwtKeys, login_cookie};
+use crate::auth::{AuthMutation, JwtKeys, login_cookie};
 use crate::boards::{BoardsMutation, BoardsQuery};
 use crate::config::Config;
 use crate::labels::{LabelsMutation, LabelsQuery};
 use crate::passwords::DummyHash;
 use crate::routing::{MOVED, rust_answers};
 use crate::tasks::{TasksMutation, TasksQuery};
-use crate::throttle::{RateLimits, client_address};
+use crate::throttle::{ClientAddress, RateLimits, client_address};
 use crate::users::UsersQuery;
 use crate::{AppState, bad_requests, proxy};
 
