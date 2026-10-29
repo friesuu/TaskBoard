@@ -31,6 +31,13 @@ const MAX_LABELS_PER_BOARD: i64 = 50;
 #[sqlx(type_name = "labels_color_enum", rename_all = "lowercase")]
 pub enum LabelColor {
     Gray,
+    Blue,
+    Purple,
+    Teal,
+    Green,
+    Yellow,
+    Orange,
+    Pink,
 }
 
 /// One field of updateLabel's input. GraphQL can leave a field out, send it as null, or send a value, and
@@ -45,9 +52,12 @@ pub enum LabelColor {
 ///   MaybeUndefined::Null => ...,
 ///   MaybeUndefined::Value(value) => ...,   (`value` is the field's value, taken out of the variant)
 /// Rust checks that every variant has an arm: leave one out and `cargo build` says which.
-#[allow(unused_variables)] // remove this line when you've written it
 fn change<T>(field: MaybeUndefined<T>) -> async_graphql::Result<Option<T>> {
-    todo!("phase 3, your part: keep, change or refuse one field")
+    match field {
+        MaybeUndefined::Undefined => Ok(None),
+        MaybeUndefined::Null => Err(bad_request("name and color cannot be null")),
+        MaybeUndefined::Value(value) => Ok(Some(value)),
+    }
 }
 
 /// A board's labels, A to Z (and by id for two names that sort the same).
@@ -58,9 +68,11 @@ fn change<T>(field: MaybeUndefined<T>) -> async_graphql::Result<Option<T>> {
 ///
 /// The columns are id, name, color and board_id, in the table labels. sqlx turns each row into a Label,
 /// including the colour: 'orange' in the database becomes LabelColor::Orange (once Step 1 is done).
-#[allow(unused_variables)] // remove this line when you've written it
 pub async fn find_all(db: &PgPool, board_id: i32) -> Result<Vec<Label>, sqlx::Error> {
-    todo!("phase 3, your part: a board's labels, A to Z")
+    sqlx::query_as::<_, Label>("SELECT id, name, color, board_id FROM labels WHERE board_id = $1 ORDER BY name, id")
+        .bind(board_id)
+        .fetch_all(db)
+        .await
 }
 // ================================================================================================
 

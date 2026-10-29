@@ -17,7 +17,7 @@ pub struct Moved {
 }
 
 pub const MOVED: Moved = Moved {
-    queries: &["me", "boards"],
+    queries: &["me", "boards", "labels"],
     mutations: &[
         "register",
         "login",
@@ -30,6 +30,9 @@ pub const MOVED: Moved = Moved {
         "renameBoard",
         "setBoardProject",
         "deleteBoard",
+        "createLabel",
+        "deleteLabel",
+        "updateLabel",
     ],
 };
 
