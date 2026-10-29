@@ -68,17 +68,22 @@ pub fn login_cookie(headers: &HeaderMap) -> LoginCookie {
 /// The logged-in user. Otherwise NestJS's "Unauthorized": no cookie, a forged or expired token, or one made
 /// before a password change (the user's token version has gone up since).
 pub async fn current_user(ctx: &Context<'_>) -> async_graphql::Result<User> {
+    let token = ctx.data_opt::<LoginCookie>().and_then(|cookie| cookie.0.as_deref());
+    user_from_token(ctx.data::<PgPool>()?, ctx.data::<JwtKeys>()?, token).await
+}
+
+/// The user a login token is for, or "Unauthorized" (userFromToken in auth.service.ts). current_user uses it for
+/// GraphQL; the file upload and download, which aren't GraphQL, use it directly (NestJS's HttpAuthGuard).
+pub async fn user_from_token(db: &PgPool, keys: &JwtKeys, token: Option<&str>) -> async_graphql::Result<User> {
     // `let ... else`: take the value out, or stop here if there isn't one
-    let Some(token) = ctx.data_opt::<LoginCookie>().and_then(|cookie| cookie.0.as_deref()) else {
+    let Some(token) = token else {
         return Err(unauthorized());
     };
-    let keys = ctx.data::<JwtKeys>()?;
     // HS256: how NestJS's JwtModule signs. The expiry date (exp, a day after logging in) is checked too.
     let Ok(token) = decode::<Claims>(token, &keys.checking, &Validation::new(Algorithm::HS256)) else {
         return Err(unauthorized());
     };
 
-    let db = ctx.data::<PgPool>()?;
     match users::find(db, token.claims.sub).await.map_err(internal)? {
         // `if` in a match arm: this arm only counts when the token versions match too
         Some(user) if Some(user.token_version) == token.claims.ver => Ok(user),

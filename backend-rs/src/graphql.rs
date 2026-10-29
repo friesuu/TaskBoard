@@ -13,6 +13,7 @@ use axum::response::{IntoResponse, Response};
 use sqlx::PgPool;
 
 use crate::account::AccountMutation;
+use crate::attachments::{AttachmentsMutation, AttachmentsQuery};
 use crate::auth::{AuthMutation, JwtKeys, login_cookie};
 use crate::boards::{BoardsMutation, BoardsQuery};
 use crate::checklist::{ChecklistMutation, ChecklistQuery};
@@ -38,6 +39,7 @@ pub struct Query(
     ChecklistQuery,
     CommentsQuery,
     NotificationsQuery,
+    AttachmentsQuery,
 );
 
 #[derive(MergedObject, Default)]
@@ -50,6 +52,7 @@ pub struct Mutation(
     ChecklistMutation,
     CommentsMutation,
     NotificationsMutation,
+    AttachmentsMutation,
 );
 
 pub type AppSchema = Schema<Query, Mutation, EmptySubscription>;

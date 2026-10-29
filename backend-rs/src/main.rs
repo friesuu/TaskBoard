@@ -6,6 +6,7 @@
 // Each `mod` line brings in one file of src/ (`mod auth;` = src/auth.rs). A file only sees what another
 // file marks `pub`.
 mod account;
+mod attachments;
 mod auth;
 mod bad_requests;
 mod boards;
@@ -33,20 +34,27 @@ use std::sync::Arc;
 
 use axum::Router;
 use axum::http::{HeaderValue, Method};
-use axum::routing::post;
+use axum::routing::{get, post};
+use sqlx::PgPool;
 use sqlx::postgres::PgPoolOptions;
 use tower_http::cors::{AllowHeaders, CorsLayer};
 
+use crate::auth::JwtKeys;
 use crate::config::Config;
+use crate::throttle::RateLimits;
 
 /// What every request handler can use. axum gives each request its own copy (`Clone`), which is cheap:
-/// each field is only a handle to one shared thing (Arc = shared and read-only; the schema and the client
-/// work the same way inside).
+/// each field is only a handle to one shared thing (Arc = shared and read-only; the schema, the client and
+/// the database pool work the same way inside).
 #[derive(Clone)]
 pub struct AppState {
     pub config: Arc<Config>,
     pub schema: graphql::AppSchema,
     pub http: reqwest::Client,
+    // For the file upload and download, which aren't GraphQL (the GraphQL operations get these from the schema)
+    pub db: PgPool,
+    pub jwt_keys: Arc<JwtKeys>,
+    pub rate_limits: Arc<RateLimits>,
 }
 
 // `async fn main` needs a runtime to run async code on; #[tokio::main] starts one
@@ -79,19 +87,36 @@ async fn main() {
     let port = config.port;
     let cors = cors(&config.frontend_url);
     let config = Arc::new(config);
+
+    // The clean-up of stored files nobody points at any more: now, then every hour, on its own task (tokio::spawn
+    // runs it alongside the server)
+    tokio::spawn(attachments::clean_up_regularly(db.clone(), config.upload_dir.clone()));
+
     let state = AppState {
-        schema: graphql::schema(db, config.clone(), dummy_hash),
+        schema: graphql::schema(db.clone(), config.clone(), dummy_hash),
         http: proxy::client(),
+        jwt_keys: Arc::new(JwtKeys::new(&config.jwt_secret)),
+        rate_limits: Arc::new(RateLimits::default()),
+        db,
         config,
     };
 
-    // POST /graphql is decided in graphql.rs. Everything else goes to NestJS: other methods on /graphql
-    // (GET opens GraphiQL), and every other address (file uploads and downloads).
-    let app = Router::new()
+    // POST /graphql is decided in graphql.rs; the file upload and download are attachments/routes.rs. Everything
+    // else goes to NestJS: other methods on those addresses (GET /graphql opens GraphiQL), and every other address.
+    let mut app = Router::new()
         .route("/graphql", post(graphql::handler).fallback(proxy::forward))
-        .fallback(proxy::forward)
-        .layer(cors)
-        .with_state(state);
+        .route(
+            "/api/tasks/{task_id}/attachments",
+            post(attachments::upload).fallback(proxy::forward),
+        );
+    // The download only once it has moved (routing::DOWNLOAD_MOVED); until then NestJS answers it
+    if routing::DOWNLOAD_MOVED {
+        app = app.route(
+            "/api/attachments/{id}/download",
+            get(attachments::download).fallback(proxy::forward),
+        );
+    }
+    let app = app.fallback(proxy::forward).layer(cors).with_state(state);
 
     // [::] = every address, IPv6 and IPv4, like NestJS, so the browser on Windows reaches it as localhost
     let listener = tokio::net::TcpListener::bind(SocketAddr::from(([0u16; 8], port)))

@@ -4,8 +4,8 @@ This takes over from the NestJS backend in `../backend`, one part at a time, wit
 the frontend and the Claude runner don't notice.
 
 For now Rust is the **front door**. The app and the runner talk to it on port 3000. It answers the
-GraphQL operations that have moved to Rust (the `MOVED` list in `src/routing.rs`) and passes every other
-request on to NestJS on port 3001, unchanged. Both read `../backend/.env`, so they use the same database
+GraphQL operations that have moved to Rust (the `MOVED` list in `src/routing.rs`) and the file upload and
+download (`src/attachments/routes.rs`), and passes every other request on to NestJS on port 3001, unchanged. Both read `../backend/.env`, so they use the same database
 and the same login secret: a login made by one works in the other.
 
 | Phase | Moved to Rust |
@@ -14,7 +14,8 @@ and the same login secret: a login made by one works in the other.
 | 2 | `register`, `login`, `logout`, `setTimeZone`, `changePassword`, `setDisplayName`, `deleteAccount` |
 | 3 | `boards`, `createBoard`, `renameBoard`, `setBoardProject`, `deleteBoard`; `labels`, `createLabel`, `updateLabel`, `deleteLabel` |
 | 4 | `createTask`, `updateTask`, `moveTask`, `deleteTask`, `setTaskLabels`, `tasks`, `taskStats` |
-| 5 | `comments`, `addComment`, `updateComment`, `deleteComment`; `notifications`, `unreadNotificationCount`, `markNotificationRead`, `markAllNotificationsRead`; `checklistItems`, `addChecklistItem`, `updateChecklistItem`, `moveChecklistItem`, `deleteChecklistItem` (once your part is done) |
+| 5 | `comments`, `addComment`, `updateComment`, `deleteComment`; `notifications`, `unreadNotificationCount`, `markNotificationRead`, `markAllNotificationsRead`; `checklistItems`, `addChecklistItem`, `updateChecklistItem`, `moveChecklistItem`, `deleteChecklistItem` |
+| 6 | The file upload (`POST /api/tasks/{taskId}/attachments`), `attachments`, `deleteAttachment`, the hourly clean-up of files nobody points at; the download (`GET /api/attachments/{id}/download`, once your part is done) |
 
 ## Run it (development)
 
@@ -44,27 +45,26 @@ costs nothing. The first pair (Rust 3102, NestJS 3101) has the rate limits off, 
 
 An operation counts as moved only when `scripts/e2e.sh` passes with it in `MOVED`.
 
-## Phase 5: your part
+## Phase 6: your part
 
-Checklists, comments and notifications move in phase 5. Comments and notifications are done and already
-answered by Rust. The checklist (`src/checklist/`) is written except two pieces, which are yours; until you're
-done, its operations keep going to NestJS.
+Attached files move in phase 6. Uploading, listing, deleting and the clean-up of orphaned files are done and
+already answered by Rust. The download waits for one function of yours, in `src/attachments/routes.rs`; until
+then NestJS answers it.
 
-1. **`reorder`** in `src/checklist/service.rs`: the new order of a checklist when one item moves. Plain Vec work,
-   no database: `cargo test checklist` runs its 4 tests.
-2. **The five operation bodies** in `src/checklist/resolver.rs`, following `src/tasks/resolver.rs`: the login
-   check, the input rules, then the service. The `use` lines they need aren't there yet: let `cargo build` tell
-   you what's missing.
-3. Remove the `#[allow(...)]` lines: two in `resolver.rs`, one in `service.rs` (on `reorder`), and the
-   `#![allow(dead_code)]` lines at the top of `service.rs` and `inputs.rs`.
-4. Move the operations to Rust, in `src/routing.rs`: add `"checklistItems"` to `queries`, and
-   `"addChecklistItem"`, `"updateChecklistItem"`, `"moveChecklistItem"`, `"deleteChecklistItem"` to `mutations`.
-5. Check: `cargo fmt`, `cargo clippy` (no warnings), `cargo test` (41 passed), then `scripts/e2e.sh` (143 passed).
+1. **`content_disposition`**: the download's `Content-Disposition` line, which tells the browser to save the
+   file, and under which name. It looks at the same name three ways: as characters (`.chars()`), as UTF-16 units
+   (the way JavaScript counts) and as UTF-8 bytes (`.bytes()`). `cargo test attachments` checks it against names
+   NestJS wrote the line for.
+2. Remove the `#[allow(...)]` line above it.
+3. Move the download to Rust: in `src/routing.rs`, `DOWNLOAD_MOVED` becomes `true`. (The download isn't GraphQL,
+   so it isn't in `MOVED`; `main.rs` gives it its route when the switch is on.)
+4. Check: `cargo fmt`, `cargo clippy` (no warnings), `cargo test` (48 passed), then `scripts/e2e.sh` (143 passed).
 
 The compiler's messages are the best help: `cargo build` after each change, and read the first error.
 
 Your parts before this one, all done: phase 1 `me` (`src/users.rs`), phase 2 the login cookie (`src/cookies.rs`),
-phase 3 the label colours, `change` and `find_all` (`src/labels/`), phase 4 today and this week (`src/dates.rs`).
+phase 3 the label colours, `change` and `find_all` (`src/labels/`), phase 4 today and this week (`src/dates.rs`),
+phase 5 `reorder` and the checklist's resolver (`src/checklist/`).
 
 ## Where Rust doesn't match NestJS yet
 
@@ -72,7 +72,9 @@ The answers were compared with NestJS's for the same requests: 49 in phase 2 (ev
 limits, the cookies), 48 identical; 71 in phase 3 (every error case of boards and labels, the input rules, and
 broken requests), 66 identical; 164 in phase 4 (every task operation and its errors, 31 due dates, the filters,
 the numbers in 8 time zones), 158 identical; 86 in phase 5 (every checklist, comment and notification operation
-and its errors, Claude's comments and prompt feedback), 84 identical. The ones that aren't:
+and its errors, Claude's comments and prompt feedback), 84 identical; 142 in phase 6 (uploads with every kind of
+file, name and broken form, downloads byte for byte, listing and deleting), 140 identical. Phase 6's error bodies
+are byte for byte NestJS's, down to the order of their keys. The ones that aren't:
 
 - **A broken request** (an unknown field, or a variable that doesn't fit its type): both answer HTTP 400 with
   the same code (`BAD_USER_INPUT` for a variable, `GRAPHQL_VALIDATION_FAILED` for the query itself), but the
@@ -82,6 +84,14 @@ and its errors, Claude's comments and prompt feedback), 84 identical. The ones t
 - **`createTask` with `status: null`**: the database refuses it in both. NestJS passes the database's own message
   on ("null value in column ..."); Rust says "Internal server error", as for any database problem, with the
   same code. The app never sends it.
+- **An upload whose name is cut in the middle of an emoji** (names over 200 characters are shortened, counted
+  the way JavaScript counts): NestJS's answer to the upload holds half of the emoji (`\ud83d`); Rust strings can't,
+  so Rust's has "�" there. The database saves "�" in both, so only that one answer differs.
+- **A stored file that has gone from the disk** (its row is still there): both answer the download with HTTP 400
+  and Node's error, `ENOENT: no such file or directory, open '<the file's path>'`. That shows the server's folder;
+  to change when NestJS is gone.
+- **A form's `filename*` in a character set other than UTF-8 or Latin-1**: NestJS's busboy reads more of them;
+  Rust skips that part of the form. Browsers never send `filename*`.
 - **A notification's task**: NestJS loads only its `id`, `title` and `boardId` (what the bell shows), so asking for
   any other field of it gives `task: null` and an error. Rust gives the whole task.
 - **Several top-level fields failing at once** (e.g. the bell's `notifications` and `unreadNotificationCount`
@@ -122,6 +132,7 @@ The bigger modules are folders (`src/tasks/`, `src/labels/`, `src/auth/`). The s
 | `src/proxy.rs` | Passes requests to NestJS and the answers back, with X-Forwarded-For saying who sent them (so NestJS's login limit counts each person) |
 | `src/auth/` | `register`, `login`, `logout`, `setTimeZone`, `changePassword`; `session.rs`: the login cookie and its token, and `current_user` |
 | `src/account.rs` | `setDisplayName`, `deleteAccount` (with the account's uploaded files) |
+| `src/attachments/` | The file upload and download (`routes.rs`; your part in phase 6: `content_disposition`), `attachments`, `deleteAttachment`, and the clean-up of files nobody points at |
 | `src/cookies.rs` | The login cookie's `Set-Cookie` header (your part in phase 2) |
 | `src/boards.rs` | `boards`, `createBoard`, `renameBoard`, `setBoardProject`, `deleteBoard` |
 | `src/labels/` | `labels`, `createLabel`, `updateLabel`, `deleteLabel`, `setTaskLabels` (your part in phase 3: `LabelColor` in `types.rs`, `change` and `find_all` in `service.rs`) |

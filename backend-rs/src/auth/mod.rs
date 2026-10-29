@@ -14,4 +14,4 @@ mod session;
 
 pub use resolver::AuthMutation;
 pub use service::password_is;
-pub use session::{JwtKeys, clear_login_cookie, current_user, login_cookie};
+pub use session::{JwtKeys, clear_login_cookie, current_user, login_cookie, user_from_token};

@@ -10,6 +10,7 @@ use std::sync::Arc;
 use async_graphql::{Context, InputObject, Object};
 use sqlx::PgPool;
 
+use crate::attachments::{remove_stored_files, storage_keys_owned_by};
 use crate::auth::{clear_login_cookie, current_user, password_is};
 use crate::config::Config;
 use crate::errors::{bad_request, internal};
@@ -104,51 +105,8 @@ pub async fn delete_account(
     if !password_is(db, user_id, password).await? {
         return Err(bad_request("Password is incorrect"));
     }
-    let files = stored_files_of(db, user_id).await.map_err(internal)?; // before their rows are gone
+    let files = storage_keys_owned_by(db, user_id).await.map_err(internal)?; // before their rows are gone
     users::delete(db, user_id).await.map_err(internal)?;
-    remove_files(upload_dir, &files).await;
+    remove_stored_files(upload_dir, &files).await;
     Ok(())
-}
-
-/// Where every file on one user's tasks is stored (storageKeysOwnedBy in attachments.service.ts)
-async fn stored_files_of(db: &PgPool, owner_id: i32) -> Result<Vec<String>, sqlx::Error> {
-    // query_scalar: each row is one value (here the storage key), not a struct
-    sqlx::query_scalar(
-        "SELECT attachments.storage_key FROM attachments
-         JOIN tasks ON tasks.id = attachments.task_id
-         WHERE tasks.owner_id = $1",
-    )
-    .bind(owner_id)
-    .fetch_all(db)
-    .await
-}
-
-/// Deletes stored files. One that can't be deleted now stays for NestJS's hourly clean-up of files no row
-/// points at (removeStoredFiles in attachments.service.ts does the same).
-async fn remove_files(folder: &Path, keys: &[String]) {
-    for key in keys.iter().filter(|key| is_storage_key(key)) {
-        if let Err(err) = tokio::fs::remove_file(folder.join(key)).await {
-            tracing::warn!("Couldn't delete the stored file {key}: {err}");
-        }
-    }
-}
-
-/// Storage keys are 64 lowercase hex characters (storage.service.ts). Anything else is never used as a file
-/// name, so a key can't point outside the upload folder (e.g. "../../.env").
-fn is_storage_key(key: &str) -> bool {
-    key.len() == 64 && key.bytes().all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn only_real_storage_keys_are_file_names() {
-        assert!(is_storage_key(&"a1".repeat(32)));
-        assert!(!is_storage_key("../../.env"));
-        assert!(!is_storage_key(&"A1".repeat(32))); // capitals are never made
-        assert!(!is_storage_key(&"a1".repeat(31)));
-        assert!(!is_storage_key(&format!("{}/", "a".repeat(63))));
-    }
 }

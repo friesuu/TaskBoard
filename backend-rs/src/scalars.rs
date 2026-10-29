@@ -28,7 +28,21 @@ impl ScalarType for DateTime {
 
     /// A DateTime in an answer: milliseconds (cut off, as JavaScript does) and Z
     fn to_value(&self) -> Value {
-        Value::String(self.0.to_rfc3339_opts(SecondsFormat::Millis, true))
+        Value::String(self.text())
+    }
+}
+
+impl DateTime {
+    /// "2026-10-29T02:34:40.123Z"
+    fn text(&self) -> String {
+        self.0.to_rfc3339_opts(SecondsFormat::Millis, true)
+    }
+}
+
+/// The same text in plain JSON (serde), e.g. in the upload's answer, which isn't GraphQL
+impl serde::Serialize for DateTime {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&self.text())
     }
 }
 

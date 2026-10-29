@@ -9,6 +9,10 @@ use async_graphql::parser::types::{
     DocumentOperations, ExecutableDocument, OperationDefinition, OperationType, Selection,
 };
 
+/// The file download (GET /api/attachments/{id}/download) isn't GraphQL, so it isn't in MOVED: it has its own
+/// switch. main.rs gives it its Rust route when this is true; until then NestJS answers it.
+pub const DOWNLOAD_MOVED: bool = false;
+
 /// The operations that have moved to Rust. Each phase adds its own here once its code is in and
 /// scripts/e2e.sh passes with them.
 pub struct Moved {
@@ -27,6 +31,7 @@ pub const MOVED: Moved = Moved {
         "notifications",
         "unreadNotificationCount",
         "checklistItems",
+        "attachments",
     ],
     mutations: &[
         "register",
@@ -57,6 +62,7 @@ pub const MOVED: Moved = Moved {
         "updateChecklistItem",
         "moveChecklistItem",
         "deleteChecklistItem",
+        "deleteAttachment",
     ],
 };
 
