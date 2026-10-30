@@ -94,7 +94,7 @@ pub async fn download(
     Ok(response)
 }
 
-// ===================================== YOUR PART (phase 6) =====================================
+// ======================== Phase 6's part to read (written for you, see ../../README.md) ========================
 
 /// The Content-Disposition line of a download, in the form every browser understands, including non-English
 /// names (contentDisposition in attachments.controller.ts):
@@ -103,17 +103,32 @@ pub async fn download(
 /// - The exact name, as JavaScript's encodeURIComponent writes it: letters, digits and - _ . ! ~ * ' ( ) stay as
 ///   they are; every other byte of the name's UTF-8 becomes % and two capital hex digits ("é" is %C3%A9).
 ///
-/// Hints, since a Rust string can be looked at three ways:
-/// - `file_name.chars()`: its characters. For <ASCII>, `match` each one: `' '..='~'` (a range) stays, `'"' | '\\'`
-///   and everything else become "_". `.collect::<String>()` puts the pieces together again.
-/// - One catch: JavaScript counts an emoji as two characters (it's two UTF-16 units), so "😀.png" becomes
-///   "__.png" there, with two underscores. `c.len_utf16()` says how many units a character is; `"_".repeat(n)`.
-/// - `file_name.bytes()`: its UTF-8 bytes, for the percent-encoding. `format!("%{byte:02X}")` writes a byte as %
-///   and two capital hex digits.
-/// - `cargo test attachments` runs the tests at the bottom: names NestJS wrote these lines for.
-#[allow(unused_variables)] // remove this line when you've written it
+/// A Rust string can be looked at three ways, and this uses all three. For "é😀":
+///   `.chars()`  its characters: 'é', '😀' (2)
+///   UTF-16      how JavaScript counts: é is one unit, 😀 two (3); `c.len_utf16()` says how many for a character
+///   `.bytes()`  its UTF-8 bytes: C3 A9 for é, F0 9F 98 80 for 😀 (6); what goes over the network
 pub fn content_disposition(file_name: &str) -> String {
-    todo!("phase 6, your part: the Content-Disposition line of a download")
+    // <ASCII>: character by character. JavaScript's /[^\x20-\x7e]/g replaces each UTF-16 unit, so an emoji (two
+    // units) becomes two underscores: "😀.png" -> "__.png".
+    let ascii: String = file_name
+        .chars()
+        .map(|c| match c {
+            '"' | '\\' => "_".to_string(),
+            ' '..='~' => c.to_string(), // a range of characters in a match
+            _ => "_".repeat(c.len_utf16()),
+        })
+        .collect(); // the pieces back into one String
+    // The exact name: byte by byte, since percent-encoding works on bytes ("é" is two of them: %C3%A9)
+    let encoded: String = file_name
+        .bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'!' | b'~' | b'*' | b'\'' | b'(' | b')' => {
+                char::from(b).to_string()
+            }
+            _ => format!("%{b:02X}"), // 02X: two capital hex digits, with a 0 in front if needed
+        })
+        .collect();
+    format!("attachment; filename=\"{ascii}\"; filename*=UTF-8''{encoded}")
 }
 // ================================================================================================
 

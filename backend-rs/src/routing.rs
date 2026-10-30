@@ -11,7 +11,7 @@ use async_graphql::parser::types::{
 
 /// The file download (GET /api/attachments/{id}/download) isn't GraphQL, so it isn't in MOVED: it has its own
 /// switch. main.rs gives it its Rust route when this is true; until then NestJS answers it.
-pub const DOWNLOAD_MOVED: bool = false;
+pub const DOWNLOAD_MOVED: bool = true;
 
 /// The operations that have moved to Rust. Each phase adds its own here once its code is in and
 /// scripts/e2e.sh passes with them.
