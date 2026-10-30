@@ -112,7 +112,8 @@ export class AttachmentsService implements OnModuleInit, OnModuleDestroy {
         .catch((err: Error) => this.logger.warn(`File clean-up failed: ${err.message}`));
     };
     cleanUp();
-    this.cleanUpTimer = setInterval(cleanUp, CLEAN_UP_EVERY);
+    // ATTACHMENT_CLEANUP_EVERY_MS: only the e2e tests set it (e2e.env), so they don't wait an hour
+    this.cleanUpTimer = setInterval(cleanUp, Number(process.env.ATTACHMENT_CLEANUP_EVERY_MS) || CLEAN_UP_EVERY);
     this.cleanUpTimer.unref(); // doesn't keep the app (or the tests) running on its own
   }
 

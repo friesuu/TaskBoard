@@ -2,8 +2,8 @@
 A simple task board. You can add tasks, drag them between TO DO, IN PROGRESS and DONE, put them in any order, edit, delete, and see which ones are overdue.
 
 - Frontend: React
-- Backend: NestJS
-- API: GraphQL (Apollo Server)
+- Backend: Rust (axum, async-graphql), in `backend-rs`. It replaced the first backend, written in NestJS (still in `backend`), with the same API.
+- API: GraphQL
 - Database: PostgreSQL
 
 ## What it does
@@ -15,7 +15,7 @@ A simple task board. You can add tasks, drag them between TO DO, IN PROGRESS and
 - Tasks and their order are saved, so they're still there after a restart
 
 ## How to run it
-You need **Node.js** and **PostgreSQL** installed.
+You need **Rust** (from https://rustup.rs), **Node.js** and **PostgreSQL** installed.
 
 **1. Create the databases**
 
@@ -27,14 +27,13 @@ CREATE DATABASE taskboard_test;
 
 **2. Start the backend**
 
-- In the terminal: 
-cd backend
-npm install
+In the `backend` folder, copy `.env.example` to a new file called `.env`, and put your PostgreSQL password in it. (The Rust backend reads its settings from there.)
 
-Copy `.env.example` to a new file called `.env`, and put your PostgreSQL password in it. 
+- Then in the terminal:
+cd backend-rs
+cargo run
 
-- Then in the same terminal:
-npm run start:dev
+The first time, it downloads and builds everything, which takes a few minutes. When it starts, it creates the tables in the database (or brings them up to date).
 
 **3. Start the frontend** (in a new terminal)
 
@@ -47,11 +46,23 @@ Open http://localhost:5173 in your browser.
 - If **npm** doesn't work, use **npm.cmd** instead
 
 ## Running the tests
-cd into the `backend` folder in terminal and run:
+The tests are in `backend/test/graphql.e2e-spec.ts`. They send real GraphQL requests to the API and check the answers. They use the `taskboard_test` database, so they don't touch your real tasks.
 
-npm run test:e2e
+They only reach the backend over HTTP, and check what it saved with SQL, so they can test any backend with the same API. The assistant's chat goes to a fake Claude (`test/fake-claude.ts`): no real API calls, no cost. Test settings are in `test/e2e.env`.
 
-The tests are in `test/graphql.e2e-spec.ts`. They send real GraphQL requests to the API and check the answers. They use the `taskboard_test` database, so they don't touch your real tasks.
+To test the Rust backend (Linux/WSL), run this once in the `backend` folder:
+
+npm install
+
+and then, from the `backend-rs` folder:
+
+scripts/e2e.sh
+
+It starts two copies of the backend, one with the rate limits on, so every test runs. `cargo test` runs the Rust backend's own tests. See `backend-rs/README.md`.
+
+The old NestJS backend can still be tested from the `backend` folder: `npm run test:e2e` starts it inside the test run, and `npm run test:e2e:external` (Linux/WSL) starts a production build of it as its own program.
+
+To measure speed and memory, see `bench/README.md`.
 
 ## The API
 Everything goes to one URL: `POST http://localhost:3000/graphql`. You can try it in the browser by opening that URL (it opens GraphiQL).
@@ -71,7 +82,7 @@ mutation {
 }
 ```
 
-Status values are `TODO`, `IN_PROGRESS` and `DONE`. The full schema is in `backend/src/schema.gql` (it's made automatically from the code).
+Status values are `TODO`, `IN_PROGRESS` and `DONE`. The full schema is in `backend/src/schema.gql` (NestJS made it from its code; the Rust backend's schema is the same).
 
 If something is wrong, the answer has an `errors` list instead of `data`. Unlike REST, this often still comes with **HTTP 200**:
 - A wrong status, an unknown field or a wrong type (like `id: "abc"`) is rejected by GraphQL itself, with **HTTP 400**
@@ -89,6 +100,9 @@ I didn't add a status filter to the `tasks` query, because the page gets all tas
 - **Moving a card updates the page straight away**, then saves. Drag and drop has to feel instant, otherwise the card jumps back and forth. If the save fails, the board goes back to the real order from the server and an error is shown.
 - **The order is stored as a `position` number** for each task in its column. Moving a card renumbers its column inside a database transaction, so the order can never be half-saved.
 - **I switched the API from REST to GraphQL** because my supervisor asked me to learn it. For an app this small REST would have been enough, but it was a good way to learn GraphQL on code I already understood. I built GraphQL next to REST first, wrote tests for it, switched the frontend, and only then removed REST.
+
+## The Rust backend
+The backend was moved from NestJS to Rust, for speed and memory, one part at a time and without changing the API: the app and the Claude runner didn't notice. While it went on, the Rust backend answered what had already moved and passed everything else on to NestJS. Each part was checked by sending the same requests to both and comparing the answers. How it was done, and the few places where the answers still differ, are in `backend-rs/README.md`.
 
 ## What I'd do with more time
 - Search and filter tasks

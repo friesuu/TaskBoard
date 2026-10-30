@@ -1,0 +1,2 @@
+# `cargo fmt` formats the code. Lines up to 120 characters, like the rest of this project.
+max_width = 120

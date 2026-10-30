@@ -1,0 +1,388 @@
+[
+  {
+    "type": "custom",
+    "name": "create_task",
+    "input_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 10000
+        },
+        "dueDate": {
+          "description": "YYYY-MM-DD",
+          "$ref": "#/$defs/__schema0"
+        },
+        "status": {
+          "description": "Column, default todo",
+          "$ref": "#/$defs/__schema1"
+        }
+      },
+      "required": [
+        "title"
+      ],
+      "additionalProperties": false,
+      "$defs": {
+        "__schema0": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+        },
+        "__schema1": {
+          "type": "string",
+          "enum": [
+            "todo",
+            "in_progress",
+            "done"
+          ]
+        }
+      }
+    },
+    "description": "Create a new task. It goes to the bottom of its column."
+  },
+  {
+    "type": "custom",
+    "name": "update_task",
+    "input_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 10000
+        },
+        "dueDate": {
+          "description": "YYYY-MM-DD, or null to remove the due date",
+          "$ref": "#/$defs/__schema0"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false,
+      "$defs": {
+        "__schema0": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "description": "Change a task's title, description or due date, using its id from <my_tasks>. To change its column, use move_task instead; for labels and checklists, their own tools."
+  },
+  {
+    "type": "custom",
+    "name": "move_task",
+    "input_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "todo",
+            "in_progress",
+            "done"
+          ]
+        },
+        "position": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "id",
+        "status"
+      ],
+      "additionalProperties": false
+    },
+    "description": "Move a task to a column (todo, in_progress or done), using its id from <my_tasks>. position 0 = top of the column; leave it out to put the task at the bottom."
+  },
+  {
+    "type": "custom",
+    "name": "get_ai_details",
+    "input_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "ids": {
+          "minItems": 1,
+          "maxItems": 5,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "description": "Task ids from <my_tasks>"
+        }
+      },
+      "required": [
+        "ids"
+      ],
+      "additionalProperties": false,
+      "$defs": {
+        "__schema0": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "description": "Read what the Claude runner did on tasks: its prompt, the user's feedback on it, comments, and the newest runs (result, errors, build summary). Use it before answering questions about a prompt, a build or a failure, and before approving or requesting changes."
+  },
+  {
+    "type": "custom",
+    "name": "approve_prompt",
+    "input_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "description": "Approve Claude's prompt for a task in prompt_review. The task moves to in_progress and the runner builds it on the user's machine. Only when the user clearly asks to approve that task."
+  },
+  {
+    "type": "custom",
+    "name": "request_prompt_changes",
+    "input_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "comment": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 5000
+        }
+      },
+      "required": [
+        "id",
+        "comment"
+      ],
+      "additionalProperties": false
+    },
+    "description": "Send feedback on Claude's prompt for a task in prompt_review. Claude revises the prompt on its next run. Write the comment as instructions for Claude, in the user's words where possible."
+  },
+  {
+    "type": "custom",
+    "name": "change_task_labels",
+    "input_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "add": {
+          "maxItems": 10,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          }
+        },
+        "remove": {
+          "maxItems": 10,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          }
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false,
+      "$defs": {
+        "__schema0": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 30
+        }
+      }
+    },
+    "description": "Add labels to a task and/or take labels off it, by label name. The labels must already exist on this board (create_label makes new ones). Labels not named stay as they are."
+  },
+  {
+    "type": "custom",
+    "name": "create_label",
+    "input_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 30
+        },
+        "color": {
+          "type": "string",
+          "enum": [
+            "gray",
+            "blue",
+            "purple",
+            "teal",
+            "green",
+            "yellow",
+            "orange",
+            "pink"
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "color"
+      ],
+      "additionalProperties": false
+    },
+    "description": "Create a new label on this board. It is not put on any task until you use change_task_labels."
+  },
+  {
+    "type": "custom",
+    "name": "update_label",
+    "input_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Its current name",
+          "$ref": "#/$defs/__schema0"
+        },
+        "newName": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "color": {
+          "type": "string",
+          "enum": [
+            "gray",
+            "blue",
+            "purple",
+            "teal",
+            "green",
+            "yellow",
+            "orange",
+            "pink"
+          ]
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "additionalProperties": false,
+      "$defs": {
+        "__schema0": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 30
+        }
+      }
+    },
+    "description": "Rename and/or recolour one of this board's labels. Every task with it shows the change."
+  },
+  {
+    "type": "custom",
+    "name": "add_checklist_items",
+    "input_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991,
+          "description": "The task id"
+        },
+        "items": {
+          "minItems": 1,
+          "maxItems": 20,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "items"
+      ],
+      "additionalProperties": false,
+      "$defs": {
+        "__schema0": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        }
+      }
+    },
+    "description": "Add items to the bottom of a task's checklist, in the order given."
+  },
+  {
+    "type": "custom",
+    "name": "update_checklist_item",
+    "input_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "itemId": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991,
+          "description": "The number after the c, e.g. 31 for c31"
+        },
+        "done": {
+          "type": "boolean"
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        }
+      },
+      "required": [
+        "itemId"
+      ],
+      "additionalProperties": false
+    },
+    "description": "Tick or untick a checklist item, and/or change its text, using its id from <my_tasks> (like c31)."
+  }
+]
