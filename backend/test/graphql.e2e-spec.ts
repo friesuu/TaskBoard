@@ -1,19 +1,25 @@
 import { Test } from '@nestjs/testing';
-import { INestApplication } from '@nestjs/common';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import request from 'supertest'; // default import: no braces
-import { In, Not, Repository } from 'typeorm';
-import { getRepositoryToken } from '@nestjs/typeorm';
 import { AppModule } from '../src/app.module'; // ../ = go up one folder
 import { setupApp } from '../src/app.setup';
-import { Task } from '../src/tasks/task.entity';
-import { User } from '../src/users/user.entity';
-import { Board } from '../src/boards/board.entity';
-import { LlmService } from '../src/chat/llm.service';
-import { AttachmentsService } from '../src/attachments/attachments.service';
-import { AUTH_COOKIE } from '../src/auth/auth-cookies';
-import { todayIn } from '../src/common/dates';
-import { readFile, rm, utimes } from 'fs/promises';
+import { access, readFile, rm, utimes } from 'fs/promises';
 import { join } from 'path';
+import { FakeClaude } from './fake-claude';
+import { closeDb, sql, sqlValue } from './db';
+
+// These tests reach the backend only the way the browser and the runner do (HTTP), and check what it
+// saved with SQL. So they can test any backend with the same API: the NestJS app they start themselves,
+// or with E2E_URL a backend that's already running, e.g. the Rust one (see e2e-external.sh).
+const E2E_URL = process.env.E2E_URL;
+// With E2E_URL: a second copy of that backend with the rate limits on, for the rate limit tests
+const E2E_LIMITED_URL = process.env.E2E_LIMITED_URL;
+
+// The login cookie's name (auth-cookies.ts)
+const AUTH_COOKIE = 'taskToken';
+
+// Today's date in UTC, e.g. '2026-10-28' (what the backend uses for a user with no time zone)
+const todayUtc = () => new Date().toISOString().slice(0, 10);
 
 // The account every test runs as. Deleted and re-registered at the start of each run.
 const TEST_USER = { email: 'e2e@test.com', password: 'e2e-password' };
@@ -228,47 +234,30 @@ const TASK_LABELS = `
   }
 `;
 
-// Stands in for Claude in these tests: no API calls, no cost. It remembers what it was given,
-// so the tests can check what the assistant would see and try its tools directly.
-type FakeTool = { name: string; run: (input: Record<string, unknown>) => Promise<string> };
-const fakeLlm = {
-  lastMessages: [] as { role: string; content: string }[],
-  lastTools: [] as FakeTool[],
-  delayMs: 0, // how long the fake "thinks" before answering (for the response time test)
-  async reply(messages: { role: string; content: string }[], tools: FakeTool[] = []) {
-    this.lastMessages = messages;
-    this.lastTools = tools;
-    if (this.delayMs > 0) await new Promise((resolve) => setTimeout(resolve, this.delayMs));
-    return 'Fake answer';
-  },
-};
+// Stands in for Claude in these tests: no API calls, no cost (see fake-claude.ts)
+const fakeClaude = new FakeClaude();
 
 describe('Tasks GraphQL API (e2e)', () => {
-  let app: INestApplication; // set in beforeAll, used by every test
-  let tasksRepository: Repository<Task>;
-  let usersRepository: Repository<User>;
-  let boardsRepository: Repository<Board>;
+  let app: NestExpressApplication | undefined; // the NestJS app these tests started (not with E2E_URL)
+  let server: string; // where the backend is, e.g. http://127.0.0.1:41234
   let cookie: string[] = []; // TEST_USER's login cookie, sent with every request by gql()
   let otherCookie: string[] = []; // OTHER_USER's login cookie, used by the ownership tests
   let boardId: number; // TEST_USER's first board (made when registering): most tests use it
   let otherBoardId: number; // OTHER_USER's first board
 
-  // Runs ONCE before all tests: build and start the app, then log both users in
+  // Runs ONCE before all tests: start the fake Claude and the app (unless E2E_URL gives one), then log both users in
   beforeAll(async () => {
-    const moduleRef = await Test.createTestingModule({
-      imports: [AppModule],
-    })
-      .overrideProvider(LlmService) // the fake above instead of the real Claude
-      .useValue(fakeLlm)
-      .compile();
+    await fakeClaude.start(Number(process.env.FAKE_CLAUDE_PORT));
 
-    app = moduleRef.createNestApplication();
-    setupApp(app); // same CORS + validation as the real app
-    await app.init();
-
-    tasksRepository = app.get(getRepositoryToken(Task));
-    usersRepository = app.get(getRepositoryToken(User));
-    boardsRepository = app.get(getRepositoryToken(Board));
+    if (E2E_URL) {
+      server = E2E_URL;
+    } else {
+      const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+      app = moduleRef.createNestApplication<NestExpressApplication>();
+      setupApp(app); // same CORS + validation as the real app
+      await app.listen(0, '127.0.0.1'); // a real port (any free one), reached over HTTP like E2E_URL
+      server = await app.getUrl();
+    }
 
     cookie = await registerAndLogIn(TEST_USER);
     otherCookie = await registerAndLogIn(OTHER_USER);
@@ -276,22 +265,25 @@ describe('Tasks GraphQL API (e2e)', () => {
     otherBoardId = (await gqlAsOther(BOARDS).expect(200)).body.data.boards[0].id;
   });
 
-  // Runs ONCE after all tests: shut the app down
+  // Runs ONCE after all tests: shut everything down
   afterAll(async () => {
-    await app.close();
+    await app?.close();
+    await fakeClaude.stop();
+    await closeDb();
     await rm(process.env.UPLOAD_DIR!, { recursive: true, force: true }); // the test uploads
   });
 
-  // Runs before EVERY test: no tasks, and each user back to just their first board
+  // Runs before EVERY test: no tasks, each user back to just their first board, and a fresh fake Claude
   beforeEach(async () => {
     // CASCADE: also empties the tables that point at these (checklist items, comments, task labels)
-    await tasksRepository.query('TRUNCATE "tasks", "labels" CASCADE');
-    await boardsRepository.delete({ id: Not(In([boardId, otherBoardId])) });
+    await sql('TRUNCATE "tasks", "labels" CASCADE');
+    await sql('DELETE FROM boards WHERE id <> ALL($1)', [[boardId, otherBoardId]]);
+    fakeClaude.reset();
   });
 
   // Every GraphQL call is POST /graphql with { query, variables }, sent as whoever owns `who`
   const gqlAs = (who: string[], query: string, variables?: Record<string, unknown>) =>
-    request(app.getHttpServer()).post('/graphql').set('Cookie', who).send({ query, variables });
+    request(server).post('/graphql').set('Cookie', who).send({ query, variables });
 
   // As TEST_USER (most tests)
   const gql = (query: string, variables?: Record<string, unknown>) => gqlAs(cookie, query, variables);
@@ -302,12 +294,12 @@ describe('Tasks GraphQL API (e2e)', () => {
 
   // With NO cookie, as a logged-out visitor
   const gqlLoggedOut = (query: string, variables?: Record<string, unknown>) =>
-    request(app.getHttpServer()).post('/graphql').send({ query, variables });
+    request(server).post('/graphql').send({ query, variables });
 
   // Fresh account: remove the one from the last run (its tasks go too: ON DELETE CASCADE),
   // register, log in, and return the login cookie. Fails loudly here if logging in is broken.
   const registerAndLogIn = async (user: { email: string; password: string }) => {
-    await usersRepository.delete({ email: user.email });
+    await sql('DELETE FROM users WHERE email = $1', [user.email]);
     await gqlLoggedOut(REGISTER, { input: user }).expect(200);
     return logIn(user);
   };
@@ -342,26 +334,81 @@ describe('Tasks GraphQL API (e2e)', () => {
       .map((t: { title: string }) => t.title);
   };
 
+  // The assistant's tools, used the way Claude uses them: each run is one chat message on `onBoard` for which
+  // the fake Claude asks the backend to run that tool. Gives the tool's answer, or throws its error.
+  //   const tool = toolsOn(boardId);
+  //   await tool('create_task').run({ title: 'Buy milk' });
+  const toolsOn = (onBoard: number) => (name: string) => ({
+    run: async (input: Record<string, unknown>): Promise<string> => {
+      fakeClaude.willUseTool(name, input);
+      const res = await gql(SEND_CHAT, { input: { boardId: onBoard, message: `Please use ${name}` } }).expect(200);
+      expect(res.body.errors).toBeUndefined();
+      const result = fakeClaude.lastToolResult();
+      if (result.isError) throw new Error(result.text);
+      return result.text;
+    },
+  });
+
+  // A task's place in its column (0 = top), straight from the database
+  const positionOf = (id: number) => sqlValue<number>('SELECT position FROM tasks WHERE id = $1', [id]);
+
   // Error shapes (see step 2e):
   //   rejected by the schema      -> HTTP 400, extensions.code BAD_USER_INPUT
   //   rejected by ValidationPipe  -> HTTP 200, data null, messages in extensions.originalError.message
   //   thrown by the service       -> HTTP 200, data null, message in errors[0].message
 
-  describe('rate limits', () => {
-    // Switched off for the other tests (setup-env.ts); switched on only inside this test
+  // The limits are off for the other tests (e2e.env). With the app these tests start, they switch them on in
+  // this process. With E2E_URL they need a second copy of the backend that has them on, at E2E_LIMITED_URL
+  // (backend-rs/scripts/e2e.sh starts one); without it they're skipped.
+  (E2E_URL && !E2E_LIMITED_URL ? describe.skip : describe)('rate limits', () => {
     beforeEach(() => { process.env.DISABLE_RATE_LIMIT = 'false'; });
     afterEach(() => { process.env.DISABLE_RATE_LIMIT = 'true'; });
 
-    it('blocks the 6th login attempt within a minute', async () => {
-      const wrong = { input: { email: 'nobody@test.com', password: 'wrong-password' } };
+    // A function: `server` is only known once beforeAll has run
+    const limited = () => E2E_LIMITED_URL ?? server;
+    const TOO_MANY = 'Too many attempts. Please wait a minute and try again.';
+    const wrong = { input: { email: 'nobody@test.com', password: 'wrong-password' } };
 
+    // One request, as the sender at `ip` (X-Forwarded-For: the tests all run on this computer, see below)
+    const from = (ip: string, query: string, variables?: Record<string, unknown>, who?: string[]) => {
+      const req = request(limited()).post('/graphql').set('X-Forwarded-For', ip);
+      return (who ? req.set('Cookie', who) : req).send({ query, variables }).expect(200);
+    };
+
+    it('blocks the 6th login attempt within a minute', async () => {
       for (let attempt = 1; attempt <= 5; attempt++) {
-        const res = await gqlLoggedOut(LOGIN, wrong).expect(200);
+        const res = await request(limited()).post('/graphql').send({ query: LOGIN, variables: wrong }).expect(200);
         expect(res.body.errors[0].message).toBe('Invalid email or password');
       }
 
-      const sixth = await gqlLoggedOut(LOGIN, wrong).expect(200);
-      expect(sixth.body.errors[0].message).toBe('Too many attempts. Please wait a minute and try again.');
+      const sixth = await request(limited()).post('/graphql').send({ query: LOGIN, variables: wrong }).expect(200);
+      expect(sixth.body.errors[0].message).toBe(TOO_MANY);
+    });
+
+    // While the Rust backend is being built, it passes requests on to NestJS from this computer.
+    // X-Forwarded-For says who really sent them, so one person's attempts don't block everyone else.
+    it('counts each person separately behind a front door on this computer', async () => {
+      for (let attempt = 1; attempt <= 5; attempt++) await from('203.0.113.1', LOGIN, wrong);
+
+      expect((await from('203.0.113.1', LOGIN, wrong)).body.errors[0].message).toBe(TOO_MANY);
+      expect((await from('203.0.113.2', LOGIN, wrong)).body.errors[0].message).toBe('Invalid email or password');
+    });
+
+    // Changing the password counts by account, not by address: guessing from many addresses doesn't help
+    it('limits password changes per account, wherever the tries come from', async () => {
+      const user = { email: 'e2e-limits@test.com', password: 'e2e-password' };
+      await sql('DELETE FROM users WHERE email = $1', [user.email]);
+      await from('198.51.100.200', REGISTER, { input: user });
+      const session = cookieFrom(await from('198.51.100.201', LOGIN, { input: user }));
+      const guess = { input: { currentPassword: 'a-wrong-guess', newPassword: 'new-password-1' } };
+
+      for (let attempt = 1; attempt <= 5; attempt++) {
+        const res = await from(`198.51.100.${attempt}`, CHANGE_PASSWORD, guess, session);
+        expect(res.body.errors[0].message).toBe('Current password is incorrect');
+      }
+
+      expect((await from('198.51.100.6', CHANGE_PASSWORD, guess, session)).body.errors[0].message).toBe(TOO_MANY);
+      await sql('DELETE FROM users WHERE email = $1', [user.email]);
     });
   });
 
@@ -372,11 +419,11 @@ describe('Tasks GraphQL API (e2e)', () => {
 
       const write = await gqlLoggedOut(CREATE_TASK, { input: { boardId, title: 'Sneaky' } }).expect(200);
       expect(write.body.errors[0].extensions.code).toBe('UNAUTHENTICATED');
-      expect(await tasksRepository.count()).toBe(0); // and nothing was saved
+      expect(await sqlValue('SELECT count(*)::int FROM tasks')).toBe(0); // and nothing was saved
     });
 
     it('rejects a made-up token', async () => {
-      const res = await request(app.getHttpServer())
+      const res = await request(server)
         .post('/graphql')
         .set('Cookie', `${AUTH_COOKIE}=not-a-real-token`)
         .send({ query: TASKS, variables: { boardId } })
@@ -575,12 +622,12 @@ describe('Tasks GraphQL API (e2e)', () => {
       const theirsId = theirs.body.data.createTask.id;
 
       // Their first task is at the top of THEIR column, even though I already have two
-      expect((await tasksRepository.findOneByOrFail({ id: theirsId })).position).toBe(0);
+      expect(await positionOf(theirsId)).toBe(0);
 
       // Reordering my column doesn't renumber theirs
       await gql(MOVE_TASK, { id: b.id, input: { status: 'TODO', position: 0 } }).expect(200);
       expect(await titlesIn('TODO')).toEqual(['B', 'A']);
-      expect((await tasksRepository.findOneByOrFail({ id: theirsId })).position).toBe(0);
+      expect(await positionOf(theirsId)).toBe(0);
     });
   });
 
@@ -599,7 +646,7 @@ describe('Tasks GraphQL API (e2e)', () => {
 
       expect(res.body.errors).toBeUndefined();
       expect(res.body.data.boards.map((b: { name: string }) => b.name)).toEqual(['My board']);
-      await usersRepository.delete({ email: 'e2e-boards@test.com' });
+      await sql('DELETE FROM users WHERE email = $1', ['e2e-boards@test.com']);
     });
 
     it('creates a board (trimmed), listed after the older ones', async () => {
@@ -635,7 +682,7 @@ describe('Tasks GraphQL API (e2e)', () => {
       expect(await titlesIn('TODO')).toEqual(['Home 1', 'Home 2']);
       expect(await titlesIn('TODO', work.id)).toEqual(['Work 1']);
       // The first task on the new board is at the top of ITS column
-      expect((await tasksRepository.findOneByOrFail({ id: w.id })).position).toBe(0);
+      expect(await positionOf(w.id)).toBe(0);
     });
 
     it('moving a task only renumbers its own board', async () => {
@@ -648,7 +695,7 @@ describe('Tasks GraphQL API (e2e)', () => {
 
       expect(await titlesIn('TODO', work.id)).toEqual(['Work 2', 'Work 1']);
       expect(await titlesIn('TODO')).toEqual(['Home']);
-      expect((await tasksRepository.findOneByOrFail({ id: home.id })).position).toBe(0);
+      expect(await positionOf(home.id)).toBe(0);
     });
 
     it('deletes a board and its tasks', async () => {
@@ -660,7 +707,7 @@ describe('Tasks GraphQL API (e2e)', () => {
 
       expect(res.body.errors).toBeUndefined();
       expect(res.body.data.deleteBoard).toBe(true);
-      expect(await tasksRepository.countBy({ boardId: work.id })).toBe(0);
+      expect(await sqlValue('SELECT count(*)::int FROM tasks WHERE board_id = $1', [work.id])).toBe(0);
       expect(await titlesIn('TODO')).toEqual(['Home']); // other boards untouched
     });
 
@@ -724,14 +771,12 @@ describe('Tasks GraphQL API (e2e)', () => {
 
       expect(rename.body.errors[0].message).toBe(`Board ${boardId} not found`);
       expect(remove.body.errors[0].message).toBe(`Board ${boardId} not found`);
-      expect((await boardsRepository.findOneByOrFail({ id: boardId })).name).toBe('My board');
+      expect(await sqlValue('SELECT name FROM boards WHERE id = $1', [boardId])).toBe('My board');
     });
   });
 
-  // The fake LlmService records what the assistant was given, so no real Claude call is made
+  // The fake Claude records what the assistant was given, so no real Claude call is made
   describe('assistant (chat) stays on the current board', () => {
-    const toolNamed = (name: string) => fakeLlm.lastTools.find((t) => t.name === name)!;
-
     beforeEach(async () => {
       await gql(`mutation { clearChat }`).expect(200);
     });
@@ -744,20 +789,16 @@ describe('Tasks GraphQL API (e2e)', () => {
       const res = await gql(SEND_CHAT, { input: { boardId: work.id, message: 'What is on my list?' } }).expect(200);
 
       expect(res.body.errors).toBeUndefined();
-      const sent = fakeLlm.lastMessages.at(-1)!.content;
+      const sent = fakeClaude.lastPrompt();
       expect(sent).toContain('Work task');
       expect(sent).not.toContain('Home task');
     });
 
     it('saves how long the answer took on the reply, not on your message', async () => {
-      fakeLlm.delayMs = 60; // the fake takes 60 ms to answer
-      try {
-        const res = await gql(SEND_CHAT, { input: { boardId, message: 'Hi' } }).expect(200);
-        expect(res.body.errors).toBeUndefined();
-        expect(res.body.data.sendChatMessage.responseMs).toBeGreaterThanOrEqual(50);
-      } finally {
-        fakeLlm.delayMs = 0;
-      }
+      fakeClaude.delayMs = 60; // the fake takes 60 ms to answer (set back to 0 before the next test)
+      const res = await gql(SEND_CHAT, { input: { boardId, message: 'Hi' } }).expect(200);
+      expect(res.body.errors).toBeUndefined();
+      expect(res.body.data.sendChatMessage.responseMs).toBeGreaterThanOrEqual(50);
 
       const history = (await gql(`query { chatMessages { role responseMs } }`).expect(200)).body.data.chatMessages;
       expect(history).toEqual([
@@ -776,15 +817,15 @@ describe('Tasks GraphQL API (e2e)', () => {
     it('its tools create tasks on the current board and cannot touch other boards', async () => {
       const work = (await gql(CREATE_BOARD, { input: { name: 'Work' } }).expect(200)).body.data.createBoard;
       const home = await createTask({ title: 'Home task' });
-      await gql(SEND_CHAT, { input: { boardId: work.id, message: 'Hi' } }).expect(200);
+      const tool = toolsOn(work.id);
 
-      await toolNamed('create_task').run({ title: 'Made by the assistant' });
+      await tool('create_task').run({ title: 'Made by the assistant' });
       expect(await titlesIn('TODO', work.id)).toEqual(['Made by the assistant']);
 
-      await expect(toolNamed('update_task').run({ id: home.id, title: 'Changed' })).rejects.toThrow(
+      await expect(tool('update_task').run({ id: home.id, title: 'Changed' })).rejects.toThrow(
         `Task ${home.id} not found on this board`,
       );
-      await expect(toolNamed('move_task').run({ id: home.id, status: 'done' })).rejects.toThrow(
+      await expect(tool('move_task').run({ id: home.id, status: 'done' })).rejects.toThrow(
         `Task ${home.id} not found on this board`,
       );
       expect(await titlesIn('TODO')).toEqual(['Home task']); // unchanged, still in To do
@@ -797,25 +838,26 @@ describe('Tasks GraphQL API (e2e)', () => {
       const home = await createTask({ title: 'Home task' });
       const item = (await gql(ADD_ITEM, { taskId: task.id, input: { text: 'Write notes' } }).expect(200)).body.data.addChecklistItem;
       await gql(SEND_CHAT, { input: { boardId: work.id, message: 'Hi' } }).expect(200);
+      const tool = toolsOn(work.id);
 
-      const sent = fakeLlm.lastMessages.at(-1)!.content;
+      const sent = fakeClaude.lastPrompt();
       expect(sent).toContain('Labels on this board: Urgent (orange)');
       expect(sent).toContain(`[ ] c${item.id} Write notes`);
 
       // Labels: create one, put both on the task, take one off, rename and recolour
-      await toolNamed('create_label').run({ name: 'Waiting', color: 'blue' });
-      expect(await toolNamed('change_task_labels').run({ id: task.id, add: ['urgent', 'Waiting'] })).toContain('now has: Urgent, Waiting');
-      expect(await toolNamed('change_task_labels').run({ id: task.id, remove: ['Waiting'] })).toContain('now has: Urgent.');
-      await toolNamed('update_label').run({ name: 'Urgent', newName: 'Asap', color: 'pink' });
-      await expect(toolNamed('change_task_labels').run({ id: task.id, add: ['Nope'] })).rejects.toThrow(
+      await tool('create_label').run({ name: 'Waiting', color: 'blue' });
+      expect(await tool('change_task_labels').run({ id: task.id, add: ['urgent', 'Waiting'] })).toContain('now has: Urgent, Waiting');
+      expect(await tool('change_task_labels').run({ id: task.id, remove: ['Waiting'] })).toContain('now has: Urgent.');
+      await tool('update_label').run({ name: 'Urgent', newName: 'Asap', color: 'pink' });
+      await expect(tool('change_task_labels').run({ id: task.id, add: ['Nope'] })).rejects.toThrow(
         'No label called "Nope" on this board. Its labels: "Asap", "Waiting"',
       );
       const labels = (await gql(TASK_LABELS, { boardId: work.id }).expect(200)).body.data.tasks[0].labels;
       expect(labels).toEqual([{ name: 'Asap', color: 'PINK' }]);
 
       // Checklist: add two, tick the first one and rename it
-      await toolNamed('add_checklist_items').run({ id: task.id, items: ['Test it', 'Tell the team'] });
-      await toolNamed('update_checklist_item').run({ itemId: item.id, done: true, text: 'Write release notes' });
+      await tool('add_checklist_items').run({ id: task.id, items: ['Test it', 'Tell the team'] });
+      await tool('update_checklist_item').run({ itemId: item.id, done: true, text: 'Write release notes' });
       const items = (await gql(`query ($taskId: Int!) { checklistItems(taskId: $taskId) { text done } }`, { taskId: task.id }).expect(200))
         .body.data.checklistItems;
       expect(items).toEqual([
@@ -825,14 +867,14 @@ describe('Tasks GraphQL API (e2e)', () => {
       ]);
 
       // The due date can be removed
-      await toolNamed('update_task').run({ id: task.id, dueDate: null });
-      expect((await tasksRepository.findOneByOrFail({ id: task.id })).dueDate).toBeNull();
+      await tool('update_task').run({ id: task.id, dueDate: null });
+      expect(await sqlValue('SELECT due_date FROM tasks WHERE id = $1', [task.id])).toBeNull();
 
       // Nothing on another board
-      await expect(toolNamed('change_task_labels').run({ id: home.id, add: ['Asap'] })).rejects.toThrow(`Task ${home.id} not found on this board`);
-      await expect(toolNamed('add_checklist_items').run({ id: home.id, items: ['x'] })).rejects.toThrow(`Task ${home.id} not found on this board`);
+      await expect(tool('change_task_labels').run({ id: home.id, add: ['Asap'] })).rejects.toThrow(`Task ${home.id} not found on this board`);
+      await expect(tool('add_checklist_items').run({ id: home.id, items: ['x'] })).rejects.toThrow(`Task ${home.id} not found on this board`);
       const homeItem = (await gql(ADD_ITEM, { taskId: home.id, input: { text: 'Home item' } }).expect(200)).body.data.addChecklistItem;
-      await expect(toolNamed('update_checklist_item').run({ itemId: homeItem.id, done: true })).rejects.toThrow(
+      await expect(tool('update_checklist_item').run({ itemId: homeItem.id, done: true })).rejects.toThrow(
         `Task ${home.id} not found on this board`,
       );
     });
@@ -1210,7 +1252,7 @@ describe('Tasks GraphQL API (e2e)', () => {
 
       await gql(DELETE_BOARD, { id: work.id }).expect(200);
 
-      const left = await tasksRepository.query('SELECT count(*)::int AS n FROM labels WHERE board_id = $1', [work.id]);
+      const left = await sql('SELECT count(*)::int AS n FROM labels WHERE board_id = $1', [work.id]);
       expect(left).toEqual([{ n: 0 }]);
     });
   });
@@ -1374,13 +1416,13 @@ describe('Tasks GraphQL API (e2e)', () => {
 
     // Upload through the normal (non-GraphQL) address, as `who`
     const upload = (taskId: number, content: Buffer, fileName: string, who = cookie) =>
-      request(app.getHttpServer())
+      request(server)
         .post(`/api/tasks/${taskId}/attachments`)
         .set('Cookie', who)
         .attach('file', content, fileName);
 
     const download = (id: number, who = cookie) =>
-      request(app.getHttpServer())
+      request(server)
         .get(`/api/attachments/${id}/download`)
         .set('Cookie', who)
         .buffer(true)
@@ -1391,9 +1433,19 @@ describe('Tasks GraphQL API (e2e)', () => {
         });
 
     // Where an attachment's bytes are on disk (the key never leaves the server, so read it from the database)
-    const storedPath = async (id: number) => {
-      const [row] = await tasksRepository.query('SELECT storage_key FROM attachments WHERE id = $1', [id]);
-      return join(process.env.UPLOAD_DIR!, row.storage_key as string);
+    const storedPath = async (id: number) =>
+      join(process.env.UPLOAD_DIR!, await sqlValue<string>('SELECT storage_key FROM attachments WHERE id = $1', [id]));
+
+    // Waits until a file has been deleted (by the backend's clean-up, which runs every 200 ms in the tests)
+    const deleted = async (path: string, timeoutMs = 5000) => {
+      for (const started = Date.now(); Date.now() - started < timeoutMs; await new Promise((r) => setTimeout(r, 50))) {
+        try {
+          await access(path);
+        } catch {
+          return true; // it's gone
+        }
+      }
+      return false;
     };
 
     it('uploads a file, stores its bytes, and never shows the storage key', async () => {
@@ -1471,7 +1523,7 @@ describe('Tasks GraphQL API (e2e)', () => {
       const task = await createTask({ title: 'With a file' });
 
       const empty = await upload(task.id, Buffer.alloc(0), 'empty.txt').expect(400);
-      const missing = await request(app.getHttpServer())
+      const missing = await request(server)
         .post(`/api/tasks/${task.id}/attachments`).set('Cookie', cookie).field('other', 'x').expect(400);
       const tooBig = Buffer.concat([PNG, Buffer.alloc(10 * 1024 * 1024)]);
       await upload(task.id, tooBig, 'huge.png').expect(413);
@@ -1486,9 +1538,9 @@ describe('Tasks GraphQL API (e2e)', () => {
       const task = await createTask({ title: 'With a file' });
       const uploaded = (await upload(task.id, PNG, 'photo.png').expect(201)).body;
 
-      await request(app.getHttpServer())
+      await request(server)
         .post(`/api/tasks/${task.id}/attachments`).attach('file', PNG, 'photo.png').expect(401);
-      await request(app.getHttpServer()).get(`/api/attachments/${uploaded.id}/download`).expect(401);
+      await request(server).get(`/api/attachments/${uploaded.id}/download`).expect(401);
     });
 
     it("another user can't upload to, list, download or delete my files", async () => {
@@ -1528,11 +1580,11 @@ describe('Tasks GraphQL API (e2e)', () => {
 
       // The clean-up skips files newer than an hour (they may be mid-upload): make both look 2 hours old
       const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
-      await utimes(doomedFile, twoHoursAgo, twoHoursAgo);
       await utimes(keptFile, twoHoursAgo, twoHoursAgo);
-      await app.get(AttachmentsService).removeOrphanFiles();
+      await utimes(doomedFile, twoHoursAgo, twoHoursAgo);
 
-      await expect(readFile(doomedFile)).rejects.toThrow();
+      expect(await deleted(doomedFile)).toBe(true);
+      await new Promise((r) => setTimeout(r, 500)); // a few more clean-ups, so the kept file has had its chances
       expect(await readFile(keptFile)).toEqual(PNG);
     });
 
@@ -1867,7 +1919,7 @@ describe('Tasks GraphQL API (e2e)', () => {
     it('counts across all your boards: per column, overdue, due this week and finished this week', async () => {
       const work = (await gql(CREATE_BOARD, { input: { name: 'Work' } }).expect(200)).body.data.createBoard;
       await createTask({ title: 'Late', dueDate: '2000-01-01' }); // overdue (TEST_USER has no time zone: UTC)
-      await createTask({ title: 'Today', dueDate: todayIn(null) }); // due this week
+      await createTask({ title: 'Today', dueDate: todayUtc() }); // due this week
       await createTask({ title: 'Started', boardId: work.id, status: 'IN_PROGRESS' });
       const finished = await createTask({ title: 'Finished', boardId: work.id });
       await gql(MOVE_TASK, { id: finished.id, input: { status: 'DONE', position: 0 } }).expect(200);
@@ -1940,7 +1992,7 @@ describe('Tasks GraphQL API (e2e)', () => {
 
       expect(res.body.errors[0].message).toBe('Password is incorrect');
       expect(res.body.errors[0].extensions.code).not.toBe('UNAUTHENTICATED'); // so the app doesn't log you out
-      expect(await usersRepository.countBy({ email: DOOMED_USER.email })).toBe(1);
+      expect(await sqlValue('SELECT count(*)::int FROM users WHERE email = $1', [DOOMED_USER.email])).toBe(1);
     });
 
     it('deletes the account, its boards, tasks and files, and logs it out', async () => {
@@ -1949,19 +2001,19 @@ describe('Tasks GraphQL API (e2e)', () => {
       const sessionBoard = (await gqlAs(session, BOARDS).expect(200)).body.data.boards[0].id;
       const task = (await gqlAs(session, CREATE_TASK, { input: { boardId: sessionBoard, title: 'Mine' } }).expect(200))
         .body.data.createTask;
-      const uploaded = (await request(app.getHttpServer())
+      const uploaded = (await request(server)
         .post(`/api/tasks/${task.id}/attachments`).set('Cookie', session).attach('file', PNG, 'photo.png').expect(201)).body;
-      const [row] = await tasksRepository.query('SELECT storage_key FROM attachments WHERE id = $1', [uploaded.id]);
-      const filePath = join(process.env.UPLOAD_DIR!, row.storage_key as string);
+      const storageKey = await sqlValue<string>('SELECT storage_key FROM attachments WHERE id = $1', [uploaded.id]);
+      const filePath = join(process.env.UPLOAD_DIR!, storageKey);
 
       const res = await gqlAs(session, DELETE_ACCOUNT, { input: { password: DOOMED_USER.password } }).expect(200);
 
       expect(res.body.errors).toBeUndefined();
       expect(res.body.data.deleteAccount).toBe(true);
       expect(String(res.headers['set-cookie'])).toContain(`${AUTH_COOKIE}=;`); // the browser removes the login cookie
-      expect(await usersRepository.countBy({ id: userId })).toBe(0);
-      expect(await boardsRepository.countBy({ ownerId: userId })).toBe(0);
-      expect(await tasksRepository.countBy({ ownerId: userId })).toBe(0);
+      expect(await sqlValue('SELECT count(*)::int FROM users WHERE id = $1', [userId])).toBe(0);
+      expect(await sqlValue('SELECT count(*)::int FROM boards WHERE owner_id = $1', [userId])).toBe(0);
+      expect(await sqlValue('SELECT count(*)::int FROM tasks WHERE owner_id = $1', [userId])).toBe(0);
       await expect(readFile(filePath)).rejects.toThrow(); // the uploaded file is gone from the disk too
 
       const after = await gqlAs(session, `query { me { id } }`).expect(200); // the old cookie no longer works
@@ -2010,7 +2062,7 @@ describe('Tasks GraphQL API (e2e)', () => {
 
     // As the runner: its token in the Authorization header, no cookie
     const asRunner = (query: string, variables?: Record<string, unknown>, bearer = token) =>
-      request(app.getHttpServer()).post('/graphql').set('Authorization', `Bearer ${bearer}`).send({ query, variables });
+      request(server).post('/graphql').set('Authorization', `Bearer ${bearer}`).send({ query, variables });
 
     const ok = async (pending: Promise<{ body: { data: Record<string, unknown>; errors?: { message: string }[] } }>) => {
       const res = await pending;
@@ -2078,29 +2130,28 @@ describe('Tasks GraphQL API (e2e)', () => {
     });
 
     it("the assistant reads Claude's work and reviews its prompt, on the current board only", async () => {
-      const toolNamed = (name: string) => fakeLlm.lastTools.find((t) => t.name === name)!;
       const { task, board } = await aiTask();
       const home = await createTask({ title: 'Home task' });
       await ok(asRunner(SAVE_PROMPT, { taskId: task.id, input: { prompt: 'Goal: a search box on the board page.' } }));
-      await gql(SEND_CHAT, { input: { boardId: board.id, message: 'How is the search task going?' } }).expect(200);
+      const tool = toolsOn(board.id);
 
-      const details = await toolNamed('get_ai_details').run({ ids: [task.id, home.id] });
+      const details = await tool('get_ai_details').run({ ids: [task.id, home.id] });
       expect(details).toContain('Goal: a search box on the board page.');
       expect(details).toContain(`Task #${home.id}: Task ${home.id} not found on this board`);
 
       // Request changes: the feedback is saved like the button's, and the task waits for Claude's revision
-      await toolNamed('request_prompt_changes').run({ id: task.id, comment: 'Put it in the header' });
+      await tool('request_prompt_changes').run({ id: task.id, comment: 'Put it in the header' });
       const notes = (await ok(gql(AI_NOTES, { taskId: task.id }))).aiNotes as { body: string; kind: string }[];
       expect(notes).toEqual([expect.objectContaining({ body: 'Put it in the header', kind: 'feedback' })]);
-      await expect(toolNamed('approve_prompt').run({ id: task.id })).rejects.toThrow('Claude is still revising this prompt');
+      await expect(tool('approve_prompt').run({ id: task.id })).rejects.toThrow('Claude is still revising this prompt');
 
       // Claude revises it, then the assistant approves it: the task goes to In progress, ready to build
       await ok(asRunner(SAVE_PROMPT, { taskId: task.id, input: { prompt: 'Goal: a search box in the header.' } }));
-      await toolNamed('approve_prompt').run({ id: task.id });
+      await tool('approve_prompt').run({ id: task.id });
       expect(await titlesIn('IN_PROGRESS', board.id)).toEqual(['Add a search box']);
       expect(await nextJob()).toMatchObject({ kind: 'BUILD', approvedPrompt: 'Goal: a search box in the header.' });
 
-      await expect(toolNamed('approve_prompt').run({ id: home.id })).rejects.toThrow(`Task ${home.id} not found on this board`);
+      await expect(tool('approve_prompt').run({ id: home.id })).rejects.toThrow(`Task ${home.id} not found on this board`);
     });
 
     it('runs the whole flow: prompt, review, approve, build, AI Review', async () => {
@@ -2251,7 +2302,7 @@ describe('Tasks GraphQL API (e2e)', () => {
       await ok(asRunner(SAVE_PROMPT, { taskId: task.id, input: { prompt: 'A prompt' } }));
       await ok(gql(REQUEST_CHANGES, { taskId: task.id, input: { comment: 'Shorter please' } }));
       // A note from before the runner had its own log (it doesn't write comments any more)
-      await tasksRepository.query(
+      await sql(
         `INSERT INTO comments (task_id, author_id, body, kind) SELECT id, owner_id, 'I wrote a prompt', 'claude' FROM tasks WHERE id = $1`,
         [task.id],
       );
@@ -2368,7 +2419,7 @@ describe('Tasks GraphQL API (e2e)', () => {
       expect((await ok(gql(STATUS))).agentStatus).toMatchObject({ state: 'paused', pausedUntil: until });
 
       // Not seen for 10 minutes: offline (normal, it runs on your laptop)
-      await tasksRepository.query(`UPDATE agent_status SET last_seen_at = now() - interval '10 minutes'`);
+      await sql(`UPDATE agent_status SET last_seen_at = now() - interval '10 minutes'`);
       expect((await ok(gql(STATUS))).agentStatus).toMatchObject({ state: 'offline', task: null });
 
       const bad = await asRunner(REPORT, { input: { state: 'dancing' } }).expect(200);
