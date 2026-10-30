@@ -65,10 +65,10 @@ Your part was two functions; at your request they were written for you. Both are
   your browser send a "simple" request (a form, a link) to the board, and the browser adds your login cookie; Apollo
   refuses those unless they carry a header no form can add. Its test has the cases NestJS answered.
 
-Checked with NestJS stopped: `scripts/e2e.sh` 143 passed (it starts no NestJS), and
-`target/phase9/run.sh rust-dev` then `node target/phase9/diff.mjs target/phase9/nestjs-dev.json
-target/phase9/rust-dev.json` 88 of 93 (the differences below; the same in production settings, `rust-prod`). The
-answers recorded in phases 2 to 8 are the same as before, with nothing behind Rust.
+Checked with NestJS stopped: `scripts/e2e.sh` 143 passed (it starts no NestJS), and of the 93 requests compared
+with NestJS's answers, 88 were the same, in development and in production settings (the differences below). The
+answers recorded in phases 2 to 8 were the same as before, with nothing behind Rust. (The scripts that recorded and
+compared the answers were working files in `target/`, and weren't kept.)
 
 What else phase 9 found:
 - **The app's named operations went to NestJS until now.** The app sends `query AgentRuns(...) {...}` without an
@@ -105,8 +105,7 @@ The runner on your laptop and you in the browser change the same task at the sam
 build a prompt you didn't approve, build a task twice, or lose your feedback.
 
 Start with `src/runner/mod.rs` (the workflow, and which file does what), then answer these. Each one points at
-the code; there's no code to write, but `cargo test runner` and `target/phase7/run-extra.sh alone` are there to
-try things.
+the code; there's no code to write, but `cargo test runner` is there to try things.
 
 1. **One task's trip.** Follow a task from To do to Done (the diagram in `mod.rs`). For each step: which function
    does it (`jobs.rs` or `review.rs`), which columns of `tasks` it changes, and which condition in `waiting()`
@@ -114,7 +113,7 @@ try things.
 2. **Check and change in one statement.** `claim()` in `jobs.rs` puts the check ("is this task waiting for this
    step?") into the UPDATE's `WHERE`. NestJS reads the task, checks it in JavaScript, then writes. Four
    `runnerStartBuild` calls for the same task at the same moment: in one try NestJS let 2 through (two builds of
-   one task), Rust 1 (`target/phase7/extra.mjs`). Explain why the second one fails in Rust: what does the first
+   one task), Rust 1. Explain why the second one fails in Rust: what does the first
    one's `ai_branch = $3` do to `(ai_branch IS NULL OR ai_built_at IS NOT NULL)`?
 3. **`finish_build` doesn't use `claim()`.** What does it check instead, and in which order? Why does a second
    `runnerFinishBuild` get "Task 7 isn't being built", and why can't it send a second "Ready for review"?
