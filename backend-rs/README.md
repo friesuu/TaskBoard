@@ -18,7 +18,10 @@ and the same login secret: a login made by one works in the other.
 | 6 | The file upload (`POST /api/tasks/{taskId}/attachments`), `attachments`, `deleteAttachment`, the hourly clean-up of files nobody points at; the download (`GET /api/attachments/{id}/download`) |
 | 7 | The Claude runner. Its token: `runnerToken`, `createRunnerToken`, `revokeRunnerToken`. Your review: `updateRefinedPrompt`, `approvePrompt`, `requestPromptChanges`, `requestAiMerge`, `retryAiTask`, `aiNotes`. Its activity: `agentRuns`, `aiRuns`, `agentRunLog`, `agentStatus`. The runner's own: `runnerPing`, `runnerNextJob`, `runnerSavePrompt`, `runnerStartBuild`, `runnerFinishBuild`, `runnerFinishMerge`, `runnerReportError`, `runnerStartRun`, `runnerAppendLog`, `runnerFinishRun`, `runnerReportStatus` |
 
-Only the chat assistant (`chatMessages`, `sendChatMessage`, `clearChat`) is still answered by NestJS: phase 8.
+| 8 | The chat assistant: `chatMessages`, `sendChatMessage`, `clearChat` (the calls to the Claude API, the tool loop and the assistant's 11 tools, retries, 10 messages a minute) |
+
+Every GraphQL operation the app and the runner use is now answered by Rust. NestJS only still gets what isn't one
+of them (e.g. GraphiQL, introspection, an unknown address). Next, phase 9: the switch-over, when NestJS is turned off.
 
 ## Run it (development)
 
@@ -29,6 +32,8 @@ cd ../backend && PORT=3001 pnpm run start:dev
 # 2. Rust on port 3000, in another terminal (from this folder)
 cargo run
 ```
+
+Rust needs `ANTHROPIC_API_KEY` for the chat assistant, as NestJS does: it reads it from `../backend/.env` too.
 
 The frontend doesn't change: it still talks to port 3000.
 
@@ -47,6 +52,22 @@ costs nothing. The first pair (Rust 3102, NestJS 3101) has the rate limits off, 
 (Rust 3103, NestJS 3104) has them on, for the rate limit tests.
 
 An operation counts as moved only when `scripts/e2e.sh` passes with it in `MOVED`.
+
+## Phase 8: done
+
+The chat assistant moved in phase 8, all of it: the calls to the Claude API (`src/chat/claude.rs`, with the same
+retries as NestJS's SDK), the tool loop, and the 11 tools Claude can use on the board (`src/chat/tools/`).
+
+Your part was `describe_labels` and `describe_tasks` in `src/chat/context.rs`: they write the board out as text for
+Claude, in front of your message between `<my_tasks>` tags (the comment at the top of the file shows what it looks
+like). At your request they were written for you. They're worth a read for Rust's string building: `format!`,
+`push_str`, `.iter().filter(...)`, `.join(...)`, `Option::as_deref`, and `{{` for a real `{` in `format!`. Their
+tests (`cargo test chat::context`) compare the text with NestJS's, character for character.
+
+Your parts before this one: phase 1 `me` (`src/users.rs`), phase 2 the login cookie (`src/cookies.rs`), phase 3
+the label colours, `change` and `find_all` (`src/labels/`), phase 4 today and this week (`src/dates.rs`), phase 5
+`reorder` and the checklist's resolver (`src/checklist/`), phase 6 `content_disposition`
+(`src/attachments/routes.rs`). Phase 7's review questions are below, whenever you want them.
 
 ## Phase 7: your part (a review)
 
@@ -89,11 +110,6 @@ try things.
 Tell me your answers (or what you couldn't work out), and I'll go through them with you. If you find something
 you'd change, say so: that's the point of a review.
 
-Your parts before this one, all done: phase 1 `me` (`src/users.rs`), phase 2 the login cookie (`src/cookies.rs`),
-phase 3 the label colours, `change` and `find_all` (`src/labels/`), phase 4 today and this week (`src/dates.rs`),
-phase 5 `reorder` and the checklist's resolver (`src/checklist/`), phase 6 `content_disposition`
-(`src/attachments/routes.rs`).
-
 ## Where Rust doesn't match NestJS yet
 
 The answers were compared with NestJS's for the same requests: 49 in phase 2 (every error case, the rate
@@ -103,8 +119,10 @@ the numbers in 8 time zones), 158 identical; 86 in phase 5 (every checklist, com
 and its errors, Claude's comments and prompt feedback), 84 identical; 142 in phase 6 (uploads with every kind of
 file, name and broken form, downloads byte for byte, listing and deleting), 140 identical; 118 in phase 7 (the
 runner's token, every step of its workflow and every refusal, its run logs with secrets in them, its status, your
-review), 118 identical. Phase 6's error bodies are byte for byte NestJS's, down to the order of their keys. The
-ones that aren't:
+review), 118 identical; 78 in phase 8 (every chat operation and refusal, everything Claude is sent, each of the
+assistant's tools with good and broken input, the tool loop's limits, and Claude failing in 8 different ways),
+76 identical. Phase 6's error bodies are byte for byte NestJS's, down to the order of their keys. The ones that
+aren't:
 
 - **A broken request** (an unknown field, or a variable that doesn't fit its type): both answer HTTP 400 with
   the same code (`BAD_USER_INPUT` for a variable, `GRAPHQL_VALIDATION_FAILED` for the query itself), but the
@@ -141,6 +159,15 @@ ones that aren't:
   The runner always sends full ones (`toISOString()`).
 - **A run's cost that's a whole number**: NestJS sends `"costUsd":3`, Rust `"costUsd":3.0` (JavaScript has one
   kind of number; Rust's float always shows its point). Both are the same number once read.
+- **Several of the assistant's tools in one answer** (e.g. Claude creates two tasks at once): NestJS runs them all
+  at the same moment, so the two tasks can end up with the same position, in either order (the phase 8 capture
+  caught NestJS doing both). Rust runs them one after another, in Claude's order.
+- **One of the assistant's tools running into a database error** (e.g. Claude gives `create_task` the date
+  2026-13-45, which the tool's own rule, YYYY-MM-DD, lets through): NestJS tells Claude the database's message
+  (`date/time field value out of range: "2026-13-45"`), Rust "Internal server error", as for any database problem.
+  Only Claude reads it; you see what Claude makes of it.
+- **A prompt or build summary cut in the middle of an emoji** (the assistant's `get_ai_details` cuts texts over 4000
+  UTF-16 units): NestJS sends Claude half of the emoji, Rust "�".
 - **Two labels saved with the same name at the same moment**: the database refuses the second. NestJS answers
   it with "Internal server error"; Rust with the usual "There is already a label called ..." message.
 - **The schema's descriptions**: the `///` comments on Rust's GraphQL types become descriptions in Rust's schema;
@@ -156,7 +183,7 @@ Each feature is split the way NestJS splits it, so the same parts are in the sam
 | `types.rs` | `*.entity.ts`, enums, `@ObjectType`s | What the API shows (and what a database row fills) |
 | `inputs.rs` | the DTOs | What the operations take. Each input's `checked` does what NestJS's ValidationPipe does: trims it, checks its rules, and gives it back. |
 | `resolver.rs` | `*.resolver.ts` | The GraphQL operations: the login check, then `checked`, then the service. Nothing else. |
-| `service.rs` | `*.service.ts` | The work itself: plain functions that take the database and whose data it is, with no GraphQL in them, so other modules (the chat assistant, later) can use them too |
+| `service.rs` | `*.service.ts` | The work itself: plain functions that take the database and whose data it is, with no GraphQL in them, so other modules (the chat assistant's tools) can use them too |
 | `mod.rs` | `*.module.ts` | The module's front door: its files, and what the rest of the backend may use (`pub use`) |
 
 The bigger modules are folders (`src/tasks/`, `src/labels/`, `src/auth/`). The small ones (`boards.rs`,
@@ -182,6 +209,7 @@ The bigger modules are folders (`src/tasks/`, `src/labels/`, `src/auth/`). The s
 | `src/checklist/` | `checklistItems`, `addChecklistItem`, `updateChecklistItem`, `moveChecklistItem`, `deleteChecklistItem` (your part in phase 5) |
 | `src/comments/` | `comments`, `addComment`, `updateComment`, `deleteComment` |
 | `src/notifications.rs` | The bell: `notifications`, `unreadNotificationCount`, `markNotificationRead`, `markAllNotificationsRead`; `notify`, for the runner's side |
+| `src/chat/` | The chat assistant: `chatMessages`, `sendChatMessage`, `clearChat`; the Claude API and the tool loop (`claude.rs`), the assistant's tools (`tools/`), the board written out for Claude (`context.rs`, phase 8's part, written for you) |
 | `src/runner/` | The Claude runner: its token and login check (`tokens.rs`), its jobs and steps (`jobs.rs`), your review (`review.rs`), its runs, logs and status (`activity.rs`), hiding secrets (`redact.rs`); your part in phase 7 is a review of it |
 | `src/dates.rs` | Today and this week in the user's time zone (your part in phase 4) |
 | `src/iso8601.rs` | validator.js's ISO 8601 date check, for the due date |

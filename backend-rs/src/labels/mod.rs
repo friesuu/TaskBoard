@@ -12,6 +12,7 @@ mod resolver;
 mod service;
 mod types;
 
+pub use inputs::{LabelInput, UpdateLabelInput};
 pub use resolver::{LabelsMutation, LabelsQuery};
-pub use service::of_tasks;
-pub use types::Label;
+pub use service::{create, find_all, of_tasks, set_task_labels, update};
+pub use types::{Label, LabelColor};

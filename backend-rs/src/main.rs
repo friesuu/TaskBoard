@@ -10,6 +10,7 @@ mod attachments;
 mod auth;
 mod bad_requests;
 mod boards;
+mod chat;
 mod checklist;
 mod comments;
 mod config;

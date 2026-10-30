@@ -16,6 +16,7 @@ use crate::account::AccountMutation;
 use crate::attachments::{AttachmentsMutation, AttachmentsQuery};
 use crate::auth::{AuthMutation, JwtKeys, login_cookie};
 use crate::boards::{BoardsMutation, BoardsQuery};
+use crate::chat::{ChatMutation, ChatQuery, Claude};
 use crate::checklist::{ChecklistMutation, ChecklistQuery};
 use crate::comments::{CommentsMutation, CommentsQuery};
 use crate::config::Config;
@@ -43,6 +44,7 @@ pub struct Query(
     AttachmentsQuery,
     AiQuery,
     RunnerQuery,
+    ChatQuery,
 );
 
 #[derive(MergedObject, Default)]
@@ -58,14 +60,19 @@ pub struct Mutation(
     AttachmentsMutation,
     AiMutation,
     RunnerMutation,
+    ChatMutation,
 );
 
 pub type AppSchema = Schema<Query, Mutation, EmptySubscription>;
 
 /// The schema, with what every resolver can reach (ctx.data): the database, the settings, the keys for the
-/// login token, the dummy password hash and the rate limits' counts
+/// login token, the dummy password hash, the rate limits' counts and the Claude API (for the chat)
 pub fn schema(db: PgPool, config: Arc<Config>, dummy_hash: DummyHash) -> AppSchema {
     Schema::build(Query::default(), Mutation::default(), EmptySubscription)
+        .data(Claude::new(
+            &config.anthropic_base_url,
+            config.anthropic_api_key.clone(),
+        ))
         .data(JwtKeys::new(&config.jwt_secret))
         .data(db)
         .data(config)

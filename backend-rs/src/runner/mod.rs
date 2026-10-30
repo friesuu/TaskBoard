@@ -33,5 +33,7 @@ mod review;
 mod tokens;
 mod types;
 
+pub use activity::runs_for;
 pub use resolver::{AiMutation, AiQuery, RunnerMutation, RunnerQuery};
+pub use review::{ai_notes, approve, request_changes};
 pub use tokens::bearer_token;

@@ -22,6 +22,22 @@ pub enum LabelColor {
     Pink,
 }
 
+impl LabelColor {
+    /// The colour's name in the database, and in what the chat assistant reads: "gray", "teal"...
+    pub fn as_str(self) -> &'static str {
+        match self {
+            LabelColor::Gray => "gray",
+            LabelColor::Blue => "blue",
+            LabelColor::Purple => "purple",
+            LabelColor::Teal => "teal",
+            LabelColor::Green => "green",
+            LabelColor::Yellow => "yellow",
+            LabelColor::Orange => "orange",
+            LabelColor::Pink => "pink",
+        }
+    }
+}
+
 /// A label, as the API shows it (type Label in ../backend/src/schema.gql)
 #[derive(SimpleObject, sqlx::FromRow, Clone)]
 pub struct Label {

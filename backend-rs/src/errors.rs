@@ -83,6 +83,19 @@ pub fn not_found(message: &str) -> Error {
     })
 }
 
+/// The chat assistant can't answer now: Claude's rate limit, or Claude unreachable (ServiceUnavailableException in
+/// NestJS: the same odd shape as not_found, with status 503)
+pub fn service_unavailable(message: &str) -> Error {
+    Error::new(message).extend_with(|_, extensions| {
+        extensions.set("code", "INTERNAL_SERVER_ERROR");
+        extensions.set("status", 503);
+        extensions.set(
+            "originalError",
+            value!({ "message": message, "error": "Service Unavailable", "statusCode": 503 }),
+        );
+    })
+}
+
 /// Over a rate limit (ThrottlerGuard in NestJS: only a code, no details)
 pub fn too_many_attempts() -> Error {
     Error::new("Too many attempts. Please wait a minute and try again.").extend_with(|_, extensions| {
@@ -154,6 +167,12 @@ mod tests {
             sent(not_found("Board 7 not found")),
             json!({ "message": "Board 7 not found", "extensions": { "code": "INTERNAL_SERVER_ERROR", "status": 404,
                 "originalError": { "message": "Board 7 not found", "error": "Not Found", "statusCode": 404 } } })
+        );
+        assert_eq!(
+            sent(service_unavailable("The assistant is busy. Try again in a minute.")),
+            json!({ "message": "The assistant is busy. Try again in a minute.", "extensions": { "code": "INTERNAL_SERVER_ERROR",
+                "status": 503, "originalError": { "message": "The assistant is busy. Try again in a minute.",
+                "error": "Service Unavailable", "statusCode": 503 } } })
         );
         assert_eq!(
             sent(too_many_attempts()),

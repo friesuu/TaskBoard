@@ -21,6 +21,12 @@ pub struct Config {
     /// UPLOAD_DIR (default "uploads"): the folder with the uploaded files, the same one NestJS uses.
     /// A relative path is from the folder of the .env file (../backend), as it is for NestJS.
     pub upload_dir: PathBuf,
+    /// ANTHROPIC_API_KEY: the chat assistant's key to the Claude API. Required, as in NestJS: without it the
+    /// backend doesn't start.
+    pub anthropic_api_key: String,
+    /// ANTHROPIC_BASE_URL (default https://api.anthropic.com): where the Claude API is. The e2e tests point it at
+    /// their fake Claude, so they cost nothing.
+    pub anthropic_base_url: String,
     database: PgConnectOptions,
 }
 
@@ -52,6 +58,8 @@ impl Config {
             jwt_secret: required("JWT_SECRET")?,
             secure_cookies: env::var("NODE_ENV").as_deref() == Ok("production"),
             upload_dir,
+            anthropic_api_key: required("ANTHROPIC_API_KEY")?,
+            anthropic_base_url: optional("ANTHROPIC_BASE_URL", "https://api.anthropic.com"),
             database,
         })
     }

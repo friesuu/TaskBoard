@@ -1,5 +1,5 @@
-//! Rate limits, like NestJS's ThrottlerGuard: each operation (login, register, changePassword, deleteAccount)
-//! counts each person's tries separately; at most `limit` in a minute. The next one is refused, and the person
+//! Rate limits, like NestJS's ThrottlerGuard: each operation (login, register, changePassword, deleteAccount,
+//! sendChatMessage) counts each person's tries separately; at most `limit` in a minute. The next one is refused, and the person
 //! stays refused until that minute is over, even with the right password. Then they start again from zero.
 //! "Each person" is their address for login and register, and their account once logged in.
 //!
@@ -21,6 +21,9 @@ const WINDOW: Duration = Duration::from_secs(60);
 /// How many tries a minute the rate limited operations allow (ThrottlerModule's default in app.module.ts)
 const TRIES_PER_MINUTE: usize = 5;
 
+/// How many chat messages a minute (the @Throttle on sendChatMessage): each one costs money (the Claude API)
+const CHAT_MESSAGES_PER_MINUTE: usize = 10;
+
 /// Who sent the request (client_address), handed to the GraphQL resolvers with the request
 pub struct ClientAddress(pub IpAddr);
 
@@ -37,6 +40,15 @@ pub fn limit_by_address(ctx: &Context<'_>, operation: &str) -> async_graphql::Re
 pub fn limit_by_account(ctx: &Context<'_>, operation: &str, user: &User) -> async_graphql::Result<()> {
     ctx.data::<RateLimits>()?
         .check(operation, &format!("user-{}", user.id), TRIES_PER_MINUTE)
+}
+
+/// One chat message, counted by account, at most 10 a minute (the login check has already run)
+pub fn limit_chat_messages(ctx: &Context<'_>, user: &User) -> async_graphql::Result<()> {
+    ctx.data::<RateLimits>()?.check(
+        "sendChatMessage",
+        &format!("user-{}", user.id),
+        CHAT_MESSAGES_PER_MINUTE,
+    )
 }
 
 /// Every person's recent tries, per operation. A Mutex: requests are answered at the same time on several

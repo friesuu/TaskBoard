@@ -40,8 +40,8 @@ impl ScalarType for DateTime {
 }
 
 impl DateTime {
-    /// "2026-10-29T02:34:40.123Z"
-    fn text(&self) -> String {
+    /// "2026-10-29T02:34:40.123Z", as JavaScript's toISOString() writes it
+    pub fn text(&self) -> String {
         self.0.to_rfc3339_opts(SecondsFormat::Millis, true)
     }
 }

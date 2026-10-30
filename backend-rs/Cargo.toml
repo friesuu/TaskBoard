@@ -11,8 +11,9 @@ axum = "0.8"
 async-graphql = "7"
 # PostgreSQL, with plain SQL; chrono: date-and-time columns (timestamptz) read as chrono's DateTime
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "postgres", "macros", "chrono"] }
-# Dates and times (when a board was made), and writing them the way NestJS sends them
-chrono = { version = "0.4", default-features = false, features = ["std"] }
+# Dates and times (when a board was made), and writing them the way NestJS sends them; clock: the server's own
+# date, for the chat's "Today is ..."
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
 # Runs async code (every request handler is an `async fn`); fs: the uploaded files; time: the hourly clean-up
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "fs", "time"] }
 # Sends a stored file to the browser bit by bit (a stream), without reading it all into memory first

@@ -40,6 +40,7 @@ pub const MOVED: Moved = Moved {
         "agentRunLog",
         "runnerPing",
         "runnerNextJob",
+        "chatMessages",
     ],
     mutations: &[
         "register",
@@ -87,6 +88,8 @@ pub const MOVED: Moved = Moved {
         "runnerAppendLog",
         "runnerFinishRun",
         "runnerReportStatus",
+        "sendChatMessage",
+        "clearChat",
     ],
 };
 

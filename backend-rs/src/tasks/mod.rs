@@ -17,7 +17,7 @@ mod service;
 mod types;
 
 // `pub use`: these can be used from outside as tasks::TasksQuery, tasks::find_owned..., as if written here
-pub use inputs::MoveTaskInput;
+pub use inputs::{CreateTaskInput, MoveTaskInput, TaskFilterInput, UpdateTaskInput};
 pub use resolver::{TasksMutation, TasksQuery};
-pub use service::{find_many, find_owned, move_to};
+pub use service::{create, find_all, find_many, find_owned, move_to, update};
 pub use types::{Task, TaskStatus};

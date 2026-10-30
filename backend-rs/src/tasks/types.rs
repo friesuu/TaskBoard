@@ -17,6 +17,19 @@ pub enum TaskStatus {
     Done,
 }
 
+impl TaskStatus {
+    /// The column's name in the database, and in what the chat assistant reads: "todo", "prompt_review"...
+    pub fn as_str(self) -> &'static str {
+        match self {
+            TaskStatus::Todo => "todo",
+            TaskStatus::PromptReview => "prompt_review",
+            TaskStatus::InProgress => "in_progress",
+            TaskStatus::AiReview => "ai_review",
+            TaskStatus::Done => "done",
+        }
+    }
+}
+
 /// A task, as the API shows it (type Task in ../backend/src/schema.gql)
 #[derive(SimpleObject, sqlx::FromRow, Clone)]
 pub struct Task {

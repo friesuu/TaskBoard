@@ -132,7 +132,7 @@ pub async fn remove(db: &PgPool, id: i32, owner_id: i32) -> async_graphql::Resul
 ///
 /// `impl PgExecutor<'_>`: anything sqlx can run a query on, so this works both on the pool (`db`) and inside
 /// a transaction (`&mut *transaction`), as move_to needs.
-async fn find_owned(db: impl PgExecutor<'_>, id: i32, owner_id: i32) -> async_graphql::Result<ChecklistItem> {
+pub async fn find_owned(db: impl PgExecutor<'_>, id: i32, owner_id: i32) -> async_graphql::Result<ChecklistItem> {
     sqlx::query_as(
         "SELECT checklist_items.id, checklist_items.text, checklist_items.done, checklist_items.position,
                 checklist_items.task_id
@@ -145,6 +145,19 @@ async fn find_owned(db: impl PgExecutor<'_>, id: i32, owner_id: i32) -> async_gr
     .await
     .map_err(internal)?
     .ok_or_else(|| not_found(&format!("Checklist item {id} not found")))
+}
+
+/// Several tasks' items, task by task, each top to bottom (the chat shows Claude a whole board's checklists).
+/// The caller has checked whose tasks they are.
+pub async fn of_tasks(db: &PgPool, task_ids: &[i32]) -> async_graphql::Result<Vec<ChecklistItem>> {
+    sqlx::query_as(
+        "SELECT id, text, done, position, task_id FROM checklist_items WHERE task_id = ANY($1)
+         ORDER BY task_id, position, id",
+    )
+    .bind(task_ids)
+    .fetch_all(db)
+    .await
+    .map_err(internal)
 }
 
 /// A task's items, top to bottom

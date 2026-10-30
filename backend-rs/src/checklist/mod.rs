@@ -12,6 +12,7 @@ mod resolver;
 mod service;
 mod types;
 
+pub use inputs::UpdateChecklistItemInput;
 pub use resolver::{ChecklistMutation, ChecklistQuery};
-pub use service::in_order;
+pub use service::{add, find_owned, in_order, of_tasks, update};
 pub use types::ChecklistItem;
