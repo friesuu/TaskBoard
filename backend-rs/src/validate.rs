@@ -95,6 +95,11 @@ pub fn js_trim(text: &str) -> &str {
     text.trim_matches(is_js_space)
 }
 
+/// The same spaces, written for a regex character class: `[{JS_SPACES}]` is JavaScript's \s, and `[^{JS_SPACES}]`
+/// its \S (the regex crate's own \s has U+0085 and not U+FEFF)
+pub const JS_SPACES: &str =
+    r"\t\n\x0B\x0C\r \x{A0}\x{1680}\x{2000}-\x{200A}\x{2028}\x{2029}\x{202F}\x{205F}\x{3000}\x{FEFF}";
+
 /// A space the way JavaScript sees one: what .trim() takes off, and what \s matches in a pattern
 pub fn is_js_space(c: char) -> bool {
     matches!(
@@ -121,9 +126,19 @@ pub fn at_most_items<T>(field: &str, list: &[T], max: usize) -> Option<String> {
     (list.len() > max).then(|| format!("{field} must contain no more than {max} elements"))
 }
 
-/// @Min
-pub fn not_below(field: &str, number: i32, min: i32) -> Option<String> {
+/// @Min. `T`: any kind of number (a whole one, or a decimal like a cost); `{min}` writes 0.0 as "0", like JavaScript.
+pub fn not_below<T: PartialOrd + std::fmt::Display>(field: &str, number: T, min: T) -> Option<String> {
     (number < min).then(|| format!("{field} must not be less than {min}"))
+}
+
+/// @Max
+pub fn not_above<T: PartialOrd + std::fmt::Display>(field: &str, number: T, max: T) -> Option<String> {
+    (number > max).then(|| format!("{field} must not be greater than {max}"))
+}
+
+/// @IsIn: one of a fixed list of values
+pub fn one_of(field: &str, text: &str, values: &[&str]) -> Option<String> {
+    (!values.contains(&text)).then(|| format!("{field} must be one of the following values: {}", values.join(", ")))
 }
 
 /// A real time zone, by the same rule as Node's Intl (which class-validator asks): an IANA name in any mix of
@@ -341,6 +356,20 @@ mod tests {
             "x\u{85}\u{180E}\u{200B}"
         );
         assert_eq!(js_trim("  Sam Lee  "), "Sam Lee");
+    }
+
+    #[test]
+    fn the_regex_spaces_are_the_same_spaces() {
+        let space = Regex::new(&format!("^[{JS_SPACES}]$")).unwrap();
+        // Every character there is: in JS_SPACES exactly when is_js_space says it's a space
+        for c in (0..=0x10FFFF).filter_map(char::from_u32) {
+            assert_eq!(
+                space.is_match(c.encode_utf8(&mut [0; 4])),
+                is_js_space(c),
+                "U+{:04X}",
+                c as u32
+            );
+        }
     }
 
     #[test]

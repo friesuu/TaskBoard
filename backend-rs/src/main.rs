@@ -23,6 +23,7 @@ mod notifications;
 mod passwords;
 mod proxy;
 mod routing;
+mod runner;
 mod scalars;
 mod tasks;
 mod throttle;

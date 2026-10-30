@@ -16,7 +16,8 @@ pub struct DateTime(pub chrono::DateTime<Utc>);
 // #[Scalar]: the GraphQL scalar DateTime, made from these two functions
 #[Scalar(name = "DateTime")]
 impl ScalarType for DateTime {
-    /// A DateTime sent to the API, e.g. "2026-10-29T02:34:40.123Z" (no moved operation takes one yet)
+    /// A DateTime sent to the API (the runner's log lines and pauses): a full ISO 8601 date and time with its time
+    /// zone, e.g. "2026-10-29T02:34:40.123Z" or "2026-10-29T10:34:40+08:00", what JavaScript's toISOString() writes
     fn parse(value: Value) -> InputValueResult<Self> {
         let Value::String(text) = &value else {
             return Err(InputValueError::expected_type(value));
@@ -24,6 +25,12 @@ impl ScalarType for DateTime {
         chrono::DateTime::parse_from_rfc3339(text)
             .map(|time| DateTime(time.with_timezone(&Utc)))
             .map_err(InputValueError::custom)
+    }
+
+    /// Checked with the rest of the request, before anything runs: a DateTime that doesn't read as one is a broken
+    /// request (bad_requests.rs), like a word where a number should be
+    fn is_valid(value: &Value) -> bool {
+        matches!(value, Value::String(text) if chrono::DateTime::parse_from_rfc3339(text).is_ok())
     }
 
     /// A DateTime in an answer: milliseconds (cut off, as JavaScript does) and Z

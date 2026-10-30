@@ -23,6 +23,7 @@ use crate::labels::{LabelsMutation, LabelsQuery};
 use crate::notifications::{NotificationsMutation, NotificationsQuery};
 use crate::passwords::DummyHash;
 use crate::routing::{MOVED, rust_answers};
+use crate::runner::{AiMutation, AiQuery, RunnerMutation, RunnerQuery, bearer_token};
 use crate::tasks::{TasksMutation, TasksQuery};
 use crate::throttle::{ClientAddress, RateLimits, client_address};
 use crate::users::UsersQuery;
@@ -40,6 +41,8 @@ pub struct Query(
     CommentsQuery,
     NotificationsQuery,
     AttachmentsQuery,
+    AiQuery,
+    RunnerQuery,
 );
 
 #[derive(MergedObject, Default)]
@@ -53,6 +56,8 @@ pub struct Mutation(
     CommentsMutation,
     NotificationsMutation,
     AttachmentsMutation,
+    AiMutation,
+    RunnerMutation,
 );
 
 pub type AppSchema = Schema<Query, Mutation, EmptySubscription>;
@@ -95,10 +100,11 @@ pub async fn handler(
     // Kept for bad_requests::refused: `execute` uses the request up
     let (query, operation_name) = (request.query.clone(), request.operation_name.clone());
 
-    // Two things go along with this one request, for the resolvers: the login cookie (auth::current_user) and
-    // who sent it (the rate limits)
+    // Three things go along with this one request, for the resolvers: the login cookie (auth::current_user), the
+    // runner's token (runner::tokens::runner_user), and who sent it (the rate limits)
     let request = request
         .data(login_cookie(&headers))
+        .data(bearer_token(&headers))
         .data(ClientAddress(client_address(sender.ip(), &headers)));
     let mut response = app.schema.execute(request).await;
 
@@ -116,4 +122,39 @@ pub async fn handler(
     let mut answer = Json(response).into_response();
     answer.headers_mut().extend(extra_headers);
     answer
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // A name mistyped in MOVED wouldn't fail anything: the operation would just stay with NestJS, which answers
+    // it fine. So: MOVED lists exactly the operations Rust's schema has, no more, no fewer.
+    #[tokio::test]
+    async fn moved_is_exactly_what_rust_has() {
+        let schema = Schema::build(Query::default(), Mutation::default(), EmptySubscription).finish();
+        let answer = schema
+            .execute("{ __schema { queryType { fields { name } } mutationType { fields { name } } } }")
+            .await
+            .data
+            .into_json()
+            .unwrap();
+        let names = |root: &str| -> Vec<String> {
+            let mut names: Vec<String> = answer["__schema"][root]["fields"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|field| field["name"].as_str().unwrap().to_string())
+                .collect();
+            names.sort();
+            names
+        };
+        let sorted = |list: &[&str]| -> Vec<String> {
+            let mut list: Vec<String> = list.iter().map(|name| name.to_string()).collect();
+            list.sort();
+            list
+        };
+        assert_eq!(names("queryType"), sorted(MOVED.queries));
+        assert_eq!(names("mutationType"), sorted(MOVED.mutations));
+    }
 }

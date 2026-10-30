@@ -27,6 +27,9 @@ tower-http = { version = "0.6", features = ["cors"] }
 jsonwebtoken = "9"
 # Password hashes, the same kind NestJS makes (argon2id), so existing passwords keep working
 argon2 = "0.5"
+# The runner's token: made from random bytes written in base64url, and saved only as its SHA-256 hash
+base64 = "0.22"
+sha2 = "0.10"
 # Patterns for checking text (email addresses, invisible characters in names)
 regex = "1"
 # Every time zone name, to check the one the browser sends

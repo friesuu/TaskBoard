@@ -1,7 +1,7 @@
 //! The work on comments (comments.service.ts in NestJS): plain functions that take the database, the inputs
 //! (already checked) and who's asking. No GraphQL in here.
 
-use sqlx::PgPool;
+use sqlx::{PgExecutor, PgPool};
 
 use super::types::Comment;
 use crate::errors::{bad_request, internal, not_found};
@@ -68,6 +68,39 @@ pub async fn find_all(db: &PgPool, task_id: i32, user_id: i32) -> async_graphql:
     .map_err(internal)?;
     // into_iter().map(...).collect(): each row into a Comment, all of them into a Vec again
     Ok(rows.into_iter().map(Comment::from).collect())
+}
+
+/// A task's comments of these kinds (None: every kind), oldest first, each with its author: what the runner
+/// reads with a job (every kind), and the AI tab (feedback and claude). The caller has checked whose task it is.
+pub async fn of_task(db: &PgPool, task_id: i32, kinds: Option<&[&str]>) -> async_graphql::Result<Vec<Comment>> {
+    // `$2::text[] IS NULL OR ...`: no list means no filter
+    let rows: Vec<Row> = sqlx::query_as(&format!(
+        "SELECT {COMMENT_COLUMNS} WHERE comments.task_id = $1 AND ($2::text[] IS NULL OR comments.kind = ANY($2))
+         ORDER BY comments.created_at, comments.id"
+    ))
+    .bind(task_id)
+    .bind(kinds)
+    .fetch_all(db)
+    .await
+    .map_err(internal)?;
+    Ok(rows.into_iter().map(Comment::from).collect())
+}
+
+/// Your feedback on Claude's prompt ("Request changes"): a comment of kind "feedback", shown in the AI tab.
+/// `db` can be a transaction (PgExecutor), so it's saved together with the task's change, or not at all.
+pub async fn add_feedback(
+    db: impl PgExecutor<'_>,
+    task_id: i32,
+    author_id: i32,
+    body: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("INSERT INTO comments (task_id, author_id, body, kind) VALUES ($1, $2, $3, 'feedback')")
+        .bind(task_id)
+        .bind(author_id)
+        .bind(body)
+        .execute(db)
+        .await?;
+    Ok(())
 }
 
 /// A new comment (`body` is already trimmed and checked)

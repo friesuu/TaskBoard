@@ -15,7 +15,10 @@ and the same login secret: a login made by one works in the other.
 | 3 | `boards`, `createBoard`, `renameBoard`, `setBoardProject`, `deleteBoard`; `labels`, `createLabel`, `updateLabel`, `deleteLabel` |
 | 4 | `createTask`, `updateTask`, `moveTask`, `deleteTask`, `setTaskLabels`, `tasks`, `taskStats` |
 | 5 | `comments`, `addComment`, `updateComment`, `deleteComment`; `notifications`, `unreadNotificationCount`, `markNotificationRead`, `markAllNotificationsRead`; `checklistItems`, `addChecklistItem`, `updateChecklistItem`, `moveChecklistItem`, `deleteChecklistItem` |
-| 6 | The file upload (`POST /api/tasks/{taskId}/attachments`), `attachments`, `deleteAttachment`, the hourly clean-up of files nobody points at; the download (`GET /api/attachments/{id}/download`, once your part is done) |
+| 6 | The file upload (`POST /api/tasks/{taskId}/attachments`), `attachments`, `deleteAttachment`, the hourly clean-up of files nobody points at; the download (`GET /api/attachments/{id}/download`) |
+| 7 | The Claude runner. Its token: `runnerToken`, `createRunnerToken`, `revokeRunnerToken`. Your review: `updateRefinedPrompt`, `approvePrompt`, `requestPromptChanges`, `requestAiMerge`, `retryAiTask`, `aiNotes`. Its activity: `agentRuns`, `aiRuns`, `agentRunLog`, `agentStatus`. The runner's own: `runnerPing`, `runnerNextJob`, `runnerSavePrompt`, `runnerStartBuild`, `runnerFinishBuild`, `runnerFinishMerge`, `runnerReportError`, `runnerStartRun`, `runnerAppendLog`, `runnerFinishRun`, `runnerReportStatus` |
+
+Only the chat assistant (`chatMessages`, `sendChatMessage`, `clearChat`) is still answered by NestJS: phase 8.
 
 ## Run it (development)
 
@@ -45,26 +48,51 @@ costs nothing. The first pair (Rust 3102, NestJS 3101) has the rate limits off, 
 
 An operation counts as moved only when `scripts/e2e.sh` passes with it in `MOVED`.
 
-## Phase 6: your part
+## Phase 7: your part (a review)
 
-Attached files move in phase 6. Uploading, listing, deleting and the clean-up of orphaned files are done and
-already answered by Rust. The download waits for one function of yours, in `src/attachments/routes.rs`; until
-then NestJS answers it.
+The Claude runner moves in phase 7, all of it, and it's already answered by Rust. Your part is reading it, not
+writing it: most of it is plumbing you've seen before, but the **state handling** is new and easy to get wrong.
+The runner on your laptop and you in the browser change the same task at the same time, and the board must never
+build a prompt you didn't approve, build a task twice, or lose your feedback.
 
-1. **`content_disposition`**: the download's `Content-Disposition` line, which tells the browser to save the
-   file, and under which name. It looks at the same name three ways: as characters (`.chars()`), as UTF-16 units
-   (the way JavaScript counts) and as UTF-8 bytes (`.bytes()`). `cargo test attachments` checks it against names
-   NestJS wrote the line for.
-2. Remove the `#[allow(...)]` line above it.
-3. Move the download to Rust: in `src/routing.rs`, `DOWNLOAD_MOVED` becomes `true`. (The download isn't GraphQL,
-   so it isn't in `MOVED`; `main.rs` gives it its route when the switch is on.)
-4. Check: `cargo fmt`, `cargo clippy` (no warnings), `cargo test` (48 passed), then `scripts/e2e.sh` (143 passed).
+Start with `src/runner/mod.rs` (the workflow, and which file does what), then answer these. Each one points at
+the code; there's no code to write, but `cargo test runner` and `target/phase7/run-extra.sh alone` are there to
+try things.
 
-The compiler's messages are the best help: `cargo build` after each change, and read the first error.
+1. **One task's trip.** Follow a task from To do to Done (the diagram in `mod.rs`). For each step: which function
+   does it (`jobs.rs` or `review.rs`), which columns of `tasks` it changes, and which condition in `waiting()`
+   (`jobs.rs`) makes the runner see the task for the next step.
+2. **Check and change in one statement.** `claim()` in `jobs.rs` puts the check ("is this task waiting for this
+   step?") into the UPDATE's `WHERE`. NestJS reads the task, checks it in JavaScript, then writes. Four
+   `runnerStartBuild` calls for the same task at the same moment: in one try NestJS let 2 through (two builds of
+   one task), Rust 1 (`target/phase7/extra.mjs`). Explain why the second one fails in Rust: what does the first
+   one's `ai_branch = $3` do to `(ai_branch IS NULL OR ai_built_at IS NOT NULL)`?
+3. **`finish_build` doesn't use `claim()`.** What does it check instead, and in which order? Why does a second
+   `runnerFinishBuild` get "Task 7 isn't being built", and why can't it send a second "Ready for review"?
+4. **Approving exactly what was checked.** `approve` in `review.rs` saves `approved_prompt = $2` with
+   `refined_prompt = $2` in the `WHERE`. What could get built without that, if you edited the prompt in another
+   tab between the checks and the UPDATE?
+5. **Both or neither.** `request_changes` saves your feedback and sets `changes_requested` in one transaction.
+   When the UPDATE is refused, `changed(...)?` returns early. Why does that undo the feedback comment, with no
+   `rollback()` anywhere?
+6. **A lock instead.** `activity.rs` uses another tool: `lock_running_run` locks the run's row (`FOR UPDATE`).
+   Why can't `append_log` be one UPDATE like the others (what are its steps)? What would two appends at once do
+   to the 5000-line cap without the lock? When is the lock let go after `return Ok(false)`?
+7. **One that isn't protected.** `report_status` reads the old state, then writes the new one, with nothing
+   between them. Is that a problem? Who sends it, and how often? What's the worst two at once could do?
+8. **Two keys, two doors.** Which header does `runner_user` (`tokens.rs`) read, and which one does
+   `current_user` (`src/auth/session.rs`)? Find the capture steps that prove the runner's token can't list your
+   boards, and your cookie can't ask for the runner's next job.
+9. **Hiding secrets.** `redact.rs` writes `(?-u:\b)` where NestJS writes `\b`, and `[A-Za-z]` where NestJS uses
+   `/i`. What would go differently with the regex crate's own `\b` and `(?i)`? (Its comments and tests say.)
+
+Tell me your answers (or what you couldn't work out), and I'll go through them with you. If you find something
+you'd change, say so: that's the point of a review.
 
 Your parts before this one, all done: phase 1 `me` (`src/users.rs`), phase 2 the login cookie (`src/cookies.rs`),
 phase 3 the label colours, `change` and `find_all` (`src/labels/`), phase 4 today and this week (`src/dates.rs`),
-phase 5 `reorder` and the checklist's resolver (`src/checklist/`).
+phase 5 `reorder` and the checklist's resolver (`src/checklist/`), phase 6 `content_disposition`
+(`src/attachments/routes.rs`).
 
 ## Where Rust doesn't match NestJS yet
 
@@ -73,8 +101,10 @@ limits, the cookies), 48 identical; 71 in phase 3 (every error case of boards an
 broken requests), 66 identical; 164 in phase 4 (every task operation and its errors, 31 due dates, the filters,
 the numbers in 8 time zones), 158 identical; 86 in phase 5 (every checklist, comment and notification operation
 and its errors, Claude's comments and prompt feedback), 84 identical; 142 in phase 6 (uploads with every kind of
-file, name and broken form, downloads byte for byte, listing and deleting), 140 identical. Phase 6's error bodies
-are byte for byte NestJS's, down to the order of their keys. The ones that aren't:
+file, name and broken form, downloads byte for byte, listing and deleting), 140 identical; 118 in phase 7 (the
+runner's token, every step of its workflow and every refusal, its run logs with secrets in them, its status, your
+review), 118 identical. Phase 6's error bodies are byte for byte NestJS's, down to the order of their keys. The
+ones that aren't:
 
 - **A broken request** (an unknown field, or a variable that doesn't fit its type): both answer HTTP 400 with
   the same code (`BAD_USER_INPUT` for a variable, `GRAPHQL_VALIDATION_FAILED` for the query itself), but the
@@ -92,13 +122,25 @@ are byte for byte NestJS's, down to the order of their keys. The ones that aren'
   to change when NestJS is gone.
 - **A form's `filename*` in a character set other than UTF-8 or Latin-1**: NestJS's busboy reads more of them;
   Rust skips that part of the form. Browsers never send `filename*`.
-- **A notification's task**: NestJS loads only its `id`, `title` and `boardId` (what the bell shows), so asking for
-  any other field of it gives `task: null` and an error. Rust gives the whole task.
+- **A notification's task, and a run's task** (`aiRuns`, `agentRuns`): NestJS loads only a notification's or an
+  `aiRuns` run's task `id`, `title` and `boardId` (what the bell and the AI Activity page show), so asking for any
+  other field of it gives an error; `agentRuns` doesn't load the task at all. Rust gives the whole task.
 - **Several top-level fields failing at once** (e.g. the bell's `notifications` and `unreadNotificationCount`
   when logged out): NestJS's GraphQL library reports only the first error (it waits on the fields with
   `Promise.all`, which stops at the first failure); Rust reports one for each field. The app reads the first.
 - **A due date before the year 1000**: Rust always refuses it. NestJS's validator.js reads such a date in the
   server's own time zone, so its answer depends on where the server is: in Kuala Lumpur it refuses them too.
+- **Two runner steps on the same task at the same moment** (e.g. two runners with the same token): NestJS
+  checks the task, then changes it, so both can go through: 2 of 4 `runnerStartBuild` at once did. Rust checks
+  and changes it in one statement: only the first goes through, the others get "isn't waiting for this step".
+  The same for your review (`approvePrompt` and the others) against a change made at the same moment.
+- **A DateTime the runner sends that isn't a full date and time with its time zone** (a log line's `at`, a
+  pause's `pausedUntil`): NestJS reads anything JavaScript's `new Date()` reads: "2026-10-29" (midnight UTC),
+  "2026-10-29T10:00:00" (in the server's own time zone), a number of milliseconds; and refuses the rest with
+  `lines.0.at must be a Date instance`. Rust refuses all of them as a broken request (HTTP 400, `BAD_USER_INPUT`).
+  The runner always sends full ones (`toISOString()`).
+- **A run's cost that's a whole number**: NestJS sends `"costUsd":3`, Rust `"costUsd":3.0` (JavaScript has one
+  kind of number; Rust's float always shows its point). Both are the same number once read.
 - **Two labels saved with the same name at the same moment**: the database refuses the second. NestJS answers
   it with "Internal server error"; Rust with the usual "There is already a label called ..." message.
 - **The schema's descriptions**: the `///` comments on Rust's GraphQL types become descriptions in Rust's schema;
@@ -139,10 +181,11 @@ The bigger modules are folders (`src/tasks/`, `src/labels/`, `src/auth/`). The s
 | `src/tasks/` | `tasks` (with its filters), `taskStats`, `createTask`, `updateTask`, `moveTask`, `deleteTask` |
 | `src/checklist/` | `checklistItems`, `addChecklistItem`, `updateChecklistItem`, `moveChecklistItem`, `deleteChecklistItem` (your part in phase 5) |
 | `src/comments/` | `comments`, `addComment`, `updateComment`, `deleteComment` |
-| `src/notifications.rs` | The bell: `notifications`, `unreadNotificationCount`, `markNotificationRead`, `markAllNotificationsRead` |
+| `src/notifications.rs` | The bell: `notifications`, `unreadNotificationCount`, `markNotificationRead`, `markAllNotificationsRead`; `notify`, for the runner's side |
+| `src/runner/` | The Claude runner: its token and login check (`tokens.rs`), its jobs and steps (`jobs.rs`), your review (`review.rs`), its runs, logs and status (`activity.rs`), hiding secrets (`redact.rs`); your part in phase 7 is a review of it |
 | `src/dates.rs` | Today and this week in the user's time zone (your part in phase 4) |
 | `src/iso8601.rs` | validator.js's ISO 8601 date check, for the due date |
-| `src/scalars.rs` | The DateTime scalar, written like a JavaScript Date (`2026-10-29T02:34:40.123Z`) |
+| `src/scalars.rs` | The DateTime scalar, written like a JavaScript Date (`2026-10-29T02:34:40.123Z`), and read from the runner |
 | `src/passwords.rs` | Password hashes (argon2id, the same as NestJS's) |
 | `src/throttle.rs` | Rate limits (5 tries a minute), like NestJS's ThrottlerGuard: `limit_by_address`, `limit_by_account` |
 | `src/validate.rs` | Input rules, with NestJS's messages |

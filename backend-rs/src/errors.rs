@@ -9,7 +9,7 @@
 //!  "data":null}
 //! ```
 
-use async_graphql::{Error, ErrorExtensions, value};
+use async_graphql::{Context, Error, ErrorExtensions, value};
 
 /// No login cookie, a forged or expired one, or one from before a password change (NestJS's login guard)
 pub fn unauthorized() -> Error {
@@ -96,6 +96,17 @@ pub fn internal(problem: impl std::fmt::Display) -> Error {
     tracing::error!("{problem}");
     Error::new("Internal server error").extend_with(|_, extensions| {
         extensions.set("code", "INTERNAL_SERVER_ERROR");
+    })
+}
+
+/// For a field that can be null (e.g. `runnerToken`): an error makes it null, with the error in the answer's
+/// `errors` beside it. That's GraphQL's rule, and NestJS's answer: `{"data":{"runnerToken":null},"errors":[...]}`.
+/// async-graphql instead leaves a failed field out of `data`, and with nothing left, sends `"data":null`.
+pub fn null_on_error<T>(ctx: &Context<'_>, result: async_graphql::Result<Option<T>>) -> Option<T> {
+    result.unwrap_or_else(|error| {
+        // where the field is in the query (`locations`) and in the answer (`path`), as for any other error
+        ctx.add_error(ctx.set_error_path(error.into_server_error(ctx.item.pos)));
+        None
     })
 }
 

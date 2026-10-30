@@ -13,3 +13,5 @@ mod service;
 mod types;
 
 pub use resolver::{ChecklistMutation, ChecklistQuery};
+pub use service::in_order;
+pub use types::ChecklistItem;

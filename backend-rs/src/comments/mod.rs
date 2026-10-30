@@ -13,3 +13,5 @@ mod service;
 mod types;
 
 pub use resolver::{CommentsMutation, CommentsQuery};
+pub use service::{add_feedback, of_task};
+pub use types::Comment;

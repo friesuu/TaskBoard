@@ -148,7 +148,7 @@ async fn find_owned(db: impl PgExecutor<'_>, id: i32, owner_id: i32) -> async_gr
 }
 
 /// A task's items, top to bottom
-async fn in_order(db: impl PgExecutor<'_>, task_id: i32) -> async_graphql::Result<Vec<ChecklistItem>> {
+pub async fn in_order(db: impl PgExecutor<'_>, task_id: i32) -> async_graphql::Result<Vec<ChecklistItem>> {
     sqlx::query_as(
         "SELECT id, text, done, position, task_id FROM checklist_items WHERE task_id = $1 ORDER BY position, id",
     )

@@ -1,7 +1,7 @@
 //! The bell in the header (the notifications module in NestJS, ../backend/src/notifications). Only things you
 //! need to act on or know about: a prompt to approve, a build to review, a failed run, the usage limit, a merge.
-//! The runner's side of NestJS adds them (RunnerService, AiActivityService); Rust only reads them and marks them
-//! read. Only ever your own.
+//! The runner's side adds them (`notify`, called from src/runner/); you read them and mark them read. Only ever
+//! your own.
 //!
 //! Small enough for one file, in the same parts as the bigger modules' files.
 
@@ -85,6 +85,34 @@ struct Row {
     read_at: Option<DateTime>,
 }
 
+/// Adds one to the bell. Called by the runner's side when something happens (src/runner/jobs.rs, activity.rs).
+/// `kind`: prompt_ready, review_ready, run_failed, usage_limit or merged. The message is cut to 200, counted
+/// the way JavaScript counts (UTF-16 units, an emoji is 2), as NestJS's message.slice(0, 200) does.
+pub async fn notify(
+    db: &PgPool,
+    user_id: i32,
+    kind: &str,
+    message: &str,
+    task_id: Option<i32>,
+) -> async_graphql::Result<()> {
+    sqlx::query("INSERT INTO notifications (user_id, kind, message, task_id) VALUES ($1, $2, $3, $4)")
+        .bind(user_id)
+        .bind(kind)
+        .bind(cut_to_units(message, 200))
+        .bind(task_id)
+        .execute(db)
+        .await
+        .map_err(internal)?;
+    Ok(())
+}
+
+/// The first `units` UTF-16 units of a text. A cut through the middle of an emoji leaves half of it in
+/// JavaScript, which the database gets as "�": the same here.
+fn cut_to_units(text: &str, units: usize) -> String {
+    let units: Vec<u16> = text.encode_utf16().take(units).collect();
+    String::from_utf16_lossy(&units)
+}
+
 /// Your newest notifications, newest first, each with its task
 pub async fn find_latest(db: &PgPool, user_id: i32) -> async_graphql::Result<Vec<Notification>> {
     let rows: Vec<Row> = sqlx::query_as(
@@ -157,4 +185,21 @@ async fn with_tasks(db: &PgPool, rows: Vec<Row>) -> async_graphql::Result<Vec<No
             read_at: row.read_at,
         })
         .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cut_like_javascript_slice() {
+        assert_eq!(cut_to_units("short", 200), "short");
+        assert_eq!(cut_to_units(&"é".repeat(201), 200), "é".repeat(200)); // é: one unit
+        assert_eq!(cut_to_units(&"😀".repeat(101), 200), "😀".repeat(100)); // 😀: two
+        // 199 units, then an emoji: only its first half fits
+        assert_eq!(
+            cut_to_units(&format!("{}😀", "x".repeat(199)), 200),
+            format!("{}\u{FFFD}", "x".repeat(199))
+        );
+    }
 }
