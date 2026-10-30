@@ -18,10 +18,10 @@ use tokio_util::io::ReaderStream;
 
 use super::service;
 use super::upload_form::{self, FormError};
-use crate::AppState;
 use crate::auth::{login_cookie, user_from_token};
 use crate::throttle::client_address;
 use crate::users::User;
+use crate::{AppState, routing};
 
 const UPLOADS_PER_MINUTE: usize = 30;
 const DOWNLOADS_PER_MINUTE: usize = 120;
@@ -71,14 +71,19 @@ pub async fn download(
     let mut response = match download.file {
         // 64 KB at a time
         Ok(file) => Body::from_stream(ReaderStream::with_capacity(file, 64 * 1024)).into_response(),
-        // The row is there but its file isn't (NestJS: 400, with Node's error message as the text)
+        // The row is there but its file isn't (NestJS: 400, with Node's error message as the text). Node's message
+        // ends with the file's path on the server, which no one outside should see: once NestJS is off, it goes.
         Err(err) => {
             let code = match err.kind() {
                 std::io::ErrorKind::NotFound => "ENOENT: no such file or directory",
                 std::io::ErrorKind::PermissionDenied => "EACCES: permission denied",
                 _ => "EIO: i/o error",
             };
-            let message = format!("{code}, open '{}'", download.path.display());
+            let message = if routing::NESTJS_IS_OFF {
+                code.to_string()
+            } else {
+                format!("{code}, open '{}'", download.path.display())
+            };
             (StatusCode::BAD_REQUEST, message).into_response()
         }
     };

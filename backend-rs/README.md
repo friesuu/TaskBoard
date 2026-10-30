@@ -1,12 +1,15 @@
 # The backend in Rust
 
-This takes over from the NestJS backend in `../backend`, one part at a time, without changing the API:
-the frontend and the Claude runner don't notice.
+This took over from the NestJS backend in `../backend`, one part at a time, without changing the API: the
+frontend and the Claude runner didn't notice. Since phase 9 it is **the backend**: NestJS is off
+(`NESTJS_IS_OFF` in `src/routing.rs`), and the app and the runner talk only to Rust, on port 3000.
 
-For now Rust is the **front door**. The app and the runner talk to it on port 3000. It answers the
-GraphQL operations that have moved to Rust (the `MOVED` list in `src/routing.rs`) and the file upload and
-download (`src/attachments/routes.rs`), and passes every other request on to NestJS on port 3001, unchanged. Both read `../backend/.env`, so they use the same database
-and the same login secret: a login made by one works in the other.
+It still reads `../backend/.env`, the settings file NestJS used (the database, the login secret, the Claude API
+key), so nothing had to move.
+
+While the port was going on, Rust was the **front door**: it answered the GraphQL operations that had moved (the
+`MOVED` list in `src/routing.rs`) and passed everything else on to NestJS, unchanged. That way back is still in the
+code: with `NESTJS_IS_OFF = false` and NestJS running on port 3001, it works as it did.
 
 | Phase | Moved to Rust |
 | --- | --- |
@@ -17,25 +20,23 @@ and the same login secret: a login made by one works in the other.
 | 5 | `comments`, `addComment`, `updateComment`, `deleteComment`; `notifications`, `unreadNotificationCount`, `markNotificationRead`, `markAllNotificationsRead`; `checklistItems`, `addChecklistItem`, `updateChecklistItem`, `moveChecklistItem`, `deleteChecklistItem` |
 | 6 | The file upload (`POST /api/tasks/{taskId}/attachments`), `attachments`, `deleteAttachment`, the hourly clean-up of files nobody points at; the download (`GET /api/attachments/{id}/download`) |
 | 7 | The Claude runner. Its token: `runnerToken`, `createRunnerToken`, `revokeRunnerToken`. Your review: `updateRefinedPrompt`, `approvePrompt`, `requestPromptChanges`, `requestAiMerge`, `retryAiTask`, `aiNotes`. Its activity: `agentRuns`, `aiRuns`, `agentRunLog`, `agentStatus`. The runner's own: `runnerPing`, `runnerNextJob`, `runnerSavePrompt`, `runnerStartBuild`, `runnerFinishBuild`, `runnerFinishMerge`, `runnerReportError`, `runnerStartRun`, `runnerAppendLog`, `runnerFinishRun`, `runnerReportStatus` |
-
 | 8 | The chat assistant: `chatMessages`, `sendChatMessage`, `clearChat` (the calls to the Claude API, the tool loop and the assistant's 11 tools, retries, 10 messages a minute) |
 
-Every GraphQL operation the app and the runner use is now answered by Rust. NestJS only still gets what isn't one
-of them (e.g. GraphiQL, introspection, an unknown address). Next, phase 9: the switch-over, when NestJS is turned off.
+| 9 | The switch-over: everything NestJS still did. Its migrations (`src/migrations.rs`), how Apollo Server takes a request to `/graphql` (`src/apollo.rs`: CSRF protection, GET, GraphiQL, introspection, every refusal), and Express around it (`src/express.rs`: the 404, addresses in any capitals, its headers). NestJS is off |
 
 ## Run it (development)
 
 ```bash
-# 1. NestJS, moved to port 3001
-cd ../backend && PORT=3001 pnpm run start:dev
-
-# 2. Rust on port 3000, in another terminal (from this folder)
-cargo run
+cargo run    # from this folder: the backend, on port 3000
 ```
 
-Rust needs `ANTHROPIC_API_KEY` for the chat assistant, as NestJS does: it reads it from `../backend/.env` too.
+The settings come from `../backend/.env` (copy `../backend/.env.example` to make one): the database, `JWT_SECRET`,
+and `ANTHROPIC_API_KEY` for the chat assistant. When it starts, it brings the database's tables up to date
+(NestJS's migrations, `migrations/`), as NestJS did. The frontend talks to port 3000, as it always has.
 
-The frontend doesn't change: it still talks to port 3000.
+For the real server: `cargo build --release`, then run `target/release/task-board-backend` with `NODE_ENV=production`
+(the login cookie only over https, no introspection and no GraphiQL, as NestJS did), and `FRONTEND_URL` set to the
+site's address.
 
 ## Test it
 
@@ -46,12 +47,39 @@ cargo fmt         # formats the code (rustfmt.toml: lines up to 120 characters)
 scripts/e2e.sh    # the backend's e2e tests, through Rust: 143 passed
 ```
 
-`scripts/e2e.sh` starts two pairs of servers, each Rust in front of NestJS, all with the tests' settings
-(`../backend/test/e2e.env`): the test database, and the tests' fake Claude instead of the real one, so it
-costs nothing. The first pair (Rust 3102, NestJS 3101) has the rate limits off, for most tests; the second
-(Rust 3103, NestJS 3104) has them on, for the rate limit tests.
+`scripts/e2e.sh` starts two copies of the backend, both with the tests' settings (`../backend/test/e2e.env`): the
+test database, and the tests' fake Claude instead of the real one, so it costs nothing. The first (port 3102) has
+the rate limits off, for most tests; the second (3103) has them on, for the rate limit tests. (With
+`NESTJS_IS_OFF = false`, it starts a NestJS behind each, on 3101 and 3104.)
 
-An operation counts as moved only when `scripts/e2e.sh` passes with it in `MOVED`.
+## Phase 9: done
+
+Phase 9 was the switch-over: Rust took over the last things NestJS did, and NestJS was turned off. Its migrations
+(`src/migrations.rs`), how Apollo Server takes a request to `/graphql` (`src/apollo.rs`), and what Express did around
+the routes (`src/express.rs`).
+
+Your part was two functions; at your request they were written for you. Both are short and worth a read:
+- **`not_found`** in `src/express.rs`: the answer to an address nothing answers, exactly as Express gave it,
+  `{"message":"Cannot GET /nope","error":"Not Found","statusCode":404}`, with HTTP 404
+- **`csrf_safe`** in `src/apollo.rs`: Apollo's protection against cross-site request forgery. Any website can make
+  your browser send a "simple" request (a form, a link) to the board, and the browser adds your login cookie; Apollo
+  refuses those unless they carry a header no form can add. Its test has the cases NestJS answered.
+
+Checked with NestJS stopped: `scripts/e2e.sh` 143 passed (it starts no NestJS), and
+`target/phase9/run.sh rust-dev` then `node target/phase9/diff.mjs target/phase9/nestjs-dev.json
+target/phase9/rust-dev.json` 88 of 93 (the differences below; the same in production settings, `rust-prod`). The
+answers recorded in phases 2 to 8 are the same as before, with nothing behind Rust.
+
+What else phase 9 found:
+- **The app's named operations went to NestJS until now.** The app sends `query AgentRuns(...) {...}` without an
+  `operationName`; a document with one operation runs it, named or not, but `routing.rs` sent those on to NestJS. So
+  NestJS answered most of the app's own requests (the tests and captures used unnamed ones, which Rust answered).
+  Fixed: Rust answers them, and e2e passes with them.
+- **The database's tables**: Rust runs NestJS's 13 migrations itself now (the exact SQL TypeORM ran, in
+  `migrations/`), and writes them down in TypeORM's own table, so a database NestJS set up carries on as it is. A
+  new database set up by Rust was checked against one NestJS set up: the same columns, constraints, indexes and enums.
+- **The schema** Rust shows (introspection, GraphiQL) is NestJS's, type for type and field for field (compared through
+  graphql-js), apart from the descriptions below.
 
 ## Phase 8: done
 
@@ -64,7 +92,7 @@ like). At your request they were written for you. They're worth a read for Rust'
 `push_str`, `.iter().filter(...)`, `.join(...)`, `Option::as_deref`, and `{{` for a real `{` in `format!`. Their
 tests (`cargo test chat::context`) compare the text with NestJS's, character for character.
 
-Your parts before this one: phase 1 `me` (`src/users.rs`), phase 2 the login cookie (`src/cookies.rs`), phase 3
+Your parts in the other phases: phase 1 `me` (`src/users.rs`), phase 2 the login cookie (`src/cookies.rs`), phase 3
 the label colours, `change` and `find_all` (`src/labels/`), phase 4 today and this week (`src/dates.rs`), phase 5
 `reorder` and the checklist's resolver (`src/checklist/`), phase 6 `content_disposition`
 (`src/attachments/routes.rs`). Phase 7's review questions are below, whenever you want them.
@@ -110,7 +138,7 @@ try things.
 Tell me your answers (or what you couldn't work out), and I'll go through them with you. If you find something
 you'd change, say so: that's the point of a review.
 
-## Where Rust doesn't match NestJS yet
+## Where Rust doesn't match NestJS
 
 The answers were compared with NestJS's for the same requests: 49 in phase 2 (every error case, the rate
 limits, the cookies), 48 identical; 71 in phase 3 (every error case of boards and labels, the input rules, and
@@ -121,14 +149,23 @@ file, name and broken form, downloads byte for byte, listing and deleting), 140 
 runner's token, every step of its workflow and every refusal, its run logs with secrets in them, its status, your
 review), 118 identical; 78 in phase 8 (every chat operation and refusal, everything Claude is sent, each of the
 assistant's tools with good and broken input, the tool loop's limits, and Claude failing in 8 different ways),
-76 identical. Phase 6's error bodies are byte for byte NestJS's, down to the order of their keys. The ones that
-aren't:
+76 identical; 93 in phase 9 (every kind of request that isn't an operation: broken, unusual, GET, CSRF, other
+methods and addresses, CORS), in development and in production settings, 88 identical in each. Phase 6's error
+bodies are byte for byte NestJS's, down to the order of their keys. The ones that aren't:
 
-- **A broken request** (an unknown field, or a variable that doesn't fit its type): both answer HTTP 400 with
-  the same code (`BAD_USER_INPUT` for a variable, `GRAPHQL_VALIDATION_FAILED` for the query itself), but the
-  message is worded differently (`src/bad_requests.rs`), and for a wrong value written into the query itself,
-  Rust points at the argument's name where NestJS points at the value. Missing and null variables match
-  exactly. Only a broken client gets any of this, never the app. To look at again when NestJS is gone.
+- **A broken request** (a query that isn't GraphQL, an unknown field, or a variable that doesn't fit its type):
+  both answer HTTP 400 with the same code (`GRAPHQL_PARSE_FAILED`, `GRAPHQL_VALIDATION_FAILED`, `BAD_USER_INPUT`)
+  and place, but the message is async-graphql's where NestJS gives graphql-js's (`Unknown field "nope"` for `Cannot
+  query field "nope"`), and for a wrong value written into the query itself, Rust points at the argument's name
+  where NestJS points at the value. Missing and null variables match exactly, and so do all of Apollo's own
+  refusals. On the real server, a query with introspection and another mistake: NestJS lists both, Rust only the
+  introspection. A body that isn't JSON: the same 400, and NestJS's message when it doesn't start with `{` or `[`
+  (`Unexpected token 'n', "nope" is not valid JSON`); otherwise worded differently. Only a broken client gets any
+  of this, never the app.
+- **Things Rust doesn't do once NestJS is off, which the app never uses**: Apollo's persisted queries, a form body
+  with `name[key]` fields (Express reads them as objects), and the `application/graphql-response+json` answers
+  Apollo gives a client that asks for them (Rust answers plain JSON). In development, NestJS's errors carry a
+  `stacktrace`; Rust's never do. Express's `X-Powered-By: Express` header is gone. GraphiQL is async-graphql's.
 - **`createTask` with `status: null`**: the database refuses it in both. NestJS passes the database's own message
   on ("null value in column ..."); Rust says "Internal server error", as for any database problem, with the
   same code. The app never sends it.
@@ -136,8 +173,8 @@ aren't:
   the way JavaScript counts): NestJS's answer to the upload holds half of the emoji (`\ud83d`); Rust strings can't,
   so Rust's has "�" there. The database saves "�" in both, so only that one answer differs.
 - **A stored file that has gone from the disk** (its row is still there): both answer the download with HTTP 400
-  and Node's error, `ENOENT: no such file or directory, open '<the file's path>'`. That shows the server's folder;
-  to change when NestJS is gone.
+  and Node's error, `ENOENT: no such file or directory, open '<the file's path>'`, while NestJS runs. That shows the
+  server's folder, so once NestJS is off, Rust leaves the path out: `ENOENT: no such file or directory`.
 - **A form's `filename*` in a character set other than UTF-8 or Latin-1**: NestJS's busboy reads more of them;
   Rust skips that part of the form. Browsers never send `filename*`.
 - **A notification's task, and a run's task** (`aiRuns`, `agentRuns`): NestJS loads only a notification's or an
@@ -145,7 +182,8 @@ aren't:
   other field of it gives an error; `agentRuns` doesn't load the task at all. Rust gives the whole task.
 - **Several top-level fields failing at once** (e.g. the bell's `notifications` and `unreadNotificationCount`
   when logged out): NestJS's GraphQL library reports only the first error (it waits on the fields with
-  `Promise.all`, which stops at the first failure); Rust reports one for each field. The app reads the first.
+  `Promise.all`, which stops at the first failure); Rust reports one for each field. The app reads the first. Both
+  answer `data: null`, as GraphQL's rules say.
 - **A due date before the year 1000**: Rust always refuses it. NestJS's validator.js reads such a date in the
   server's own time zone, so its answer depends on where the server is: in Kuala Lumpur it refuses them too.
 - **Two runner steps on the same task at the same moment** (e.g. two runners with the same token): NestJS
@@ -171,8 +209,8 @@ aren't:
 - **Two labels saved with the same name at the same moment**: the database refuses the second. NestJS answers
   it with "Internal server error"; Rust with the usual "There is already a label called ..." message.
 - **The schema's descriptions**: the `///` comments on Rust's GraphQL types become descriptions in Rust's schema;
-  NestJS's has none. Nobody sees them while introspection (`__schema`) still goes to NestJS. To look at again
-  then too.
+  NestJS's has none. Once NestJS is off they show in GraphiQL (in development; the real server answers no
+  introspection, as NestJS didn't). They were kept: they explain the API to whoever reads it there.
 
 ## How a module is laid out
 
@@ -195,10 +233,13 @@ The bigger modules are folders (`src/tasks/`, `src/labels/`, `src/auth/`). The s
 | --- | --- |
 | `src/main.rs` | Starts everything: settings, database, routes, CORS |
 | `src/config.rs` | The settings, from the environment and `../backend/.env` |
-| `src/routing.rs` | Who answers each GraphQL request: Rust or NestJS |
-| `src/graphql.rs` | POST /graphql, and the GraphQL schema |
+| `src/routing.rs` | Who answers each GraphQL request: Rust or NestJS; `NESTJS_IS_OFF`, the switch-over |
+| `src/graphql.rs` | /graphql, and the GraphQL schema |
+| `src/apollo.rs` | How Apollo Server (NestJS's GraphQL server) takes a request: the body, CSRF (phase 9's part, written for you), GET, GraphiQL, its refusals |
+| `src/express.rs` | What Express did around the routes: addresses in any capitals, its headers, the 404 (phase 9's part, written for you) |
+| `src/migrations.rs`, `migrations/` | The database's tables: NestJS's migrations, run when Rust starts |
 | `src/bad_requests.rs` | Requests that are wrong before anything runs, answered like Apollo (NestJS) answers them |
-| `src/proxy.rs` | Passes requests to NestJS and the answers back, with X-Forwarded-For saying who sent them (so NestJS's login limit counts each person) |
+| `src/proxy.rs` | Passed requests to NestJS and the answers back while the port went on, with X-Forwarded-For saying who sent them (only used again with `NESTJS_IS_OFF = false`) |
 | `src/auth/` | `register`, `login`, `logout`, `setTimeZone`, `changePassword`; `session.rs`: the login cookie and its token, and `current_user` |
 | `src/account.rs` | `setDisplayName`, `deleteAccount` (with the account's uploaded files) |
 | `src/attachments/` | The file upload and download (`routes.rs`; your part in phase 6: `content_disposition`), `attachments`, `deleteAttachment`, and the clean-up of files nobody points at |

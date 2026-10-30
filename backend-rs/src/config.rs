@@ -16,7 +16,9 @@ pub struct Config {
     pub frontend_url: String,
     /// JWT_SECRET: signs the login cookie's token and checks it, the same secret as NestJS
     pub jwt_secret: String,
-    /// NODE_ENV=production (the real server, as for NestJS): the login cookie is only sent over https
+    /// NODE_ENV=production (the real server, as for NestJS): the login cookie is only sent over https, and no
+    /// introspection or GraphiQL
+    pub production: bool,
     pub secure_cookies: bool,
     /// UPLOAD_DIR (default "uploads"): the folder with the uploaded files, the same one NestJS uses.
     /// A relative path is from the folder of the .env file (../backend), as it is for NestJS.
@@ -56,6 +58,7 @@ impl Config {
             nestjs_url: optional("NESTJS_URL", "http://localhost:3001"),
             frontend_url: optional("FRONTEND_URL", "http://localhost:5173"),
             jwt_secret: required("JWT_SECRET")?,
+            production: env::var("NODE_ENV").as_deref() == Ok("production"),
             secure_cookies: env::var("NODE_ENV").as_deref() == Ok("production"),
             upload_dir,
             anthropic_api_key: required("ANTHROPIC_API_KEY")?,

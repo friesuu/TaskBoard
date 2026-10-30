@@ -13,6 +13,11 @@ use async_graphql::parser::types::{
 /// switch. main.rs gives it its Rust route when this is true; until then NestJS answers it.
 pub const DOWNLOAD_MOVED: bool = true;
 
+/// Phase 9, the switch-over. Until this is true, Rust answers the operations in MOVED and passes everything else
+/// on to NestJS (introspection, GraphiQL, a broken query, an unknown address...). When it's true, Rust answers
+/// everything itself, as NestJS did (graphql.rs, apollo.rs, not_found.rs), and NestJS can be turned off.
+pub const NESTJS_IS_OFF: bool = true;
+
 /// The operations that have moved to Rust. Each phase adds its own here once its code is in and
 /// scripts/e2e.sh passes with them.
 pub struct Moved {
@@ -123,6 +128,11 @@ pub fn rust_answers(query: &str, operation_name: Option<&str>, moved: &Moved) ->
 
 /// The operation to run: the only one, or the one operation_name names. None when it isn't clear which.
 /// `'a`: the operation lives inside the document, so it can only be used while the document is still there.
+///
+/// async-graphql's parser keeps an anonymous operation as `Single`, and named ones in `Multiple`, even when
+/// there's only one: `query Me { me { id } }` is `Multiple` with one entry. Like GraphQL itself (and NestJS),
+/// a document with exactly one operation runs it without a name being given: the app sends its named
+/// queries that way.
 pub fn operation<'a>(
     document: &'a ExecutableDocument,
     operation_name: Option<&str>,
@@ -133,6 +143,7 @@ pub fn operation<'a>(
             .iter()
             .find(|(key, _)| key.as_str() == name)
             .map(|(_, operation)| operation),
+        (DocumentOperations::Multiple(operations), None) if operations.len() == 1 => operations.values().next(),
         (DocumentOperations::Multiple(_), None) => None,
     }
 }
@@ -161,6 +172,9 @@ mod tests {
             "query A { tasks(boardId: 1) { id } } query B { me { id } }",
             Some("B")
         ));
+        // One named operation, and no name given: it's the one to run (the app sends its queries like this)
+        assert!(rust("query Me { me { id } }", None));
+        assert!(rust("mutation Out { logout }", None));
     }
 
     #[test]

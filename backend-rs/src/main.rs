@@ -1,11 +1,12 @@
-//! The task board's backend in Rust, taking over from the NestJS one in ../backend one part at a time.
-//! For now it's the front door: the app and the Claude runner talk to Rust (port 3000), Rust answers the
-//! GraphQL operations that have moved here (routing.rs), and passes every other request on to NestJS (3001).
-//! Both use the same database and the same login secret, so a login made by one works on the other.
+//! The task board's backend in Rust, which took over from the NestJS one in ../backend one part at a time.
+//! The app and the Claude runner talk to Rust (port 3000). Until NestJS is turned off (routing::NESTJS_IS_OFF),
+//! Rust answers the GraphQL operations that have moved here (routing.rs) and passes every other request on to
+//! NestJS (3001); both use the same database and the same login secret. Then Rust answers everything itself.
 
 // Each `mod` line brings in one file of src/ (`mod auth;` = src/auth.rs). A file only sees what another
 // file marks `pub`.
 mod account;
+mod apollo;
 mod attachments;
 mod auth;
 mod bad_requests;
@@ -17,9 +18,11 @@ mod config;
 mod cookies;
 mod dates;
 mod errors;
+mod express;
 mod graphql;
 mod iso8601;
 mod labels;
+mod migrations;
 mod notifications;
 mod passwords;
 mod proxy;
@@ -34,12 +37,13 @@ mod validate;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use axum::Router;
 use axum::http::{HeaderValue, Method};
-use axum::routing::{get, post};
+use axum::routing::{any, get, post};
+use axum::{Router, ServiceExt, middleware};
 use sqlx::PgPool;
 use sqlx::postgres::PgPoolOptions;
 use tower_http::cors::{AllowHeaders, CorsLayer};
+use tower_layer::Layer;
 
 use crate::auth::JwtKeys;
 use crate::config::Config;
@@ -80,6 +84,16 @@ async fn main() {
             std::process::exit(1);
         });
 
+    // The tables: any of NestJS's migrations this database hasn't had yet (NestJS ran them when it started)
+    match migrations::run(&db).await {
+        Ok(0) => {}
+        Ok(ran) => tracing::info!("{ran} migrations run"),
+        Err(err) => {
+            eprintln!("Can't bring the database's tables up to date: {err}");
+            std::process::exit(1);
+        }
+    }
+
     // Made once (it takes a moment): logging in with an unknown email is checked against it
     let dummy_hash = passwords::DummyHash::new().await.unwrap_or_else(|err| {
         eprintln!("Can't make the dummy password hash: {err}");
@@ -103,22 +117,26 @@ async fn main() {
         config,
     };
 
-    // POST /graphql is decided in graphql.rs; the file upload and download are attachments/routes.rs. Everything
-    // else goes to NestJS: other methods on those addresses (GET /graphql opens GraphiQL), and every other address.
-    let mut app = Router::new()
-        .route("/graphql", post(graphql::handler).fallback(proxy::forward))
-        .route(
-            "/api/tasks/{task_id}/attachments",
-            post(attachments::upload).fallback(proxy::forward),
-        );
+    // /graphql (every method) is graphql.rs; the file upload and download are attachments/routes.rs. Everything else
+    // (other methods on those addresses, and every other address) is express::unknown_address: NestJS until it's
+    // turned off, then Express's 404.
+    let mut app = Router::new().route("/graphql", any(graphql::handler)).route(
+        "/api/tasks/{task_id}/attachments",
+        post(attachments::upload).fallback(express::unknown_address),
+    );
     // The download only once it has moved (routing::DOWNLOAD_MOVED); until then NestJS answers it
     if routing::DOWNLOAD_MOVED {
         app = app.route(
             "/api/attachments/{id}/download",
-            get(attachments::download).fallback(proxy::forward),
+            get(attachments::download).fallback(express::unknown_address),
         );
     }
-    let app = app.fallback(proxy::forward).layer(cors).with_state(state);
+    // CORS answers OPTIONS before the routes
+    let app = app.fallback(express::unknown_address).layer(cors).with_state(state);
+    // Around the whole app (Router::layer would wrap each route's handlers, inside axum's own parts): Express's
+    // headers on every answer, and, before the routes are looked at, the address tidied like Express
+    let app = middleware::from_fn(express::headers_like_express).layer(app);
+    let app = middleware::from_fn(express::like_express).layer(app);
 
     // [::] = every address, IPv6 and IPv4, like NestJS, so the browser on Windows reaches it as localhost
     let listener = tokio::net::TcpListener::bind(SocketAddr::from(([0u16; 8], port)))
@@ -127,12 +145,20 @@ async fn main() {
             eprintln!("Can't use port {port}: {err}. Is something else (NestJS?) still using it?");
             std::process::exit(1);
         });
-    tracing::info!("Rust backend on port {port}; what hasn't moved yet goes to NestJS");
+    if routing::NESTJS_IS_OFF {
+        tracing::info!("Rust backend on port {port}");
+    } else {
+        tracing::info!("Rust backend on port {port}; what hasn't moved yet goes to NestJS");
+    }
 
     // with_connect_info: each request also knows the address it came from (proxy.rs needs it)
-    axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>())
-        .await
-        .expect("the server stopped unexpectedly");
+    // ServiceExt::into_make_service_with_connect_info: each request also knows the address it came from
+    axum::serve(
+        listener,
+        ServiceExt::<axum::extract::Request>::into_make_service_with_connect_info::<SocketAddr>(app),
+    )
+    .await
+    .expect("the server stopped unexpectedly");
 }
 
 /// Which website may call this backend with your login cookie: only the frontend, as in NestJS's

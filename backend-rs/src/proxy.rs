@@ -5,7 +5,7 @@
 use std::net::{IpAddr, SocketAddr};
 
 use axum::body::Body;
-use axum::extract::{ConnectInfo, Request, State};
+use axum::extract::{OriginalUri, Request};
 use axum::http::{HeaderMap, Method, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
 
@@ -33,15 +33,16 @@ pub fn client() -> reqwest::Client {
         .expect("the HTTP client builds with these settings")
 }
 
-/// Every request Rust has no route for. `ConnectInfo`: the address the request came from.
-pub async fn forward(
-    State(app): State<AppState>,
-    ConnectInfo(sender): ConnectInfo<SocketAddr>,
-    request: Request,
-) -> Response {
+/// A request Rust has no route for. `ConnectInfo`: the address the request came from. The address goes on as it
+/// was sent (OriginalUri), not as main.rs tidied it.
+pub async fn forward(app: &AppState, sender: SocketAddr, request: Request) -> Response {
     let (parts, body) = request.into_parts();
+    let uri = parts
+        .extensions
+        .get::<OriginalUri>()
+        .map_or(parts.uri.clone(), |original| original.0.clone());
     let body = reqwest::Body::wrap_stream(body.into_data_stream());
-    pass_on(&app, sender, &parts.method, &parts.uri, &parts.headers, body).await
+    pass_on(app, sender, &parts.method, &uri, &parts.headers, body).await
 }
 
 /// One request to NestJS, unchanged (same method, address, headers and body), and NestJS's answer back
