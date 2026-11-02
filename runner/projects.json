@@ -6,6 +6,7 @@
     "build": "npm run build",
     "test": "npm test"
   },
+
   "task-board": {
     "path": "/home/thierry/task-board",
     "baseBranch": "main",
@@ -16,5 +17,15 @@
     "test": "sh /home/thierry/task-board/runner/projects/task-board/test.sh",
     "alsoMergeInto": ["runner-pro"],
     "protectedPaths": ["runner/"]
+  },
+
+  "watchlist": {
+    "path": "/home/thierry/watchlist",
+    "baseBranch": "main",
+    "setup": [
+      "cd frontend && pnpm install --frozen-lockfile"
+    ],
+    "build": "sh /home/thierry/task-board/runner/projects/watchlist/build.sh",
+    "test": "sh /home/thierry/task-board/runner/projects/watchlist/test.sh"
   }
 }
