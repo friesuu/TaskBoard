@@ -17,7 +17,7 @@ import { run, sandboxedCommand, stopChildren } from '../src/shell.js';
 import { CHECK_EVERY_MS, nextCheckDelay, statusMessage } from '../src/watch.js';
 import { isOnBattery } from '../src/power.js';
 import { addPackageJson, removePlaceholders } from '../src/placeholders.js';
-import { merge, MergeRefused, protectedFiles } from '../src/merge.js';
+import { deleteTaskBranches, merge, MergeRefused, protectedFiles } from '../src/merge.js';
 import { homedir } from 'node:os';
 import { rmSync } from 'node:fs';
 
@@ -493,6 +493,39 @@ test('a merge waits for you when the folder has uncommitted changes, and undoes 
 
         // A branch that isn't this task's is refused before anything happens
         await assert.rejects(merge({ job: { task: { id: 8, aiBranch: 'ai/task-7-fix-pill' } }, project, projectName: 'demo', config, log }), /isn't this task's branch/);
+    }
+    finally
+    {
+        cleanup();
+    }
+});
+
+test("after a merge, the task's branch and its earlier attempts are deleted, and no other task's", async () => {
+    const { project, config, job, log, g, cleanup } = mergeSetup();
+    const branches = () => g('branch', '--format=%(refname:short)').stdout.trim().split('\n').sort();
+    try
+    {
+        // An earlier attempt of task 7 that was never merged, and branches of tasks 70 and 8
+        g('switch', '-q', '-c', 'ai/task-7-first-try', 'main');
+        writeFileSync(join(project.path, 'README.md'), 'first try\n');
+        g('commit', '-q', '-am', 'First try (task #7)');
+        g('switch', '-q', 'pro');
+        g('branch', 'ai/task-70-fix-pill', 'main');
+        g('branch', 'ai/task-8-fix-pill', 'main');
+
+        await merge({ job, project, projectName: 'demo', config, log });
+        await deleteTaskBranches({ project, task: job.task, log });
+        assert.deepEqual(branches(), ['ai/task-70-fix-pill', 'ai/task-8-fix-pill', 'main', 'pro']);
+
+        // A task branch main doesn't have all of is kept
+        g('switch', '-q', '-c', 'ai/task-9-new', 'main');
+        writeFileSync(join(project.path, 'README.md'), 'not merged\n');
+        g('commit', '-q', '-am', 'New (task #9)');
+        g('switch', '-q', 'pro');
+        const lines = [];
+        await deleteTaskBranches({ project, task: { id: 9, aiBranch: 'ai/task-9-new' }, log: { add: (_, line) => lines.push(line) } });
+        assert.ok(branches().includes('ai/task-9-new'));
+        assert.match(lines[0], /Kept ai\/task-9-new: main doesn't have all of it/);
     }
     finally
     {
