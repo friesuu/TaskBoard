@@ -26,6 +26,7 @@ export function sandboxDenyRead(extra = [])
     return [
         join(RUNNER_DIR, '.env'), // the API key and the runner token
         join(home, 'task-board', 'backend', '.env'), // the board's database password and login secret
+        join(home, 'watchlist', 'backend', '.env'), // the watchlist's database password
         join(home, '.claude'), join(home, '.ssh'), join(home, '.aws'), join(home, '.gnupg'),
         join(home, '.git-credentials'), join(home, '.npmrc'),
         // Not ~/.task-runner: the task's own worktree lives in there
