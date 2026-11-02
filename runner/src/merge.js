@@ -79,6 +79,30 @@ async function mergeIn(folder, target, source, message, log)
     log.add('info', result.stdout.includes('Already up to date') ? `${target} already has ${source}` : `Merged ${source} into ${target}`);
 }
 
+// After a merge the board knows about: deletes the task's branch, and the branches of its earlier attempts
+// (built before you asked for changes), so old branches don't pile up. The merged branch only if main really
+// has all of it; an earlier attempt was never merged, so it's gone for good. A branch git won't delete (e.g.
+// you have it checked out) is left, with a line in the log: the merge itself went fine. Never throws.
+export async function deleteTaskBranches({ project, task, log })
+{
+    const own = new RegExp(`^ai/task-${task.id}(-[a-z0-9]+)*$`); // ai/task-7-fix, never ai/task-70-fix
+    const listed = await run('git', ['branch', '--list', '--format=%(refname:short)', `ai/task-${task.id}*`], { cwd: project.path });
+    for (const name of listed.stdout.split('\n').filter((line) => own.test(line)))
+    {
+        if (name === task.aiBranch)
+        {
+            const inBase = await run('git', ['merge-base', '--is-ancestor', name, project.baseBranch], { cwd: project.path });
+            if (inBase.code !== 0)
+            {
+                log.add('info', `Kept ${name}: ${project.baseBranch} doesn't have all of it`);
+                continue;
+            }
+        }
+        const result = await run('git', ['branch', '-D', name], { cwd: project.path });
+        log.add('info', result.code === 0 ? `Deleted branch ${name}` : `Couldn't delete branch ${name}: ${(result.stderr || result.stdout).trim()}`);
+    }
+}
+
 // Returns { merged: [branches] }. Throws MergeRefused (with what to do) when it stops on purpose.
 export async function merge({ job, project, projectName, config, log })
 {

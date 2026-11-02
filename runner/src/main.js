@@ -14,7 +14,7 @@ import { watch } from './watch.js';
 import { releaseLock, takeLock } from './lock.js';
 import { refine } from './refine.js';
 import { build, checkProject, prepareMainCopy, prepareWorktree, removeWorktree, summaryComment } from './build.js';
-import { merge, MergeRefused } from './merge.js';
+import { deleteTaskBranches, merge, MergeRefused } from './merge.js';
 import { parseReset, pause, pausedUntil } from './pause.js';
 import { MIN_STEP_BUDGET_USD, spentToday, stepBudget } from './budget.js';
 import { onBattery } from './power.js';
@@ -273,6 +273,8 @@ async function doMerge({ job, project, config, api, startedAt })
         if (problem) throw new MergeRefused(problem);
         const { merged } = await merge({ job, project, projectName: job.project, config, log });
         await api.finishMerge(job.task.id);
+        // Only once the board knows: until then, a "Try again" still needs the branch
+        await deleteTaskBranches({ project, task: job.task, log });
         say(`Merged into ${merged.join(' and ')}: the task is Done.`);
         await finish('succeeded', { result: 'merged', summary: `Merged ${job.task.aiBranch} into ${merged.join(' and ')}.` });
     }

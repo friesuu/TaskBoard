@@ -13,6 +13,9 @@ Runs your task board's "AI" tasks through Claude Code, one step at a time:
    you're happy, click **Merge** in the AI tab. On its next check the runner merges the branch into main,
    then main into the project's `alsoMergeInto` branches (e.g. `runner-pro`), and moves the task to
    **Done**. It never merges anything you didn't click Merge on, never pushes, never deploys.
+   Then it deletes the task's branch (main has all of it), and the branches of the task's earlier builds
+   (`…-2` below): those were never merged, so they're gone for good. A task you never merge keeps its
+   branches.
 
    It stops instead, changing nothing, and the task says why, when:
    - the branch changes a `protectedPaths` file or folder (for task-board, `runner/`: the runner's own
